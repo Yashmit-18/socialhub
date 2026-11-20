@@ -1,0 +1,40 @@
+{
+  "name": "socialhub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SocialHub — team-based social media management platform (Meta Graph API).",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @socialhub/api",
+    "dev:web": "npm run dev --workspace @socialhub/web",
+    "build": "npm run build --workspace @socialhub/web",
+    "start": "npm run start --workspace @socialhub/api",
+    "test": "npm run test --workspaces --if-present",
+    "test:shared": "npm run test --workspace @socialhub/shared",
+    "test:api": "npm run test --workspace @socialhub/api",
+    "test:web": "npm run test --workspace @socialhub/web",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run lint && npm run test && npm run build",
+    "secrets": "node scripts/generate-secrets.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "vitest": "^5.1.1"
+  }
+}

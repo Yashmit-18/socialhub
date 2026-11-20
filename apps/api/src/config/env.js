@@ -1,0 +1,209 @@
+import { z } from 'zod';
+
+const booleanString = z
+  .enum(['true', 'false', '1', '0', 'yes', 'no'])
+  .transform((v) => v === 'true' || v === '1' || v === 'yes');
+
+const csv = z.string().transform((v) =>
+  v
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
+);
+
+const encryptionKey = z.string().refine((v) => Buffer.from(v, 'base64').length === 32, {
+  error: 'TOKEN_ENCRYPTION_KEY must be 32 bytes encoded as base64 (run `npm run secrets`)',
+});
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
+  TRUST_PROXY: z.string().optional(),
+
+  MONGODB_URI: z.string().min(1).default('mongodb://127.0.0.1:27017/socialhub'),
+  MONGODB_AUTO_INDEX: booleanString.optional(),
+
+  /** Browser origins allowed by CORS. The first one is used to build links in emails. */
+  CLIENT_ORIGIN: csv.default(['http://localhost:5173']),
+  APP_URL: z.string().url().optional(),
+
+  JWT_ACCESS_SECRET: z
+    .string()
+    .min(32, { error: 'JWT_ACCESS_SECRET must be at least 32 characters' }),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  /** Window during which a just-rotated refresh token is treated as a benign multi-tab race, not theft. */
+  REFRESH_REUSE_GRACE_SECONDS: z.coerce.number().int().min(0).max(120).default(20),
+  COOKIE_SECURE: booleanString.optional(),
+  COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).default('lax'),
+  COOKIE_DOMAIN: z.string().optional(),
+
+  BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
+  TOKEN_ENCRYPTION_KEY: encryptionKey,
+
+  INVITATION_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+
+  AUTH_RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().min(1).default(15),
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
+  API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(300),
+
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().optional(),
+  SMTP_SECURE: booleanString.optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().default('SocialHub <no-reply@socialhub.local>'),
+
+  /** Absolute or API-relative path to the built web app (apps/web/dist) to serve it from the API. */
+  SERVE_WEB_DIST: z.string().optional(),
+
+  /** Public base URL where Meta can reach the API (OAuth redirect + callbacks). Defaults to APP_URL. */
+  API_PUBLIC_URL: z.string().url().optional(),
+
+  /* --- Meta: Facebook Login (Pages + Instagram accounts linked to Pages) --- */
+  META_APP_ID: z.string().regex(/^\d+$/, { error: 'META_APP_ID must be numeric' }).optional(),
+  META_APP_SECRET: z.string().min(16).optional(),
+  META_GRAPH_API_VERSION: z
+    .string()
+    .regex(/^v\d+\.\d+$/, { error: 'META_GRAPH_API_VERSION must look like v27.0' })
+    .default('v27.0'),
+  /** Facebook Login for Business configuration id; replaces the `scope` parameter when set. */
+  META_FACEBOOK_LOGIN_CONFIG_ID: z.string().regex(/^\d+$/).optional(),
+  META_FACEBOOK_SCOPES: csv.default([
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_posts',
+    'instagram_basic',
+    'instagram_content_publish',
+  ]),
+
+  /* --- Meta: Instagram API with Instagram Login (separate Instagram app id/secret) --- */
+  INSTAGRAM_APP_ID: z
+    .string()
+    .regex(/^\d+$/, { error: 'INSTAGRAM_APP_ID must be numeric' })
+    .optional(),
+  INSTAGRAM_APP_SECRET: z.string().min(16).optional(),
+  INSTAGRAM_SCOPES: csv.default(['instagram_business_basic', 'instagram_business_content_publish']),
+
+  META_OAUTH_STATE_TTL_MINUTES: z.coerce.number().int().min(2).max(60).default(10),
+  META_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),
+});
+
+function formatIssues(issues) {
+  return issues.map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`).join('\n');
+}
+
+export function loadConfig(source = process.env) {
+  // Treat empty strings as "unset" so `.env` templates with blank values fall back to defaults.
+  const cleaned = Object.fromEntries(
+    Object.entries(source).filter(([, v]) => v !== undefined && v !== ''),
+  );
+  const parsed = envSchema.safeParse(cleaned);
+  if (!parsed.success) {
+    throw new Error(`Invalid environment configuration:\n${formatIssues(parsed.error.issues)}`);
+  }
+  const env = parsed.data;
+  const isProduction = env.NODE_ENV === 'production';
+  const isTest = env.NODE_ENV === 'test';
+
+  if (env.COOKIE_SAMESITE === 'none' && env.COOKIE_SECURE === false) {
+    throw new Error(
+      'Invalid environment configuration: COOKIE_SAMESITE=none requires COOKIE_SECURE=true',
+    );
+  }
+
+  for (const [id, secret] of [
+    ['META_APP_ID', 'META_APP_SECRET'],
+    ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'],
+  ]) {
+    if (Boolean(env[id]) !== Boolean(env[secret])) {
+      throw new Error(
+        `Invalid environment configuration: set both ${id} and ${secret}, or neither`,
+      );
+    }
+  }
+
+  const appUrl = (env.APP_URL ?? env.CLIENT_ORIGIN[0]).replace(/\/+$/, '');
+  const publicApiUrl = (env.API_PUBLIC_URL ?? appUrl).replace(/\/+$/, '');
+
+  let trustProxy = false;
+  if (env.TRUST_PROXY !== undefined) {
+    if (/^\d+$/.test(env.TRUST_PROXY)) trustProxy = Number(env.TRUST_PROXY);
+    else if (env.TRUST_PROXY === 'true') trustProxy = true;
+    else if (env.TRUST_PROXY !== 'false') trustProxy = env.TRUST_PROXY;
+  }
+
+  return Object.freeze({
+    env: env.NODE_ENV,
+    isProduction,
+    isTest,
+    port: env.PORT,
+    logLevel: env.LOG_LEVEL ?? (isTest ? 'silent' : isProduction ? 'info' : 'debug'),
+    trustProxy,
+    mongo: {
+      uri: env.MONGODB_URI,
+      autoIndex: env.MONGODB_AUTO_INDEX ?? !isProduction,
+    },
+    clientOrigins: env.CLIENT_ORIGIN,
+    appUrl,
+    publicApiUrl,
+    auth: {
+      accessSecret: env.JWT_ACCESS_SECRET,
+      accessTtlSeconds: env.JWT_ACCESS_TTL_SECONDS,
+      refreshTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
+      refreshReuseGraceSeconds: env.REFRESH_REUSE_GRACE_SECONDS,
+      bcryptRounds: env.BCRYPT_ROUNDS,
+      passwordResetTtlMinutes: env.PASSWORD_RESET_TTL_MINUTES,
+      cookie: {
+        secure: env.COOKIE_SECURE ?? isProduction,
+        sameSite: env.COOKIE_SAMESITE,
+        domain: env.COOKIE_DOMAIN,
+      },
+    },
+    tokenEncryptionKey: Buffer.from(env.TOKEN_ENCRYPTION_KEY, 'base64'),
+    invitationTtlDays: env.INVITATION_TTL_DAYS,
+    rateLimit: {
+      authWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MINUTES * 60_000,
+      authMax: env.AUTH_RATE_LIMIT_MAX,
+      apiPerMinute: env.API_RATE_LIMIT_PER_MINUTE,
+    },
+    mail: {
+      from: env.MAIL_FROM,
+      smtp: env.SMTP_HOST
+        ? {
+            host: env.SMTP_HOST,
+            port: env.SMTP_PORT ?? 587,
+            secure: env.SMTP_SECURE ?? env.SMTP_PORT === 465,
+            auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS ?? '' } : undefined,
+          }
+        : null,
+    },
+    serveWebDist: env.SERVE_WEB_DIST ?? null,
+    meta: {
+      graphVersion: env.META_GRAPH_API_VERSION,
+      stateTtlMinutes: env.META_OAUTH_STATE_TTL_MINUTES,
+      requestTimeoutMs: env.META_REQUEST_TIMEOUT_MS,
+      facebook: env.META_APP_ID
+        ? {
+            appId: env.META_APP_ID,
+            appSecret: env.META_APP_SECRET,
+            loginConfigId: env.META_FACEBOOK_LOGIN_CONFIG_ID ?? null,
+            scopes: env.META_FACEBOOK_SCOPES,
+            redirectUri: `${publicApiUrl}/api/v1/oauth/facebook/callback`,
+          }
+        : null,
+      instagram: env.INSTAGRAM_APP_ID
+        ? {
+            appId: env.INSTAGRAM_APP_ID,
+            appSecret: env.INSTAGRAM_APP_SECRET,
+            scopes: env.INSTAGRAM_SCOPES,
+            redirectUri: `${publicApiUrl}/api/v1/oauth/instagram/callback`,
+          }
+        : null,
+    },
+  });
+}
+
+export const config = loadConfig();
