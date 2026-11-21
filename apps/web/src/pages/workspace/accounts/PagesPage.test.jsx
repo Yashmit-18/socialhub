@@ -421,6 +421,23 @@ describe('Facebook Pages tab', () => {
     expect(mock.count(`DELETE /workspaces/w1/social-accounts/${LABS}`)).toBe(1);
   });
 
+  it('opens row actions outside the scrolling table, focused, and Escape returns focus', async () => {
+    const ue = userEvent.setup();
+    setup('OWNER');
+    renderApp('/w/acme/accounts/pages');
+
+    const trigger = await screen.findByRole('button', { name: 'Actions for Acme Store' });
+    await ue.click(trigger);
+    const menu = screen.getByRole('menu');
+    // Portal: the table's horizontal scroll container cannot clip the menu.
+    expect(trigger.closest('table')).not.toContainElement(menu);
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus());
+
+    await ue.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it('shows editors the Pages shared with them without selection or management actions', async () => {
     const ue = userEvent.setup();
     const mock = setup('EDITOR', {

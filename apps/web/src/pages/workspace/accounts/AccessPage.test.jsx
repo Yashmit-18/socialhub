@@ -191,6 +191,8 @@ const memberRow = (name) => within(card('Members')).getByText(name).closest('li'
 const coverageRow = (name) =>
   within(card('Account coverage')).getByRole('link', { name }).closest('li');
 const accessUrl = (id) => `PUT /workspaces/w1/members/${id}/account-access`;
+/** Changes within 'Selected accounts only' are sent as PATCH { add, remove }. */
+const patchUrl = (id) => `PATCH /workspaces/w1/members/${id}/account-access`;
 
 beforeEach(() => {
   setAccessToken(null);
@@ -207,7 +209,10 @@ describe('team access (owners and admins)', () => {
       'aria-current',
       'page',
     );
-    expect(screen.getByText('Owners and Admins always use every account')).toBeInTheDocument();
+    // The tabs render before the tab's code-split page has loaded: wait for the page itself.
+    expect(
+      await screen.findByText('Owners and Admins always use every account'),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('Editors and Viewers only see and use the accounts assigned to them'),
     ).toBeInTheDocument();
@@ -267,14 +272,27 @@ describe('team access (owners and admins)', () => {
     expect(within(members).getByText('Eddie Editor')).toBeInTheDocument();
   });
 
-  it('replaces a member’s access with the chosen accounts', async () => {
+  it('adds the chosen accounts to a member’s access, sending only the change', async () => {
     let members = [owner, admin, editor, viewer, allAccess];
     const mock = setup(owner, {
       members: () => members,
       routes: {
-        [accessUrl(VIEWER_ID)]: ({ init }) => {
-          const body = JSON.parse(init.body);
-          members = members.map((m) => (m.id === VIEWER_ID ? { ...m, accountAccess: body } : m));
+        [patchUrl(VIEWER_ID)]: ({ init }) => {
+          const { add, remove } = JSON.parse(init.body);
+          members = members.map((m) =>
+            m.id === VIEWER_ID
+              ? {
+                  ...m,
+                  accountAccess: {
+                    mode: 'SELECTED',
+                    socialAccountIds: [
+                      ...m.accountAccess.socialAccountIds.filter((id) => !remove.includes(id)),
+                      ...add,
+                    ],
+                  },
+                }
+              : m,
+          );
           return jsonResponse(200, { member: members.find((m) => m.id === VIEWER_ID) });
         },
       },
@@ -299,11 +317,9 @@ describe('team access (owners and admins)', () => {
     await userEvent.click(save);
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    const call = mock.calls.find((c) => c.key === accessUrl(VIEWER_ID));
-    expect(JSON.parse(call.init.body)).toEqual({
-      mode: 'SELECTED',
-      socialAccountIds: [LABS, STORE],
-    });
+    const call = mock.calls.find((c) => c.key === patchUrl(VIEWER_ID));
+    expect(JSON.parse(call.init.body)).toEqual({ add: [LABS, STORE], remove: [] });
+    expect(mock.count(accessUrl(VIEWER_ID))).toBe(0);
     expect(toast.success).toHaveBeenCalledWith('Account access updated for Vera Viewer');
     // The lists are refreshed from the API after saving.
     expect(await within(memberRow('Vera Viewer')).findByText('2 accounts')).toBeInTheDocument();
@@ -338,12 +354,37 @@ describe('team access (owners and admins)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('removes an unchecked account without replacing the rest of the grant', async () => {
+    const mock = setup(owner, {
+      routes: {
+        [patchUrl(EDITOR_ID)]: () =>
+          jsonResponse(200, {
+            member: { ...editor, accountAccess: { mode: 'SELECTED', socialAccountIds: [IG] } },
+          }),
+      },
+    });
+    renderApp('/w/acme/accounts/access');
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Edit access for Eddie Editor' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Social account access' });
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /^Acme Store/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save access' }));
+
+    await waitFor(() => expect(mock.count(patchUrl(EDITOR_ID))).toBe(1));
+    const call = mock.calls.find((c) => c.key === patchUrl(EDITOR_ID));
+    expect(JSON.parse(call.init.body)).toEqual({ add: [], remove: [STORE] });
+    expect(mock.count(accessUrl(EDITOR_ID))).toBe(0);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('explains a conflicting change and reloads the member’s current access', async () => {
     let members = [owner, admin, editor, viewer, allAccess];
     const mock = setup(owner, {
       members: () => members,
       routes: {
-        [accessUrl(VIEWER_ID)]: () => {
+        [patchUrl(VIEWER_ID)]: () => {
           // Another admin granted Acme Store a moment earlier.
           members = members.map((m) =>
             m.id === VIEWER_ID
@@ -387,7 +428,7 @@ describe('team access (owners and admins)', () => {
     setup(owner, {
       members: () => members,
       routes: {
-        [accessUrl(VIEWER_ID)]: () => {
+        [patchUrl(VIEWER_ID)]: () => {
           members = members.filter((m) => m.id !== VIEWER_ID);
           return apiError(404, 'NOT_FOUND', 'Member not found');
         },

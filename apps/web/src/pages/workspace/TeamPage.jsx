@@ -45,7 +45,7 @@ import { useApiForm } from '../../hooks/useApiForm.js';
 import { api } from '../../lib/api.js';
 import { keys, useInvitations, useMembers, useSocialAccounts } from '../../lib/queries.js';
 import { cn, formatDate, timeAgo } from '../../lib/utils.js';
-import { AccessSummary, MemberAccessDialog } from './accounts/AccessPage.jsx';
+import { AccessSummary, MemberAccessDialog } from '../../components/accounts/MemberAccess.jsx';
 
 const ROLE_ORDER = { OWNER: 0, ADMIN: 1, EDITOR: 2, VIEWER: 3 };
 
@@ -208,8 +208,7 @@ function InviteDialog({ onClose, onInvited }) {
         </>
       }
     >
-      {/* Scrolls inside the dialog so the footer stays reachable on short screens. */}
-      <div className="-m-1 max-h-[calc(100dvh-16rem)] space-y-5 overflow-y-auto p-1">
+      <div className="space-y-5">
         <form id="invite-form" onSubmit={onSubmit} className="space-y-4" noValidate>
           <FormError message={formError} />
           <Input

@@ -154,15 +154,17 @@ export function AccountFilters({
     <div
       role="search"
       aria-label="Filter accounts"
-      className={cn('flex flex-col gap-3 px-5 py-4 sm:px-6 lg:flex-row lg:items-center', className)}
+      className={cn('flex flex-col gap-3 px-5 py-4 sm:px-6 lg:flex-row lg:items-start', className)}
     >
       <SearchBox
         value={state.q}
         onSearch={(q) => update({ q })}
         placeholder={searchPlaceholder}
         label="Search accounts"
+        // Fixed width beside the filters: the filter row wraps instead of squeezing the search.
+        className="lg:w-72 lg:flex-none"
       />
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         {showPlatform && (
           <FilterSelect
             label="Filter by platform"

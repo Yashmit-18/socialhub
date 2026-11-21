@@ -8,13 +8,14 @@ import {
 import { Info } from 'lucide-react';
 import { InstagramIcon } from '../../../components/ui/Brand.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
-import { DestinationTab, PermissionList } from './PagesPage.jsx';
+import { DestinationTab, PermissionList } from '../../../components/accounts/DestinationTab.jsx';
 
 const COLUMNS = [
   'account',
   'instagramType',
   'linkedPage',
   'identity',
+  'followers',
   'readiness',
   'status',
   'lastSync',

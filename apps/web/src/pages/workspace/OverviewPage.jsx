@@ -10,6 +10,7 @@ import {
   Users,
 } from 'lucide-react';
 import { ActivityFeed } from '../../components/ActivityFeed.jsx';
+import { FollowersCard } from '../../components/accounts/FollowersCard.jsx';
 import { PageHeader } from '../../components/layout/AppShell.jsx';
 import { RoleBadge } from '../../components/ui/Badge.jsx';
 import { FacebookIcon, InstagramIcon } from '../../components/ui/Brand.jsx';
@@ -18,7 +19,7 @@ import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
-import { useOverview } from '../../lib/queries.js';
+import { useAccountSummary, useOverview } from '../../lib/queries.js';
 import { cn, firstName, greeting } from '../../lib/utils.js';
 
 function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
@@ -65,6 +66,7 @@ export default function OverviewPage() {
   const { user } = useAuth();
   const { workspace, role, can } = useWorkspace();
   const { data, isPending, error, refetch } = useOverview(workspace.id);
+  const accountSummary = useAccountSummary(workspace.id);
   const stats = data?.stats;
   const base = `/w/${workspace.slug}`;
   const accountsTotal = stats ? stats.facebookPages + stats.instagramAccounts : 0;
@@ -141,6 +143,15 @@ export default function OverviewPage() {
               loading={isPending}
             />
           </div>
+
+          {/* Totals cover only the accounts this member may see; hidden if the summary fails. */}
+          {!accountSummary.error &&
+            (accountSummary.isPending || accountSummary.data?.accounts?.total > 0) && (
+              <FollowersCard
+                followers={accountSummary.data?.followers}
+                loading={accountSummary.isPending}
+              />
+            )}
 
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">

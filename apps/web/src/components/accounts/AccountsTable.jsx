@@ -7,6 +7,7 @@ import {
   PROVIDER_LABELS,
   instagramTypeLabel,
 } from '../../lib/meta.js';
+import { formatFollowers } from '../../lib/followers.js';
 import { cn, formatDate, timeAgo } from '../../lib/utils.js';
 import { Skeleton } from '../ui/Feedback.jsx';
 import {
@@ -72,6 +73,29 @@ const COLUMNS = {
       <ReadinessBadge readiness={a.health?.readiness} reasons={a.health?.readinessReasons} />
     ),
   },
+  followers: {
+    header: 'Followers',
+    // Per-account counts are secondary: the dashboards show the combined and per-platform totals.
+    hide: 'wide',
+    // null = Meta has not returned a count: shown as "—", never as 0.
+    cell: (a) =>
+      typeof a.followersCount === 'number' ? (
+        <span
+          className="text-xs tabular-nums text-slate-700 dark:text-slate-200"
+          title={
+            a.followersCountUpdatedAt
+              ? `As of ${formatDate(a.followersCountUpdatedAt, { dateStyle: 'medium', timeStyle: 'short' })}`
+              : undefined
+          }
+        >
+          {formatFollowers(a.followersCount)}
+        </span>
+      ) : (
+        <span className="text-xs text-muted" title="Meta has not returned a follower count yet">
+          —
+        </span>
+      ),
+  },
   status: {
     header: 'Status',
     cell: (a) => <StatusCell account={a} />,
@@ -101,6 +125,8 @@ const HIDE_BELOW = {
   md: 'hidden md:table-cell',
   lg: 'hidden lg:table-cell',
   xl: 'hidden xl:table-cell',
+  // Wide desktops only: below ~1360px the Instagram table would push the row actions out of view.
+  wide: 'hidden min-[1360px]:table-cell',
 };
 
 function AccountCell({ account, href }) {
@@ -153,7 +179,14 @@ function IdentityCell({ account, href }) {
 
 function LinkedPageCell({ account, hrefFor }) {
   if (account.connection?.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN && !account.linkedPage) {
-    return <span className="text-xs text-muted">None (Instagram Login)</span>;
+    return (
+      <span
+        className="text-xs text-muted"
+        title="Connected directly with Instagram Login, so it is not linked to a Facebook Page"
+      >
+        Not linked
+      </span>
+    );
   }
   if (!account.linkedPage) return <span className="text-xs text-muted">—</span>;
   const name = account.linkedPage.name ?? `Page ${account.linkedPage.externalId}`;
@@ -295,7 +328,8 @@ export function AccountsTable({
                       : undefined
                 }
                 className={cn(
-                  'py-2.5 pr-4 font-semibold uppercase tracking-wider whitespace-nowrap',
+                  // Long headers ("Linked Facebook Page") wrap so the row actions stay in view.
+                  'py-2.5 pr-4 align-bottom font-semibold uppercase tracking-wider',
                   index === 0 && !selectable && 'pl-5 sm:pl-6',
                   HIDE_BELOW[col.hide],
                   col.headerClassName,

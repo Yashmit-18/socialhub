@@ -35,6 +35,7 @@ import {
 } from '../../../components/accounts/AccountBadges.jsx';
 import { AccountsTable } from '../../../components/accounts/AccountsTable.jsx';
 import { ConnectButtons } from '../../../components/accounts/ConnectButtons.jsx';
+import { FollowersCard } from '../../../components/accounts/FollowersCard.jsx';
 import { Badge } from '../../../components/ui/Badge.jsx';
 import { FacebookIcon, InstagramIcon } from '../../../components/ui/Brand.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
@@ -1060,6 +1061,10 @@ export default function AccountsOverviewPage() {
         allScope={allScope}
       />
 
+      {!summary.error && (summary.isPending || accountsTotal > 0) && (
+        <FollowersCard followers={summary.data?.followers} loading={summary.isPending} />
+      )}
+
       <AttentionSection
         allScope={allScope}
         manageLogins={manageLogins}
@@ -1101,8 +1106,17 @@ export default function AccountsOverviewPage() {
         workspaces={allScope ? workspaces : undefined}
         columns={
           allScope
-            ? ['account', 'platform', 'workspace', 'identity', 'readiness', 'status', 'lastSync']
-            : ['account', 'platform', 'identity', 'readiness', 'status', 'lastSync']
+            ? [
+                'account',
+                'platform',
+                'workspace',
+                'identity',
+                'followers',
+                'readiness',
+                'status',
+                'lastSync',
+              ]
+            : ['account', 'platform', 'identity', 'followers', 'readiness', 'status', 'lastSync']
         }
         hrefFor={hrefFor}
         identityHrefFor={identityHrefFor}

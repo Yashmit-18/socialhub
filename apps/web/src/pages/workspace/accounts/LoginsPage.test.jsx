@@ -190,6 +190,14 @@ describe('Logins tab', () => {
       'href',
       '/w/acme/accounts/logins/c1',
     );
+    // "View Pages" opens the Pages tab filtered to this login (and likewise for Instagram).
+    expect(within(aliceCard).getByRole('link', { name: 'View Pages' })).toHaveAttribute(
+      'href',
+      '/w/acme/accounts/pages?connectionId=c1',
+    );
+    expect(
+      within(aliceCard).getByRole('link', { name: 'View Instagram accounts' }),
+    ).toHaveAttribute('href', '/w/acme/accounts/instagram?connectionId=c1');
     expect(within(aliceCard).getByRole('link', { name: /View details/ })).toHaveAttribute(
       'href',
       '/w/acme/accounts/logins/c1',

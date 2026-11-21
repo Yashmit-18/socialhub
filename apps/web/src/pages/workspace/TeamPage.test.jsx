@@ -298,11 +298,15 @@ describe('account access on the team list', () => {
   });
 
   it('edits a member’s access with the shared account editor', async () => {
-    const accessKey = `PUT /workspaces/w1/members/${VIEWER_ID}/account-access`;
+    // Within 'Selected accounts only' only the change is sent (PATCH { add, remove }).
+    const accessKey = `PATCH /workspaces/w1/members/${VIEWER_ID}/account-access`;
     const mock = setup({
       [accessKey]: ({ init }) =>
         jsonResponse(200, {
-          member: { ...members[3], accountAccess: JSON.parse(init.body) },
+          member: {
+            ...members[3],
+            accountAccess: { mode: 'SELECTED', socialAccountIds: JSON.parse(init.body).add },
+          },
         }),
     });
     renderApp('/w/acme/team');
@@ -315,8 +319,8 @@ describe('account access on the team list', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(JSON.parse(mock.calls.find((c) => c.key === accessKey).init.body)).toEqual({
-      mode: 'SELECTED',
-      socialAccountIds: [LABS],
+      add: [LABS],
+      remove: [],
     });
     expect(toast.success).toHaveBeenCalledWith('Account access updated for Vera Viewer');
   });

@@ -210,7 +210,10 @@ describe('Instagram tab', () => {
 
     const soloRow = rowOf('Solo Creator');
     expect(within(soloRow).getByText('Creator')).toBeInTheDocument();
-    expect(within(soloRow).getByText('None (Instagram Login)')).toBeInTheDocument();
+    expect(within(soloRow).getByText('Not linked')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/Instagram Login/),
+    );
     expect(within(soloRow).getByRole('link', { name: '@solo.creator' })).toHaveAttribute(
       'href',
       `/w/acme/accounts/logins/${IG_LOGIN}`,

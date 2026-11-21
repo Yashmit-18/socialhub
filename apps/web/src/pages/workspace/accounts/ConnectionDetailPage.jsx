@@ -1,5 +1,4 @@
 import {
-  ACCOUNT_ATTENTION,
   CONNECTION_STATUS,
   ERROR_CODES,
   PERMISSIONS,
@@ -54,7 +53,9 @@ import {
   PLATFORM_LABELS,
   PROVIDER_LABELS,
   connectionExpiry,
-  needsReconnect,
+  loginAccountTotal,
+  loginDestinationsText,
+  loginWantsReconnect,
 } from '../../../lib/meta.js';
 import { useConnectionDetail, useMetaIntegration, useSyncRuns } from '../../../lib/queries.js';
 import { cn, formatDate, timeAgo } from '../../../lib/utils.js';
@@ -68,38 +69,7 @@ const SYNC_POLL_MS = 5000;
 
 const DATE_TIME = { dateStyle: 'medium', timeStyle: 'short' };
 
-/** Problems of a login that still works where authorizing again is the fix. */
-const RECONNECT_SOON = new Set([
-  ACCOUNT_ATTENTION.EXPIRING_SOON,
-  ACCOUNT_ATTENTION.MISSING_PERMISSIONS,
-]);
-
 const providerLabel = (provider) => PROVIDER_LABELS[provider] ?? 'Meta';
-
-function wantsReconnect(connection) {
-  return (
-    needsReconnect(connection.status) ||
-    (connection.attention ?? []).some((item) => RECONNECT_SOON.has(item.code))
-  );
-}
-
-function accountTotal(connection) {
-  const counts = connection.accountCounts;
-  if (!counts) return connection.accountCount ?? 0;
-  return (counts.facebookPages ?? 0) + (counts.instagramAccounts ?? 0);
-}
-
-/** "2 Facebook Pages · 1 Instagram account": one Facebook login can bring many destinations. */
-function destinationsText(connection) {
-  const counts = connection.accountCounts;
-  if (!counts) return plural(connection.accountCount ?? 0, 'account');
-  const parts = [];
-  if (connection.provider !== SOCIAL_PROVIDERS.INSTAGRAM_LOGIN || counts.facebookPages > 0) {
-    parts.push(plural(counts.facebookPages ?? 0, 'Facebook Page'));
-  }
-  parts.push(plural(counts.instagramAccounts ?? 0, 'Instagram account'));
-  return parts.join(' · ');
-}
 
 const needAttentionText = (n) => `${n} ${n === 1 ? 'needs' : 'need'} attention`;
 
@@ -178,7 +148,7 @@ function HealthCard({ connection, setupReason, syncing }) {
   const reason = connection.statusReason;
   // The status reason is shown on its own; its attention entry would only repeat it.
   const attention = (connection.attention ?? []).filter((item) => item.message !== reason);
-  const total = accountTotal(connection);
+  const total = loginAccountTotal(connection);
   const accountsNeedingAttention = connection.accountCounts?.needsAttention ?? 0;
   const { lastError } = connection;
   const healthy = active && attention.length === 0 && accountsNeedingAttention === 0;
@@ -472,7 +442,7 @@ function AccountsCard({ accounts, connection, slug, selectHref }) {
         title="Accounts from this login"
         description={
           accounts.length > 0
-            ? `${destinationsText(connection)}${needAttention > 0 ? ` · ${needAttentionText(needAttention)}` : ''}`
+            ? `${loginDestinationsText(connection)}${needAttention > 0 ? ` · ${needAttentionText(needAttention)}` : ''}`
             : undefined
         }
         action={active && accounts.length > 0 ? chooseLink : undefined}
@@ -652,11 +622,11 @@ function ConnectionDetail({ workspace, connectionId }) {
     (disconnected
       ? 'This login is disconnected and its access tokens were erased. Reconnect it before syncing.'
       : null);
-  const reconnectFirst = wantsReconnect(connection);
+  const reconnectFirst = loginWantsReconnect(connection);
   const syncing = sync.pending.syncConnectionId === connection.id;
   const reconnecting = sync.pending.reconnectConnectionId === connection.id;
   const selectHref = `${loginsUrl}/${connection.id}/select`;
-  const total = accountTotal(connection);
+  const total = loginAccountTotal(connection);
   const removing = confirming === 'remove';
   const mutation = removing ? remove : disconnect;
 
@@ -703,7 +673,7 @@ function ConnectionDetail({ workspace, connectionId }) {
         description={
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <ConnectionStatusBadge status={connection.status} reason={connection.statusReason} />
-            <span>{total > 0 ? destinationsText(connection) : 'No accounts added yet'}</span>
+            <span>{total > 0 ? loginDestinationsText(connection) : 'No accounts added yet'}</span>
           </span>
         }
         actions={

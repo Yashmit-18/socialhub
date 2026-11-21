@@ -48,7 +48,10 @@ import {
   CONNECTION_TONE,
   PROVIDER_LABELS,
   connectionExpiry,
-  needsReconnect,
+  isProviderConfigured,
+  loginAccountTotal,
+  loginDestinationsText,
+  loginWantsReconnect,
 } from '../../../lib/meta.js';
 import { useMetaIntegration, useSocialConnections } from '../../../lib/queries.js';
 import { cn, formatDate, timeAgo } from '../../../lib/utils.js';
@@ -64,17 +67,6 @@ const SYNC_POLL_MS = 5000;
 
 const PROVIDERS = [SOCIAL_PROVIDERS.FACEBOOK_LOGIN, SOCIAL_PROVIDERS.INSTAGRAM_LOGIN];
 
-const PROVIDER_CONFIG_KEYS = {
-  [SOCIAL_PROVIDERS.FACEBOOK_LOGIN]: 'facebook',
-  [SOCIAL_PROVIDERS.INSTAGRAM_LOGIN]: 'instagram',
-};
-
-/** Problems of a login that still works where authorizing again is the fix. */
-const RECONNECT_SOON = new Set([
-  ACCOUNT_ATTENTION.EXPIRING_SOON,
-  ACCOUNT_ATTENTION.MISSING_PERMISSIONS,
-]);
-
 const LOGIN_POINTS = [
   'One Facebook login can bring many Facebook Pages, together with the Instagram accounts linked to them. You choose which ones to add.',
   'An Instagram login brings its own Instagram professional account.',
@@ -83,41 +75,6 @@ const LOGIN_POINTS = [
 
 const loginName = (connection) => connection.displayName ?? 'Unnamed login';
 const providerLabel = (provider) => PROVIDER_LABELS[provider] ?? 'Meta';
-
-/**
- * Whether the server has Meta app credentials for a provider (GET /integrations/meta). When
- * that answer is unavailable the controls stay enabled: the server remains authoritative and
- * answers META_NOT_CONFIGURED, which is then shown as is.
- */
-function isProviderConfigured(integration, provider) {
-  if (!integration) return true;
-  return Boolean(integration[PROVIDER_CONFIG_KEYS[provider]]?.configured);
-}
-
-function wantsReconnect(connection) {
-  return (
-    needsReconnect(connection.status) ||
-    (connection.attention ?? []).some((item) => RECONNECT_SOON.has(item.code))
-  );
-}
-
-function accountTotal(connection) {
-  const counts = connection.accountCounts;
-  if (!counts) return connection.accountCount ?? 0;
-  return (counts.facebookPages ?? 0) + (counts.instagramAccounts ?? 0);
-}
-
-/** "2 Facebook Pages · 1 Instagram account": one Facebook login can bring many destinations. */
-function destinationsText(connection) {
-  const counts = connection.accountCounts;
-  if (!counts) return plural(connection.accountCount ?? 0, 'account');
-  const parts = [];
-  if (connection.provider !== SOCIAL_PROVIDERS.INSTAGRAM_LOGIN || counts.facebookPages > 0) {
-    parts.push(plural(counts.facebookPages ?? 0, 'Facebook Page'));
-  }
-  parts.push(plural(counts.instagramAccounts ?? 0, 'Instagram account'));
-  return parts.join(' · ');
-}
 
 function disconnectDescription(total) {
   const accounts =
@@ -308,7 +265,7 @@ function LoginCard({
     (item) =>
       item.message !== reason && !(expiry?.warn && item.code === ACCOUNT_ATTENTION.EXPIRING_SOON),
   );
-  const total = accountTotal(connection);
+  const total = loginAccountTotal(connection);
   const needAttention = connection.accountCounts?.needsAttention ?? 0;
   // A missing required permission is already an attention item (with Reconnect as the fix).
   const missingForPublishing =
@@ -317,7 +274,7 @@ function LoginCard({
       : [];
   const lastOutcome = connection.lastSyncOutcome;
   const lastAttemptFailed = Boolean(lastOutcome) && lastOutcome !== SYNC_OUTCOMES.SUCCESS;
-  const reconnectFirst = wantsReconnect(connection);
+  const reconnectFirst = loginWantsReconnect(connection);
   const setupReason = providerReady
     ? null
     : `Sync and reconnect are unavailable until ${provider} Login is configured on this server.`;
@@ -368,7 +325,7 @@ function LoginCard({
             <Layers className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>
               <span className="font-medium text-slate-700 dark:text-slate-200">
-                {total > 0 ? destinationsText(connection) : 'No accounts added yet'}
+                {total > 0 ? loginDestinationsText(connection) : 'No accounts added yet'}
               </span>
               {needAttention > 0 && (
                 <span className="text-amber-700 dark:text-amber-400">
@@ -490,6 +447,27 @@ function LoginCard({
         <ButtonLink size="sm" variant="ghost" to={detailsHref} aria-describedby={nameId}>
           View details <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </ButtonLink>
+        {/* The tabs filtered to this login: one login can manage many Pages. */}
+        {(connection.accountCounts?.facebookPages ?? 0) > 0 && (
+          <ButtonLink
+            size="sm"
+            variant="ghost"
+            to={`/w/${slug}/accounts/pages?connectionId=${connection.id}`}
+            aria-describedby={nameId}
+          >
+            View Pages
+          </ButtonLink>
+        )}
+        {(connection.accountCounts?.instagramAccounts ?? 0) > 0 && (
+          <ButtonLink
+            size="sm"
+            variant="ghost"
+            to={`/w/${slug}/accounts/instagram?connectionId=${connection.id}`}
+            aria-describedby={nameId}
+          >
+            View Instagram accounts
+          </ButtonLink>
+        )}
         <div className="ml-auto">
           <Menu
             trigger={({ toggle, props }) => (
@@ -684,7 +662,7 @@ function LoginsManager({ workspace }) {
   const removing = pendingAction?.type === 'remove';
   const mutation = removing ? remove : disconnect;
   const targetName = target ? loginName(target) : '';
-  const targetTotal = target ? accountTotal(target) : 0;
+  const targetTotal = target ? loginAccountTotal(target) : 0;
 
   const closeDialog = () => {
     if (disconnect.isPending || remove.isPending) return;
