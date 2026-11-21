@@ -19,7 +19,9 @@ import {
   validationError,
 } from '../../lib/errors.js';
 import {
+  AccountLabel,
   AccountPreset,
+  AccountStar,
   ActivityLog,
   ContentPackage,
   Invitation,
@@ -239,6 +241,8 @@ const WORKSPACE_SCOPED_MODELS = [
   ContentPackage,
   AccountPreset,
   MediaAsset,
+  AccountLabel,
+  AccountStar,
 ];
 
 export async function deleteWorkspace(workspace, actor, { confirmation, password }) {

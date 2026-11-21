@@ -20,11 +20,13 @@ import {
   countByPlatform,
   filterAccounts,
   platformsOf,
+  quickSelectGroups,
 } from '../../model/accounts.js';
 import { AccountAvatar } from '../shared/AccountAvatar.jsx';
 import { AccountOption } from './AccountOption.jsx';
 import { AccountPresets } from './AccountPresets.jsx';
 import { PlatformFilter } from './PlatformFilter.jsx';
+import { QuickSelect } from './QuickSelect.jsx';
 
 const GROUP_LABELS = {
   [SOCIAL_PLATFORMS.FACEBOOK_PAGE]: 'Facebook Pages',
@@ -310,6 +312,12 @@ export function AccountSelector({
               presets={presets}
             />
           </div>
+          <QuickSelect
+            groups={quickSelectGroups(accounts)}
+            selectedSet={selectedSet}
+            onSelect={onSelect}
+            onDeselect={onDeselect}
+          />
         </div>
 
         <div className="mt-3 flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-slate-100 px-5 py-1.5 sm:px-6 dark:border-white/5">

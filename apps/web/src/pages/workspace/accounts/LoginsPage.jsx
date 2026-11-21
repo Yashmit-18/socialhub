@@ -108,8 +108,14 @@ function When({ value }) {
   );
 }
 
-const controlClass =
-  'h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-xs transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200';
+/* One colour set per state: a later border colour class does not override an earlier one. */
+const controlBase =
+  'h-9 rounded-xl border px-3 text-xs font-medium shadow-xs transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15';
+const NEUTRAL =
+  'border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200';
+const SELECTED =
+  'border-brand-300 bg-white text-slate-700 dark:border-brand-400/40 dark:bg-slate-900/60 dark:text-slate-200';
+const controlClass = cn(controlBase, NEUTRAL);
 
 function SearchBox({ value, onChange }) {
   const id = useId();
@@ -160,7 +166,7 @@ function FilterSelect({ label, value, onChange, options }) {
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={cn(controlClass, 'pr-8', value && 'border-brand-300 dark:border-brand-400/40')}
+      className={cn(controlBase, value ? SELECTED : NEUTRAL, 'pr-8')}
     >
       {options.map(([optionValue, optionLabel]) => (
         <option key={optionValue} value={optionValue}>

@@ -670,6 +670,9 @@ describe('workspace account listing (simulated Meta)', () => {
       lastSyncedAt: expect.any(String),
       followersCount: null,
       followersCountUpdatedAt: null,
+      labels: [],
+      starred: false,
+      hasNotes: false,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
       connection: loginSummary(portfolio.connections.alice, 'Alice', ALICE_PICTURE),
@@ -864,24 +867,32 @@ describe('workspace account listing (simulated Meta)', () => {
       status: { ACTIVE: 5, EXPIRED: 1 },
       readiness: { READY: 4, RESTRICTED: 1, UNAVAILABLE: 1 },
       attention: 2,
+      labels: {},
+      starred: 0,
     });
     expect((await query({ platform: 'INSTAGRAM_ACCOUNT' })).body.facets).toEqual({
       platform,
       status: { ACTIVE: 2 },
       readiness: { READY: 2 },
       attention: 0,
+      labels: {},
+      starred: 0,
     });
     expect((await query({ platform: 'FACEBOOK_PAGE' })).body.facets).toEqual({
       platform,
       status: { ACTIVE: 3, EXPIRED: 1 },
       readiness: { READY: 2, RESTRICTED: 1, UNAVAILABLE: 1 },
       attention: 2,
+      labels: {},
+      starred: 0,
     });
     expect((await query({ connectionId: portfolio.connections.alice })).body.facets).toEqual({
       platform,
       status: { ACTIVE: 4 },
       readiness: { READY: 3, RESTRICTED: 1 },
       attention: 1,
+      labels: {},
+      starred: 0,
     });
     // Status, readiness, attention and search narrow the items but never the facets.
     const narrowed = await query({ readiness: 'READY', attention: 'false', q: 'acme' });
@@ -983,7 +994,7 @@ describe('account listing query validation', () => {
       page: 1,
       limit: 500,
       pages: 1,
-      facets: { platform: {}, status: {}, readiness: {}, attention: 0 },
+      facets: { platform: {}, status: {}, readiness: {}, attention: 0, labels: {}, starred: 0 },
       truncated: false,
     });
   });
@@ -1742,7 +1753,7 @@ describe('role-based account visibility (simulated Meta)', () => {
         items: [],
         total: 0,
         pages: 1,
-        facets: { platform: {}, status: {}, readiness: {}, attention: 0 },
+        facets: { platform: {}, status: {}, readiness: {}, attention: 0, labels: {}, starred: 0 },
       });
       const summary = await accountSummary(member.token, wsId);
       expect(summary.body).toMatchObject({ accounts: NO_ACCOUNTS, connections: null });
@@ -1782,6 +1793,8 @@ describe('role-based account visibility (simulated Meta)', () => {
       status: { ACTIVE: 2 },
       readiness: { READY: 1, RESTRICTED: 1 },
       attention: 1,
+      labels: {},
+      starred: 0,
     });
     // The Instagram account's Page is named but cannot be opened by this editor.
     expect(byName(list)['Acme Photos'].linkedPage).toEqual({

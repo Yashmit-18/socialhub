@@ -240,6 +240,50 @@ describe('AccountSelector — choosing accounts', () => {
 
 /* ---------------------------------------------------------------- states */
 
+describe('AccountSelector — quick select by star and label', () => {
+  const CLIENT = { id: 'l1', name: 'Client A', color: 'sky' };
+  const labelled = () =>
+    normalizeAccounts([
+      fbPage({ labels: [CLIENT], starred: true }),
+      fbPage({ id: 'acc-fb-2', externalId: '5002', name: 'Acme Outlet', category: 'Shopping' }),
+      igAccount({ labels: [CLIENT] }),
+    ]);
+
+  it('adds a label’s accounts to the selection and removes them again, keeping the rest', async () => {
+    const user = userEvent.setup();
+    const { selectedIds } = renderSelector({ accounts: labelled(), selected: ['acc-fb-2'] });
+    const group = screen.getByRole('group', { name: 'Quick select' });
+    const client = within(group).getByRole('button', { name: /Client A/ });
+    expect(client).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(client);
+    expect(selectedIds()).toEqual(['acc-fb-2', 'acc-fb-1', 'acc-ig-1']);
+    expect(client).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(client);
+    expect(selectedIds()).toEqual(['acc-fb-2']);
+  });
+
+  it('selects the person’s starred accounts and shows labels and stars on the rows', async () => {
+    const user = userEvent.setup();
+    const { selectedIds } = renderSelector({ accounts: labelled() });
+    await user.click(
+      within(screen.getByRole('group', { name: 'Quick select' })).getByRole('button', {
+        name: /Starred/,
+      }),
+    );
+    expect(selectedIds()).toEqual(['acc-fb-1']);
+    const row = checkbox('Acme Store (Facebook)').closest('label');
+    expect(within(row).getByRole('img', { name: 'Starred' })).toBeInTheDocument();
+    expect(within(row).getByText('Client A')).toBeInTheDocument();
+  });
+
+  it('shows no quick select when no account is starred or labelled', () => {
+    renderSelector();
+    expect(screen.queryByRole('group', { name: 'Quick select' })).not.toBeInTheDocument();
+  });
+});
+
 describe('AccountSelector — loading, error and empty states', () => {
   it('shows four skeleton rows while accounts load', () => {
     renderSelector({ status: 'loading', accounts: [], selected: ['acc-fb-1'] });

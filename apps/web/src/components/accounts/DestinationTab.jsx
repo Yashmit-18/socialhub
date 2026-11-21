@@ -1,12 +1,15 @@
 /**
- * Shared body of the Facebook Pages and Instagram tabs: search, filters, the accounts table
- * with row and bulk actions (refresh, reconnect, team access, removal), pagination and the
- * readiness legend. Readiness always comes from the server's computed `health`.
+ * Shared body of the All accounts, Facebook Pages and Instagram tabs: search, filters, the
+ * accounts table with row and bulk actions (refresh, reconnect, labels, team access, removal),
+ * stars, CSV export, pagination and the readiness legend. Readiness always comes from the
+ * server's computed `health`.
  */
 import { LIMITS, PERMISSIONS, PUBLISHING_STATUS, SOCIAL_PROVIDERS } from '@socialhub/shared';
 import {
   AlertTriangle,
   ChevronDown,
+  Copy,
+  ExternalLink,
   Eye,
   Info,
   KeyRound,
@@ -14,6 +17,8 @@ import {
   MoreHorizontal,
   RefreshCw,
   SearchX,
+  Settings2,
+  Tag,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -22,6 +27,9 @@ import { Link, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { ReadinessBadge } from './AccountBadges.jsx';
 import { AccountFilters } from './AccountFilters.jsx';
+import { ApplyLabelsDialog } from './ApplyLabelsDialog.jsx';
+import { ExportAccountsButton } from './ExportAccountsButton.jsx';
+import { ManageLabelsDialog } from './ManageLabelsDialog.jsx';
 import { AccountsTable } from './AccountsTable.jsx';
 import { BulkAccessDialog } from './BulkAccessDialog.jsx';
 import { BulkActionBar } from './BulkActionBar.jsx';
@@ -37,8 +45,14 @@ import { useRemoveAccount, useRemoveAccounts } from '../../hooks/useAccountActio
 import { useAccountQueryState } from '../../hooks/useAccountQueryState.js';
 import { useStartAuthorization } from '../../hooks/useStartAuthorization.js';
 import { useSyncFlow } from '../../hooks/useSyncFlow.jsx';
+import { copyText, platformSiteName, platformUrl } from '../../lib/accountOrganization.js';
 import { READINESS_HINTS, needsReconnect } from '../../lib/meta.js';
-import { useAccountList, useMetaIntegration, useSocialConnections } from '../../lib/queries.js';
+import {
+  useAccountLabels,
+  useAccountList,
+  useMetaIntegration,
+  useSocialConnections,
+} from '../../lib/queries.js';
 
 const PAGE_SIZE = 25;
 const SETUP_HINT = 'Meta setup required';
@@ -119,10 +133,12 @@ function RowActions({
   onRefresh,
   onReconnect,
   onRemove,
+  onLabels,
 }) {
   const navigate = useNavigate();
   const connection = account.connection;
   const reconnectable = Boolean(connection) && needsReconnect(account.health?.connectionStatus);
+  const externalUrl = platformUrl(account);
   return (
     <div className="flex items-center justify-end gap-1.5">
       {refreshing && <Spinner label={`Refreshing ${account.name}`} />}
@@ -155,6 +171,41 @@ function RowActions({
             >
               View details
             </MenuItem>
+            {externalUrl && (
+              <MenuItem
+                icon={ExternalLink}
+                onClick={() => {
+                  close();
+                  window.open(externalUrl, '_blank', 'noopener,noreferrer');
+                }}
+              >
+                Open on {platformSiteName(account)}
+              </MenuItem>
+            )}
+            <MenuItem
+              icon={Copy}
+              onClick={async () => {
+                close();
+                if (await copyText(account.externalId)) toast.success('Meta ID copied');
+                else
+                  toast.error(
+                    `Copying was blocked by the browser. The Meta ID is ${account.externalId}.`,
+                  );
+              }}
+            >
+              Copy Meta ID
+            </MenuItem>
+            {canManage && (
+              <MenuItem
+                icon={Tag}
+                onClick={() => {
+                  close();
+                  onLabels(account);
+                }}
+              >
+                Labels…
+              </MenuItem>
+            )}
             {canManage && connection && (
               <>
                 <MenuItem
@@ -241,12 +292,18 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
   const start = useStartAuthorization(workspace.id);
   const removeOne = useRemoveAccount(workspace.id);
   const removeMany = useRemoveAccounts(workspace.id);
+  const labels = useAccountLabels(workspace.id);
 
   // Selected destinations by id (kept while paging or filtering), with the row data last seen.
   const [selected, setSelected] = useState(() => new Map());
   const [removing, setRemoving] = useState(null);
   const [confirmingBulkRemove, setConfirmingBulkRemove] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
+  // Accounts whose labels are being edited (one row, or the selection), and the label manager.
+  const [labelling, setLabelling] = useState(null);
+  const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
+  const closeLabelling = useCallback(() => setLabelling(null), []);
+  const closeManageLabels = useCallback(() => setManageLabelsOpen(false), []);
 
   const clearSelection = useCallback(() => setSelected(new Map()), []);
   const closeRemove = useCallback(() => setRemoving(null), []);
@@ -399,10 +456,15 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
 
   /* -------------------------------------------------------------------- states */
 
+  // "Nothing at all" (as opposed to "nothing matches the filters"): for a platform tab nothing
+  // of that platform, for the All accounts tab nothing of any platform.
+  const platformTotal = data?.facets?.platform
+    ? platform
+      ? (data.facets.platform[platform] ?? 0)
+      : Object.values(data.facets.platform).reduce((sum, n) => sum + n, 0)
+    : null;
   const noneAtAll =
-    Boolean(data) &&
-    data.total === 0 &&
-    (data.facets?.platform ? !(data.facets.platform[platform] > 0) : !active);
+    Boolean(data) && data.total === 0 && (platformTotal !== null ? platformTotal === 0 : !active);
   const providerReady = providers.some(configuredFor);
   const connectable = meta && {
     facebook: providers.includes(SOCIAL_PROVIDERS.FACEBOOK_LOGIN) ? meta.facebook : undefined,
@@ -447,7 +509,22 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
       onRefresh={sync.refreshAccount}
       onReconnect={sync.reconnect}
       onRemove={openRemove}
+      onLabels={(row) => setLabelling([row])}
     />
+  );
+
+  const filterActions = (
+    <>
+      <ExportAccountsButton
+        path={`/workspaces/${workspace.id}/social-accounts/export`}
+        params={params}
+      />
+      {canManage && (
+        <Button variant="secondary" size="sm" onClick={() => setManageLabelsOpen(true)}>
+          <Settings2 className="h-3.5 w-3.5" aria-hidden="true" /> Manage labels
+        </Button>
+      )}
+    </>
   );
 
   return (
@@ -488,7 +565,10 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
               active={active}
               facets={data?.facets}
               connections={logins}
+              labels={labels.data?.items}
+              showPlatform={!platform}
               searchPlaceholder={copy.searchPlaceholder}
+              actions={filterActions}
             />
             <ReadinessLegend entries={legend} />
 
@@ -530,6 +610,8 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
                   hrefFor={hrefFor}
                   identityHrefFor={canManage ? loginHrefFor : undefined}
                   pageHrefFor={pageHrefFor}
+                  star
+                  onLabelClick={(label) => update({ label: label.id })}
                 />
                 {data && items.length > 0 && (
                   <Pagination
@@ -557,6 +639,14 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
             onClick={() => sync.refreshAccounts(ids, { onSuccess: clearSelection })}
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh selected
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={overBulkLimit}
+            onClick={() => setLabelling(selectedAccounts)}
+          >
+            <Tag className="h-3.5 w-3.5" aria-hidden="true" /> Labels
           </Button>
           {canManageAccess && (
             <Button
@@ -622,6 +712,21 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
           onDone={clearSelection}
           accountIds={ids}
         />
+      )}
+      {canManage && (
+        <>
+          <ApplyLabelsDialog
+            open={Boolean(labelling)}
+            accounts={labelling ?? []}
+            onClose={closeLabelling}
+            onDone={labelling && labelling.length > 1 ? clearSelection : undefined}
+            onManage={() => {
+              setLabelling(null);
+              setManageLabelsOpen(true);
+            }}
+          />
+          <ManageLabelsDialog open={manageLabelsOpen} onClose={closeManageLabels} />
+        </>
       )}
       {sync.dialog}
     </div>

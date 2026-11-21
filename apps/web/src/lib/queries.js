@@ -26,6 +26,7 @@ export const keys = {
   accountSummary: (id) => ['workspace', id, 'social-accounts', 'summary'],
   accountDetail: (id, accountId) => ['workspace', id, 'social-accounts', 'detail', accountId],
   accountAccess: (id, accountId) => ['workspace', id, 'social-accounts', 'access', accountId],
+  accountLabels: (id) => ['workspace', id, 'social-accounts', 'labels'],
   socialConnections: (id) => ['workspace', id, 'social-connections'],
   connectionDetail: (id, connectionId) => [
     'workspace',
@@ -141,6 +142,18 @@ export function useAccountSummary(workspaceId) {
   return useQuery({
     queryKey: keys.accountSummary(workspaceId),
     queryFn: () => api.get(`/workspaces/${workspaceId}/social-accounts/summary`),
+  });
+}
+
+/**
+ * Workspace labels with how many of the member's accounts carry each:
+ * `{ items: [{ id, name, color, accountCount }], limit }`.
+ */
+export function useAccountLabels(workspaceId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: keys.accountLabels(workspaceId),
+    queryFn: () => api.get(`/workspaces/${workspaceId}/account-labels`),
+    enabled: enabled && Boolean(workspaceId),
   });
 }
 

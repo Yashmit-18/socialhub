@@ -14,6 +14,8 @@ import {
   ArrowLeft,
   CircleCheck,
   CircleX,
+  Copy,
+  ExternalLink,
   HeartPulse,
   History,
   Info,
@@ -23,6 +25,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   SearchX,
+  Tag,
   Trash2,
   UserRound,
   Users,
@@ -39,6 +42,10 @@ import {
   IdentityPicture,
   ReadinessBadge,
 } from '../../../components/accounts/AccountBadges.jsx';
+import { LabelChips, StarButton } from '../../../components/accounts/AccountLabels.jsx';
+import { AccountNotesCard } from '../../../components/accounts/AccountNotesCard.jsx';
+import { ApplyLabelsDialog } from '../../../components/accounts/ApplyLabelsDialog.jsx';
+import { ManageLabelsDialog } from '../../../components/accounts/ManageLabelsDialog.jsx';
 import { MetaSetupNotice } from '../../../components/accounts/MetaSetupNotice.jsx';
 import { SyncRunList } from '../../../components/accounts/SyncRunList.jsx';
 import { PageHeader } from '../../../components/layout/AppShell.jsx';
@@ -53,6 +60,7 @@ import { Menu, MenuItem, MenuSeparator } from '../../../components/ui/Menu.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
 import { useRemoveAccount, useUpdateAccountMembers } from '../../../hooks/useAccountActions.js';
 import { useSyncFlow } from '../../../hooks/useSyncFlow.jsx';
+import { copyText, platformSiteName, platformUrl } from '../../../lib/accountOrganization.js';
 import {
   PLATFORM_LABELS,
   PROVIDER_LABELS,
@@ -188,7 +196,7 @@ function Note({ id, children, className }) {
 
 /* --------------------------------------------------------------------- header */
 
-function AccountHeader({ account, actions }) {
+function AccountHeader({ account, actions, onEditLabels }) {
   const health = account.health ?? {};
   const secondary = [account.username && `@${account.username}`, account.category]
     .filter(Boolean)
@@ -212,12 +220,69 @@ function AccountHeader({ account, actions }) {
                 />
                 <ReadinessBadge readiness={health.readiness} reasons={health.readinessReasons} />
               </span>
+              {(account.labels?.length > 0 || onEditLabels) && (
+                <span className="flex flex-wrap items-center gap-2">
+                  <LabelChips labels={account.labels} max={20} size="sm" />
+                  {onEditLabels && (
+                    <button
+                      type="button"
+                      onClick={onEditLabels}
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-brand-600 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 dark:text-brand-300 dark:ring-brand-400/30 dark:hover:bg-brand-500/10"
+                    >
+                      <Tag className="h-3 w-3" aria-hidden="true" />
+                      {account.labels?.length ? 'Edit labels' : 'Add labels'}
+                    </button>
+                  )}
+                </span>
+              )}
             </span>
           }
           actions={actions}
         />
       </div>
     </div>
+  );
+}
+
+/** Star, open on Facebook/Instagram and copy the Meta ID: available to everyone who can see it. */
+function QuickActions({ account }) {
+  const url = platformUrl(account);
+  return (
+    <>
+      <StarButton
+        account={account}
+        size="md"
+        className="rounded-xl border border-slate-200 dark:border-white/10"
+      />
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          <ExternalLink className="h-4 w-4" aria-hidden="true" /> Open on{' '}
+          {platformSiteName(account)}
+          <span className="sr-only">(opens in a new tab)</span>
+        </a>
+      )}
+      <Button
+        variant="secondary"
+        size="icon"
+        className="h-10 w-10"
+        aria-label="Copy Meta ID"
+        title={`Copy Meta ID ${account.externalId}`}
+        onClick={async () => {
+          if (await copyText(account.externalId)) toast.success('Meta ID copied');
+          else
+            toast.error(
+              `Copying was blocked by the browser. The Meta ID is ${account.externalId}.`,
+            );
+        }}
+      >
+        <Copy className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </>
   );
 }
 
@@ -1019,6 +1084,8 @@ function AccountView({ detail }) {
   const sync = useSyncFlow(workspace.id);
   const remove = useRemoveAccount(workspace.id);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [labelsOpen, setLabelsOpen] = useState(false);
+  const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
   const blockedId = useId();
 
   const { account, connection } = detail;
@@ -1061,18 +1128,22 @@ function AccountView({ detail }) {
       <BackLink to={tab.to}>{tab.label}</BackLink>
       <AccountHeader
         account={account}
+        onEditLabels={manage ? () => setLabelsOpen(true) : undefined}
         actions={
-          manage && (
-            <HeaderActions
-              account={account}
-              connection={connection}
-              sync={sync}
-              blocked={blocked}
-              blockedId={blockedId}
-              loginUrl={loginUrl}
-              onRemove={() => setConfirmingRemove(true)}
-            />
-          )
+          <>
+            <QuickActions account={account} />
+            {manage && (
+              <HeaderActions
+                account={account}
+                connection={connection}
+                sync={sync}
+                blocked={blocked}
+                blockedId={blockedId}
+                loginUrl={loginUrl}
+                onRemove={() => setConfirmingRemove(true)}
+              />
+            )}
+          </>
         }
       />
 
@@ -1088,6 +1159,7 @@ function AccountView({ detail }) {
       {/* grid-cols-1 (minmax(0, 1fr)) keeps long unbreakable content from widening the column. */}
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <HealthCard account={account} provider={provider} />
+        <AccountNotesCard accountId={account.id} notes={detail.notes} canEdit={manage} />
         <InfoCard account={account} provider={provider} />
         <LoginCard
           detail={detail}
@@ -1124,6 +1196,20 @@ function AccountView({ detail }) {
         onConfirm={confirmRemove}
         onClose={closeRemove}
       />
+      {manage && (
+        <>
+          <ApplyLabelsDialog
+            open={labelsOpen}
+            accounts={[account]}
+            onClose={() => setLabelsOpen(false)}
+            onManage={() => {
+              setLabelsOpen(false);
+              setManageLabelsOpen(true);
+            }}
+          />
+          <ManageLabelsDialog open={manageLabelsOpen} onClose={() => setManageLabelsOpen(false)} />
+        </>
+      )}
       {sync.dialog}
     </>
   );

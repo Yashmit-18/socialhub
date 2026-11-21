@@ -244,6 +244,10 @@ export const socialAccountQuerySchema = z.strictObject({
   readiness: z.enum(Object.values(PUBLISHING_STATUS)).optional(),
   attention: booleanQuery.optional(),
   connectionId: objectIdSchema.optional(),
+  /** Only destinations carrying this workspace label. */
+  label: objectIdSchema.optional(),
+  /** Only destinations the requesting person starred (true) or did not star (false). */
+  starred: booleanQuery.optional(),
   sort: z.enum(ACCOUNT_SORTS).default('name'),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   limit: z.coerce

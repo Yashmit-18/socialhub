@@ -1,5 +1,5 @@
 import { SOCIAL_PLATFORMS, SOCIAL_PROVIDERS } from '@socialhub/shared';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, StickyNote } from 'lucide-react';
 import { Link } from 'react-router';
 import {
   ATTENTION_LABELS,
@@ -16,6 +16,7 @@ import {
   CreateContentBadge,
   ReadinessBadge,
 } from './AccountBadges.jsx';
+import { LabelChips, StarButton } from './AccountLabels.jsx';
 
 /*
  * Column registry. Pages pick columns by id, e.g.
@@ -27,7 +28,14 @@ const COLUMNS = {
     header: 'Account',
     sortKey: 'name',
     defaultDirection: 'asc',
-    cell: (a, ctx) => <AccountCell account={a} href={ctx.hrefFor?.(a)} />,
+    cell: (a, ctx) => (
+      <AccountCell
+        account={a}
+        href={ctx.hrefFor?.(a)}
+        star={ctx.star}
+        onLabelClick={ctx.onLabelClick}
+      />
+    ),
   },
   platform: {
     header: 'Platform',
@@ -75,6 +83,8 @@ const COLUMNS = {
   },
   followers: {
     header: 'Followers',
+    sortKey: 'followers',
+    defaultDirection: 'desc',
     // Per-account counts are secondary: the dashboards show the combined and per-platform totals.
     hide: 'wide',
     // null = Meta has not returned a count: shown as "—", never as 0.
@@ -129,7 +139,7 @@ const HIDE_BELOW = {
   wide: 'hidden min-[1360px]:table-cell',
 };
 
-function AccountCell({ account, href }) {
+function AccountCell({ account, href, star = false, onLabelClick }) {
   const secondary =
     account.platform === SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT
       ? account.username && `@${account.username}`
@@ -138,19 +148,30 @@ function AccountCell({ account, href }) {
     <div className="flex min-w-0 items-center gap-3">
       <AccountPicture account={account} size="sm" />
       <div className="min-w-0">
-        {href ? (
-          <Link
-            to={href}
-            className="block truncate text-sm font-semibold text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
-          >
-            {account.name}
-          </Link>
-        ) : (
-          <span className="block truncate text-sm font-semibold">{account.name}</span>
-        )}
+        <span className="flex min-w-0 items-center gap-1">
+          {href ? (
+            <Link
+              to={href}
+              className="truncate text-sm font-semibold text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
+            >
+              {account.name}
+            </Link>
+          ) : (
+            <span className="truncate text-sm font-semibold">{account.name}</span>
+          )}
+          {account.hasNotes && (
+            <StickyNote
+              className="h-3 w-3 shrink-0 text-slate-400"
+              aria-label="Has team notes"
+              role="img"
+            />
+          )}
+          {star && <StarButton account={account} className="-my-1" />}
+        </span>
         <span className="block truncate text-xs text-muted">
           {secondary || PLATFORM_LABELS[account.platform]}
         </span>
+        <LabelChips labels={account.labels} onLabelClick={onLabelClick} className="mt-1" />
       </div>
     </div>
   );
@@ -265,11 +286,13 @@ export function AccountsTable({
   hrefFor,
   identityHrefFor,
   pageHrefFor,
+  star = false,
+  onLabelClick,
 }) {
   const defs = columns.map((col) =>
     typeof col === 'string' ? { id: col, ...COLUMNS[col] } : { ...COLUMNS[col.id], ...col },
   );
-  const ctx = { hrefFor, identityHrefFor, pageHrefFor };
+  const ctx = { hrefFor, identityHrefFor, pageHrefFor, star, onLabelClick };
   const selected = selectedIds ?? new Set();
   const pageIds = items.map((a) => a.id);
   const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;

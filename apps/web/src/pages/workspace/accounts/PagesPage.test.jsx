@@ -403,7 +403,15 @@ describe('Facebook Pages tab', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['View details', 'Refresh', 'View login', 'Remove from workspace']);
+    ).toEqual([
+      'View details',
+      'Open on Facebook',
+      'Copy Meta ID',
+      'Labels…',
+      'Refresh',
+      'View login',
+      'Remove from workspace',
+    ]);
     await ue.click(within(menu).getByRole('menuitem', { name: 'Refresh' }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Acme Store refreshed'));
     expect(mock.count(`POST /workspaces/w1/social-accounts/${STORE}/refresh`)).toBe(1);
@@ -457,7 +465,7 @@ describe('Facebook Pages tab', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['View details']);
+    ).toEqual(['View details', 'Open on Facebook', 'Copy Meta ID']);
     expect(screen.queryByText('Remove from workspace')).not.toBeInTheDocument();
     expect(mock.count('GET /workspaces/w1/social-connections')).toBe(0);
 

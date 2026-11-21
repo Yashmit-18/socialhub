@@ -153,6 +153,76 @@ export async function request(path, { auth = true, ...options } = {}) {
   }
 }
 
+/** File name from a Content-Disposition header (`attachment; filename="x.csv"`), if any. */
+export function fileNameFrom(disposition) {
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition ?? '');
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+/**
+ * Authenticated file download (for example the CSV export). Resolves to `{ blob, fileName }`;
+ * errors are ApiErrors exactly like JSON requests (the API answers errors as JSON).
+ */
+async function sendDownload(path, { query, token, signal } = {}) {
+  const headers = { Accept: 'text/csv, application/json', [CLIENT_HEADER]: 'web' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res;
+  try {
+    res = await fetch(buildUrl(path, query), { headers, credentials: 'include', signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new ApiError(
+      0,
+      'NETWORK_ERROR',
+      'Cannot reach SocialHub. Check your connection and try again.',
+    );
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    const error = data?.error ?? {};
+    throw new ApiError(
+      res.status,
+      error.code ?? 'HTTP_ERROR',
+      error.message ?? `Request failed (${res.status})`,
+      error.details,
+      error.requestId,
+    );
+  }
+  return {
+    blob: await res.blob(),
+    fileName: fileNameFrom(res.headers.get('Content-Disposition')),
+  };
+}
+
+/** sendDownload with the same transparent token refresh as request(). */
+export async function download(path, options = {}) {
+  if (!accessToken) {
+    try {
+      await refreshSession();
+    } catch (err) {
+      if (err.status === 401) emitSessionExpired();
+      throw err;
+    }
+  }
+  try {
+    return await sendDownload(path, { ...options, token: accessToken });
+  } catch (err) {
+    if (err.status !== 401 || !RETRYABLE_AUTH_CODES.has(err.code)) throw err;
+    try {
+      await refreshSession();
+    } catch (refreshErr) {
+      if (refreshErr.status === 401) emitSessionExpired();
+      throw refreshErr;
+    }
+    return sendDownload(path, { ...options, token: accessToken });
+  }
+}
+
 export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body }),

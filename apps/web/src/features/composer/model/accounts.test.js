@@ -14,6 +14,7 @@ import {
   normalizeAccount,
   normalizeAccounts,
   platformsOf,
+  quickSelectGroups,
 } from './accounts.js';
 
 const FB = 'FACEBOOK_PAGE';
@@ -40,7 +41,28 @@ describe('normalizeAccount', () => {
       attention: [],
       needsAttention: false,
       publishable: true,
+      labels: [],
+      starred: false,
     });
+  });
+
+  it('keeps the workspace labels and the person’s star, dropping malformed labels', () => {
+    const account = normalizeAccount(
+      fbPage({
+        labels: [
+          { id: 'l1', name: 'Client A', color: 'sky' },
+          { id: 'l2' },
+          null,
+          { id: 'l3', name: 'North' },
+        ],
+        starred: true,
+      }),
+    );
+    expect(account.labels).toEqual([
+      { id: 'l1', name: 'Client A', color: 'sky' },
+      { id: 'l3', name: 'North', color: 'slate' },
+    ]);
+    expect(account.starred).toBe(true);
   });
 
   it('maps a Phase 2 Instagram account with its linked Page', () => {
@@ -380,6 +402,31 @@ describe('filterAccounts', () => {
     const before = [...accounts];
     expect(filterAccounts(accounts, { query: 'zzz' })).toEqual([]);
     expect(accounts).toEqual(before);
+  });
+});
+
+describe('label search and quick-select groups', () => {
+  const CLIENT = { id: 'l1', name: 'Client A', color: 'sky' };
+  const NORTH = { id: 'l2', name: 'North', color: 'green' };
+  const accounts = normalizeAccounts([
+    fbPage({ labels: [CLIENT, NORTH], starred: true }),
+    fbPage({ id: 'acc-fb-2', name: 'Acme Outlet', labels: [NORTH] }),
+    igAccount({ labels: [CLIENT] }),
+    igAccount({ id: 'acc-ig-2', name: 'Acme Studio', starred: true }),
+  ]);
+
+  it('finds accounts by label name', () => {
+    expect(idsOf(filterAccounts(accounts, { query: 'client' }))).toEqual(['acc-fb-1', 'acc-ig-1']);
+    expect(idsOf(filterAccounts(accounts, { query: 'north', platform: IG }))).toEqual([]);
+  });
+
+  it('groups starred accounts first, then each label by name', () => {
+    expect(quickSelectGroups(accounts)).toEqual([
+      { key: 'starred', name: 'Starred', ids: ['acc-fb-1', 'acc-ig-2'] },
+      { key: 'label:l1', name: 'Client A', color: 'sky', ids: ['acc-fb-1', 'acc-ig-1'] },
+      { key: 'label:l2', name: 'North', color: 'green', ids: ['acc-fb-1', 'acc-fb-2'] },
+    ]);
+    expect(quickSelectGroups(normalizeAccounts([fbPage()]))).toEqual([]);
   });
 });
 

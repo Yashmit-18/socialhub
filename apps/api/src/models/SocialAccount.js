@@ -57,6 +57,15 @@ const socialAccountSchema = new mongoose.Schema(
     followersCount: { type: Number, min: 0 },
     /** When followersCount was read from Meta. */
     followersCountUpdatedAt: { type: Date },
+    /**
+     * Workspace labels (AccountLabel) this destination carries. SocialHub-only organisation
+     * data: never sent to Meta. Absent when the destination has no labels.
+     */
+    labels: { type: [mongoose.Schema.Types.ObjectId], ref: 'AccountLabel', default: undefined },
+    /** Team notes about this destination (SocialHub only, never sent to Meta). */
+    notes: { type: String, trim: true },
+    notesUpdatedAt: { type: Date },
+    notesUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true },
 );
@@ -71,6 +80,7 @@ socialAccountSchema.index(
 );
 socialAccountSchema.index({ workspace: 1, connection: 1 });
 socialAccountSchema.index({ workspace: 1, platform: 1, name: 1 });
+socialAccountSchema.index({ workspace: 1, labels: 1 });
 
 jsonPlugin(socialAccountSchema, { hidden: ['accessToken'] });
 

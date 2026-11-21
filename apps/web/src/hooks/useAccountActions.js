@@ -191,3 +191,76 @@ export function useReplaceMemberAccess(workspaceId) {
     onSuccess: () => invalidate(),
   });
 }
+
+/* ------------------------------------------------------------- organisation */
+
+/** Creates a workspace label: `{ name, color }`. Resolves to `{ label }`; 409 on a duplicate name. */
+export function useCreateLabel(workspaceId) {
+  const invalidate = useInvalidateAccounts(workspaceId);
+  return useMutation({
+    mutationFn: (body) => api.post(`${base(workspaceId)}/account-labels`, body),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/** Renames and/or recolours a label: `{ labelId, name?, color? }`. Resolves to `{ label }`. */
+export function useUpdateLabel(workspaceId) {
+  const invalidate = useInvalidateAccounts(workspaceId);
+  return useMutation({
+    mutationFn: ({ labelId, ...patch }) =>
+      api.patch(`${base(workspaceId)}/account-labels/${labelId}`, patch),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/** Deletes a label and takes it off every account. Resolves to `{ removedFromAccounts }`. */
+export function useDeleteLabel(workspaceId) {
+  const invalidate = useInvalidateAccounts(workspaceId);
+  return useMutation({
+    mutationFn: (labelId) => api.delete(`${base(workspaceId)}/account-labels/${labelId}`),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/**
+ * Adds and removes labels on accounts: `{ accountIds, add: [labelId], remove: [labelId] }`.
+ * Resolves to `{ updated, accounts: [{ id, labels }] }`.
+ */
+export function useAssignLabels(workspaceId) {
+  const invalidate = useInvalidateAccounts(workspaceId);
+  return useMutation({
+    mutationFn: ({ accountIds, add = [], remove = [] }) =>
+      api.post(`${base(workspaceId)}/social-accounts/labels`, { accountIds, add, remove }),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/**
+ * Stars or un-stars an account for the signed-in person only: `{ accountId, starred, workspaceId? }`
+ * (`workspaceId` for rows of the all-workspaces view). Resolves to `{ starred }`.
+ */
+export function useToggleStar(workspaceId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, starred, workspaceId: target = workspaceId }) =>
+      starred
+        ? api.put(`${base(target)}/social-accounts/${accountId}/star`)
+        : api.delete(`${base(target)}/social-accounts/${accountId}/star`),
+    onSettled: (_data, _error, { workspaceId: target = workspaceId }) =>
+      Promise.all(
+        [keys.socialAccounts(target), keys.myAccounts].map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        ),
+      ),
+  });
+}
+
+/** Replaces an account's team notes (an empty string clears them). Resolves to `{ notes }`. */
+export function useSaveNotes(workspaceId, accountId) {
+  const invalidate = useInvalidateAccounts(workspaceId);
+  return useMutation({
+    mutationFn: (notes) =>
+      api.put(`${base(workspaceId)}/social-accounts/${accountId}/notes`, { notes }),
+    onSuccess: () => invalidate(),
+  });
+}

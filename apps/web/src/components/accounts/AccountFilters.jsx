@@ -1,5 +1,5 @@
 import { CONNECTION_STATUS, PUBLISHING_STATUS, SOCIAL_PLATFORMS } from '@socialhub/shared';
-import { AlertTriangle, Search, X } from 'lucide-react';
+import { AlertTriangle, Search, Star, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { CONNECTION_TONE, PUBLISHING_TONE } from '../../lib/meta.js';
 import { cn } from '../../lib/utils.js';
@@ -13,10 +13,26 @@ const SORT_OPTIONS = [
   ['lastSyncedAt', 'Least recently synced'],
   ['-createdAt', 'Newest first'],
   ['createdAt', 'Oldest first'],
+  ['-followers', 'Most followers'],
+  ['followers', 'Fewest followers'],
 ];
 
-const controlClass =
-  'h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-xs transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200';
+/*
+ * Filter controls pick exactly one colour set. Overriding a border or background colour with a
+ * later class does not work (the stylesheet's order decides, and cn() does not merge those),
+ * which is why the active states are separate sets rather than additions.
+ */
+const controlBase =
+  'h-9 rounded-xl border px-3 text-xs font-medium shadow-xs transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15';
+const NEUTRAL =
+  'border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200';
+/** A select with a value chosen: brand border, otherwise neutral. */
+const SELECTED =
+  'border-brand-300 bg-white text-slate-700 dark:border-brand-400/40 dark:bg-slate-900/60 dark:text-slate-200';
+/** A pressed toggle ("Starred", "Needs attention"). */
+const PRESSED =
+  'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-300';
+const controlClass = cn(controlBase, NEUTRAL);
 
 /**
  * Debounced search box driven by `value` (for example the URL's `q`). What the person types is
@@ -96,14 +112,17 @@ export function SearchBox({ value, onSearch, placeholder, label, delay = 300, cl
   );
 }
 
-/** Compact labelled select used by the filter toolbars. `options` is `[[value, label], …]`. */
-export function FilterSelect({ label, value, onChange, options }) {
+/**
+ * Compact labelled select used by the filter toolbars. `options` is `[[value, label], …]`.
+ * `highlight` (default: a value is chosen) gives it the active-filter border.
+ */
+export function FilterSelect({ label, value, onChange, options, highlight = Boolean(value) }) {
   return (
     <select
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={cn(controlClass, 'pr-8', value && 'border-brand-300 dark:border-brand-400/40')}
+      className={cn(controlBase, highlight ? SELECTED : NEUTRAL, 'pr-8')}
     >
       {options.map(([optionValue, optionLabel]) => (
         <option key={optionValue} value={optionValue}>
@@ -120,7 +139,9 @@ const withCount = (label, count) => (count === undefined ? label : `${label} (${
  * Search, filter and sort controls for an account table. Works with useAccountQueryState():
  * `state`/`update`/`clear`/`active`. `facets` (from the list response) adds counts to options.
  * `connections` (managers only) enables the login filter; `workspaces` the workspace filter;
- * `showPlatform` the platform filter (pages that list both platforms).
+ * `labels` (the workspace labels) the label filter; `showPlatform` the platform filter (pages
+ * that list both platforms); `showStarred` the "Starred" toggle. `actions` are extra controls
+ * placed at the end of the row (export, manage labels).
  */
 export function AccountFilters({
   state,
@@ -130,8 +151,11 @@ export function AccountFilters({
   facets,
   connections,
   workspaces,
+  labels,
   showPlatform = false,
-  searchPlaceholder = 'Search by name, username or ID',
+  showStarred = true,
+  searchPlaceholder = 'Search by name, username, ID or label',
+  actions,
   className,
 }) {
   const statusOptions = [
@@ -149,6 +173,20 @@ export function AccountFilters({
     ]),
   ];
   const attentionOn = state.attention === 'true';
+  const starredOn = state.starred === 'true';
+  // A label in the URL that no longer exists still shows (as unknown) so it can be cleared.
+  const labelOptions = labels?.length
+    ? [
+        ['', 'All labels'],
+        ...labels.map((l) => [
+          l.id,
+          withCount(l.name, facets?.labels ? (facets.labels[l.id] ?? 0) : undefined),
+        ]),
+        ...(state.label && !labels.some((l) => l.id === state.label)
+          ? [[state.label, 'Deleted label']]
+          : []),
+      ]
+    : null;
 
   return (
     <div
@@ -220,15 +258,41 @@ export function AccountFilters({
             options={[['', 'All workspaces'], ...workspaces.map((w) => [w.id, w.name])]}
           />
         )}
+        {labelOptions && (
+          <FilterSelect
+            label="Filter by label"
+            value={state.label ?? ''}
+            onChange={(label) => update({ label })}
+            options={labelOptions}
+          />
+        )}
+        {showStarred && (
+          <button
+            type="button"
+            aria-pressed={starredOn}
+            onClick={() => update({ starred: starredOn ? '' : 'true' })}
+            className={cn(
+              controlBase,
+              starredOn ? PRESSED : NEUTRAL,
+              'inline-flex items-center gap-1.5',
+            )}
+          >
+            <Star
+              className="h-3.5 w-3.5"
+              fill={starredOn ? 'currentColor' : 'none'}
+              aria-hidden="true"
+            />
+            {withCount('Starred', facets?.starred)}
+          </button>
+        )}
         <button
           type="button"
           aria-pressed={attentionOn}
           onClick={() => update({ attention: attentionOn ? '' : 'true' })}
           className={cn(
-            controlClass,
+            controlBase,
+            attentionOn ? PRESSED : NEUTRAL,
             'inline-flex items-center gap-1.5',
-            attentionOn &&
-              'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-300',
           )}
         >
           <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
@@ -236,6 +300,8 @@ export function AccountFilters({
         </button>
         <FilterSelect
           label="Sort accounts"
+          // A sort is always set; only filters are highlighted when active.
+          highlight={false}
           value={state.sort}
           onChange={(sort) => update({ sort })}
           options={SORT_OPTIONS}
@@ -245,6 +311,7 @@ export function AccountFilters({
             Clear filters
           </Button>
         )}
+        {actions && <div className="flex flex-wrap items-center gap-2 lg:ml-auto">{actions}</div>}
       </div>
     </div>
   );

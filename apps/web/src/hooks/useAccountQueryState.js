@@ -19,6 +19,8 @@ export const ACCOUNT_FILTER_KEYS = [
   'attention',
   'connectionId',
   'workspaceId',
+  'label',
+  'starred',
 ];
 
 const isEmpty = (value) => value === '' || value === undefined || value === null || value === false;
@@ -53,6 +55,8 @@ export function useAccountQueryState({
       attention: get('attention') === 'true' ? 'true' : '',
       connectionId: OBJECT_ID.test(get('connectionId')) ? get('connectionId') : '',
       workspaceId: crossWorkspace && OBJECT_ID.test(get('workspaceId')) ? get('workspaceId') : '',
+      label: OBJECT_ID.test(get('label')) ? get('label') : '',
+      starred: get('starred') === 'true' ? 'true' : '',
       sort: ACCOUNT_SORTS.includes(get('sort')) ? get('sort') : defaultSort,
       page: Number.isFinite(page) && page > 0 ? page : 1,
     };
@@ -92,6 +96,8 @@ export function useAccountQueryState({
       attention: state.attention,
       connectionId: state.connectionId,
       workspaceId: state.workspaceId,
+      label: state.label,
+      starred: state.starred,
       sort: state.sort,
       page: state.page,
       limit: pageSize,

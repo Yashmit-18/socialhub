@@ -12,3 +12,5 @@ export { SyncRun } from './SyncRun.js';
 export { MediaAsset } from './MediaAsset.js';
 export { ContentPackage } from './ContentPackage.js';
 export { AccountPreset } from './AccountPreset.js';
+export { AccountLabel } from './AccountLabel.js';
+export { AccountStar } from './AccountStar.js';

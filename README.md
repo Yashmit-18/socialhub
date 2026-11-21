@@ -375,6 +375,7 @@ invented.
 | **Overview**       | everyone                | Totals: Facebook logins, Facebook Pages, Instagram accounts, connected accounts, expired and revoked logins, accounts needing attention, plus a readiness breakdown. A "needs attention" list with the fix (reconnect or sync). A searchable table of every account. A "This workspace / All my workspaces" scope when you belong to several workspaces. |
 | **Logins**         | owner, admin            | One card per Facebook or Instagram login: picture, name, status, connected date, last successful sync, token expiry and its Pages and Instagram accounts. One login can manage many Pages, and the same Page can be reachable through several logins. Actions: view, choose accounts, sync now, sync all, reconnect, disconnect, remove.                 |
 | **Login detail**   | owner, admin            | Health, token and data-access expiry, granted, declined and missing permissions, its accounts, the full sync history and its activity.                                                                                                                                                                                                                   |
+| **All accounts**   | everyone (own accounts) | Facebook Pages and Instagram accounts in one table with labels, stars, CSV export and every bulk action (refresh, labels, team access, removal). See [docs/ACCOUNT_ORGANIZATION.md](docs/ACCOUNT_ORGANIZATION.md).                                                                                                                                       |
 | **Facebook Pages** | everyone (own accounts) | Name, picture, Page ID, login, `CREATE_CONTENT` eligibility, publishing readiness, status and last sync. Search, filters, sorting, pagination. Managers can select Pages for bulk refresh, access changes or removal.                                                                                                                                    |
 | **Instagram**      | everyone (own accounts) | Username, picture, account type, linked Facebook Page, login, readiness, status and last sync, with the same table features and per-account reconnect. Only professional (Business or Creator) accounts exist in SocialHub.                                                                                                                              |
 | **Account detail** | everyone (own accounts) | Account information, connection health and readiness reasons, the login and linked Page or Instagram accounts, permissions and Page role. Managers also see sync history and activity; admins see and edit team access.                                                                                                                                  |
@@ -399,6 +400,10 @@ invented.
   viewers see only the accounts assigned to them, and new members and invitations start
   with none. An invitation can grant accounts up front. Every account route enforces this
   on the server; an account the member may not use answers `404`.
+- **Organisation** (added 2026-11-21): workspace labels (client, brand, region…), personal
+  stars, team notes, sorting by followers, CSV export of the current filters, and "Open on
+  Facebook / Instagram" and "Copy Meta ID" actions. Details, rules and the API are in
+  [docs/ACCOUNT_ORGANIZATION.md](docs/ACCOUNT_ORGANIZATION.md).
 
 ---
 
@@ -675,16 +680,44 @@ Hierarchy rules:
 
 ## Project history
 
-| Date       | Phase                                        | Status                                                                                                  |
-| ---------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 2026-11-19 | 1: Foundation                                | Complete                                                                                                |
-| 2026-11-20 | 2: Meta OAuth integration                    | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app |
-| 2026-11-20 | 2: Real-world verification preparation       | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)              |
-| 2026-11-20 | 3: Social account management                 | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified     |
-| 2026-11-20 | 4 (frontend): Universal Post Composer        | Frontend implemented                                                                                    |
-| 2026-11-21 | 4 (backend): Composer drafts, media, presets | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built              |
-| 2026-11-21 | Combined follower totals                     | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet           |
-| 2026-11-21 | Cross-phase integration audit                | All automated checks pass; no real Meta app or real S3 bucket used                                      |
+| Date       | Phase                                        | Status                                                                                                          |
+| ---------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 2026-11-19 | 1: Foundation                                | Complete                                                                                                        |
+| 2026-11-20 | 2: Meta OAuth integration                    | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app         |
+| 2026-11-20 | 2: Real-world verification preparation       | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                      |
+| 2026-11-20 | 3: Social account management                 | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified             |
+| 2026-11-20 | 4 (frontend): Universal Post Composer        | Frontend implemented                                                                                            |
+| 2026-11-21 | 4 (backend): Composer drafts, media, presets | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                      |
+| 2026-11-21 | Combined follower totals                     | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                   |
+| 2026-11-21 | Cross-phase integration audit                | All automated checks pass; no real Meta app or real S3 bucket used                                              |
+| 2026-11-21 | Account organisation                         | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls |
+
+### Account organisation (2026-11-21). Implemented
+
+Requested to make managing many Pages and accounts simpler. All of it is SocialHub data:
+nothing here calls Meta, so it does not depend on the pending Meta verification.
+
+- **All accounts tab** (`/w/:slug/accounts/all`): both platforms in one table, so bulk
+  refresh, labels, team access and removal work across Facebook and Instagram at once.
+- **Labels:** coloured workspace tags (100 per workspace, 20 per account). Filter, search,
+  bulk add/remove, a label manager, a row-menu action and an "Edit labels" control on the
+  account page. Owners and admins change them; everyone sees them.
+- **Stars:** each person's own important accounts, a "Starred" filter and a "Your starred
+  accounts" card on the Overview.
+- **Team notes** on the account page (owners and admins edit, everyone who can see the
+  account reads). The activity log records the change, never the text.
+- **Sort by followers** (unknown counts always last), **CSV export** of the current filters
+  (formula-safe cells, same access rules as the list), **Open on Facebook / Instagram** and
+  **Copy Meta ID**.
+- **Composer quick select:** "Post to" gains one-click chips for the person's starred
+  accounts and for each label (adding them to the selection, or removing them when all are
+  already selected); account rows show labels and stars, and search matches label names.
+- **API changes:** account items gain `labels`, `starred` and `hasNotes`; the listing gains
+  `label`, `starred` and the follower sorts, and its facets gain `labels` and `starred`.
+  New endpoints and rules: [docs/ACCOUNT_ORGANIZATION.md](docs/ACCOUNT_ORGANIZATION.md).
+- **Tests added:** API +22 (`accounts.organization.test.js`), shared +5
+  (`accountLabels.test.js`), web +19 (`AccountOrganization.test.jsx` 13, composer 6). Existing tests that
+  pin the exact list response and row menus were updated for the new fields and actions.
 
 ### Cross-phase integration audit (2026-11-21)
 

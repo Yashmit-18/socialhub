@@ -12,6 +12,8 @@ import {
   Settings,
   Share2,
   ShieldCheck,
+  StickyNote,
+  Tag,
   Trash2,
   Unplug,
   UserCheck,
@@ -20,6 +22,8 @@ import {
 
 const role = (r) => ROLE_LABELS[r] ?? r;
 const provider = (p) => (p === 'INSTAGRAM_LOGIN' ? 'Instagram' : 'Facebook');
+const quoted = (name) => `“${name ?? ''}”`;
+const accounts = (n) => (n === 1 ? '1 account' : `${n ?? 'some'} accounts`);
 
 const FIELD_LABELS = { name: 'name', slug: 'URL', timezone: 'time zone' };
 
@@ -172,6 +176,44 @@ export function describeActivity(entry) {
         tone: 'danger',
         actor,
         text: `deleted the account preset ${entry.target?.label ?? ''}`.trim(),
+      };
+    case ACTIVITY_ACTIONS.ACCOUNT_LABEL_CREATED:
+      return { icon: Tag, tone: 'brand', actor, text: `created the label ${quoted(target)}` };
+    case ACTIVITY_ACTIONS.ACCOUNT_LABEL_UPDATED:
+      return {
+        icon: Tag,
+        tone: 'neutral',
+        actor,
+        text: m.name
+          ? `renamed the label ${quoted(m.name.from)} to ${quoted(m.name.to)}`
+          : `changed the colour of the label ${quoted(target)}`,
+      };
+    case ACTIVITY_ACTIONS.ACCOUNT_LABEL_DELETED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `deleted the label ${quoted(target)}${m.removedFromAccounts ? ` (removed from ${accounts(m.removedFromAccounts)})` : ''}`,
+      };
+    case ACTIVITY_ACTIONS.SOCIAL_ACCOUNT_LABELS_UPDATED: {
+      const parts = [];
+      if (m.added?.length) parts.push(`added ${m.added.map(quoted).join(', ')}`);
+      if (m.removed?.length) parts.push(`removed ${m.removed.map(quoted).join(', ')}`);
+      return {
+        icon: Tag,
+        tone: 'neutral',
+        actor,
+        text: `${parts.join(' and ') || 'changed the labels'} on ${target}`,
+      };
+    }
+    case ACTIVITY_ACTIONS.SOCIAL_ACCOUNT_NOTES_UPDATED:
+      return {
+        icon: StickyNote,
+        tone: 'neutral',
+        actor,
+        text: m.cleared
+          ? `cleared the team notes on ${target}`
+          : `updated the team notes on ${target}`,
       };
     default:
       return { icon: Settings, tone: 'neutral', actor, text: entry.action };

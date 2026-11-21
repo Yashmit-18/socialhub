@@ -1,5 +1,6 @@
-import { TriangleAlert } from 'lucide-react';
+import { Star, TriangleAlert } from 'lucide-react';
 import { useId } from 'react';
+import { LabelChips } from '../../../../components/accounts/AccountLabels.jsx';
 import { Badge } from '../../../../components/ui/Badge.jsx';
 import { cn } from '../../../../lib/utils.js';
 import { platformLabel } from '../../constants/platformRules.js';
@@ -53,6 +54,14 @@ export function AccountOption({ account, selected = false, onToggle, className }
           <span id={platformId} className="sr-only">
             ({platformLabel(account.platform)})
           </span>
+          {account.starred && (
+            <Star
+              className="ml-1.5 h-3.5 w-3.5 shrink-0 self-center text-amber-500"
+              fill="currentColor"
+              aria-label="Starred"
+              role="img"
+            />
+          )}
         </span>
         <span
           id={detailId}
@@ -61,6 +70,7 @@ export function AccountOption({ account, selected = false, onToggle, className }
           {describeAccount(account)}
           {account.linkedPageName && <> · Linked to {account.linkedPageName}</>}
         </span>
+        <LabelChips labels={account.labels} max={3} className="mt-1" />
         {flagged && (
           <span id={attentionId} className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge tone="warning">Needs attention</Badge>{' '}

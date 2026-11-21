@@ -98,6 +98,12 @@ export const ACTIVITY_ACTIONS = Object.freeze({
   MEDIA_DELETED: 'media.deleted',
   ACCOUNT_PRESET_CREATED: 'account_preset.created',
   ACCOUNT_PRESET_DELETED: 'account_preset.deleted',
+  /** Account organisation: workspace labels, labels on destinations and team notes. */
+  ACCOUNT_LABEL_CREATED: 'account_label.created',
+  ACCOUNT_LABEL_UPDATED: 'account_label.updated',
+  ACCOUNT_LABEL_DELETED: 'account_label.deleted',
+  SOCIAL_ACCOUNT_LABELS_UPDATED: 'social_account.labels_updated',
+  SOCIAL_ACCOUNT_NOTES_UPDATED: 'social_account.notes_updated',
 });
 
 /**
@@ -220,6 +226,9 @@ export const ACCOUNT_SORTS = Object.freeze([
   'lastSyncedAt',
   '-createdAt',
   'createdAt',
+  /** Follower counts Meta last returned; accounts without a count sort last either way. */
+  '-followers',
+  'followers',
 ]);
 
 /** Discovery status of a Page / Instagram account relative to the current workspace. */

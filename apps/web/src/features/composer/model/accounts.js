@@ -17,6 +17,14 @@ import {
 const reasonText = (reason) =>
   typeof reason === 'string' ? reason : (reason?.message ?? reason?.code ?? null);
 
+/** Workspace labels of an account (`[{ id, name, color }]`); servers without labels send none. */
+const labelsOf = (raw) =>
+  Array.isArray(raw?.labels)
+    ? raw.labels
+        .filter((label) => label?.id && label?.name)
+        .map((label) => ({ id: String(label.id), name: label.name, color: label.color ?? 'slate' }))
+    : [];
+
 export function normalizeAccount(raw) {
   const health = raw?.health ?? null;
   const connectionStatus =
@@ -60,6 +68,9 @@ export function normalizeAccount(raw) {
     needsAttention: Boolean(health?.needsAttention ?? !publishable),
     /** Connection is healthy and Meta permissions allow publishing (publishing itself is not built yet). */
     publishable,
+    /** Workspace labels (client, brand, region…) and the signed-in person's star. */
+    labels: labelsOf(raw),
+    starred: Boolean(raw?.starred),
   };
 }
 
@@ -127,16 +138,48 @@ const fold = (value) =>
     .replace(/\p{M}/gu, '')
     .toLocaleLowerCase();
 
-/** Filters by platform and a free-text query over name, username, category and linked Page. */
+/**
+ * Filters by platform and a free-text query over name, username, category, linked Page and
+ * label names.
+ */
 export function filterAccounts(accounts, { platform = PLATFORM_FILTERS.ALL, query = '' } = {}) {
   const needle = fold(query.trim().replace(/^@/, ''));
   return accounts.filter((account) => {
     if (platform !== PLATFORM_FILTERS.ALL && account.platform !== platform) return false;
     if (!needle) return true;
-    return [account.name, account.username, account.category, account.linkedPageName].some(
-      (field) => field && fold(field).includes(needle),
-    );
+    return [
+      account.name,
+      account.username,
+      account.category,
+      account.linkedPageName,
+      ...(account.labels ?? []).map((label) => label.name),
+    ].some((field) => field && fold(field).includes(needle));
   });
+}
+
+/**
+ * Quick-select groups: the person's starred accounts first, then one group per label (by
+ * name), each with the ids of the accounts in it. Groups with no account are left out.
+ */
+export function quickSelectGroups(accounts) {
+  const groups = [];
+  const starred = accounts.filter((a) => a.starred).map((a) => a.id);
+  if (starred.length > 0) groups.push({ key: 'starred', name: 'Starred', ids: starred });
+  const byLabel = new Map();
+  for (const account of accounts) {
+    for (const label of account.labels ?? []) {
+      const entry = byLabel.get(label.id) ?? { label, ids: [] };
+      entry.ids.push(account.id);
+      byLabel.set(label.id, entry);
+    }
+  }
+  const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+  [...byLabel.values()]
+    .sort((a, b) => collator.compare(a.label.name, b.label.name))
+    .forEach(({ label, ids }) =>
+      groups.push({ key: `label:${label.id}`, name: label.name, color: label.color, ids }),
+    );
+  return groups;
 }
 
 export function countByPlatform(accounts) {

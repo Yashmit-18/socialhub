@@ -22,6 +22,7 @@ const LoginsPage = lazy(() => import('./pages/workspace/accounts/LoginsPage.jsx'
 const ConnectionDetailPage = lazy(
   () => import('./pages/workspace/accounts/ConnectionDetailPage.jsx'),
 );
+const AllAccountsPage = lazy(() => import('./pages/workspace/accounts/AllAccountsPage.jsx'));
 const PagesPage = lazy(() => import('./pages/workspace/accounts/PagesPage.jsx'));
 const InstagramPage = lazy(() => import('./pages/workspace/accounts/InstagramPage.jsx'));
 const AccountDetailPage = lazy(() => import('./pages/workspace/accounts/AccountDetailPage.jsx'));
@@ -94,6 +95,7 @@ export const routes = [
                 element: <AccountsLayout />,
                 children: [
                   { index: true, element: <AccountsOverviewPage /> },
+                  { path: 'all', element: <AllAccountsPage /> },
                   { path: 'logins', element: <LoginsPage /> },
                   { path: 'pages', element: <PagesPage /> },
                   { path: 'instagram', element: <InstagramPage /> },

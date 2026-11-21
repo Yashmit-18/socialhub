@@ -310,7 +310,7 @@ describe('Instagram tab', () => {
       within(screen.getByRole('menu'))
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['View details']);
+    ).toEqual(['View details', 'Open on Instagram', 'Copy Meta ID']);
     expect(mock.count('GET /workspaces/w1/social-connections')).toBe(0);
   });
 

@@ -28,6 +28,7 @@ import * as facebook from '../../integrations/meta/facebook.js';
 import { META_ERROR_KINDS, MetaApiError, classifyMetaError } from '../../integrations/meta/http.js';
 import * as instagram from '../../integrations/meta/instagram.js';
 import {
+  AccountStar,
   Invitation,
   Membership,
   SocialAccount,
@@ -1318,6 +1319,11 @@ async function detachAccounts(workspaceId, accountIds, session) {
   await Invitation.updateMany(
     { workspace: workspaceId, 'accountAccess.socialAccounts': { $in: accountIds } },
     { $pull: { 'accountAccess.socialAccounts': { $in: accountIds } } },
+    { session },
+  );
+  // Stars point at the removed records; a destination added again gets a new id.
+  await AccountStar.deleteMany(
+    { workspace: workspaceId, socialAccount: { $in: accountIds } },
     { session },
   );
 }

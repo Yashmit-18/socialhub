@@ -38,6 +38,7 @@ import {
   scopeReport,
 } from '../meta/connectionHealth.js';
 import { providerConfigured } from '../meta/metaConnection.service.js';
+import { accountLabels, notesView, starredAmong } from './accountOrganization.service.js';
 import { CONNECTION_SUMMARY_FIELDS, accessibleAccountFilter } from './socialAccount.service.js';
 
 /** Hard ceiling on destinations evaluated per request; beyond it the response says `truncated`. */
@@ -65,18 +66,29 @@ function connectionSummary(connection, now) {
  * API view of one destination: its record, a summary of the connection it came from, the
  * Page an Instagram account is linked to, and computed health. `accessibleIds` decides
  * whether the linked Page may be linked to (it is named either way: the name is not secret).
+ * Organisation data: `labels` (populate `labels` to fill it), `starred` for the requesting
+ * person (`starredIds`) and `hasNotes`; the notes text itself is only in the detail.
  */
-export function accountView(account, { now = new Date(), accessibleIds, workspace } = {}) {
+export function accountView(
+  account,
+  { now = new Date(), accessibleIds, workspace, starredIds } = {},
+) {
   const json = account.toJSON();
   const connection = account.populated('connection') ? account.connection : null;
   delete json.connection;
   delete json.linkedFacebookPage;
+  delete json.notes;
+  delete json.notesUpdatedAt;
+  delete json.notesUpdatedBy;
   const linkedPageId = account.linkedFacebookPage ? id(account.linkedFacebookPage) : null;
   const view = {
     ...json,
     // null = Meta has not returned a count (unknown), which clients must not show as 0.
     followersCount: json.followersCount ?? null,
     followersCountUpdatedAt: json.followersCountUpdatedAt ?? null,
+    labels: accountLabels(account),
+    starred: Boolean(starredIds?.has(id(account))),
+    hasNotes: Boolean(account.notes),
     connection: connectionSummary(connection, now),
     linkedPage:
       account.platform === SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT &&
@@ -125,10 +137,18 @@ async function loadViews(scopes, now, { crossWorkspace = false } = {}) {
   })
     .sort({ _id: 1 })
     .limit(MAX_ACCOUNTS_SCANNED + 1)
-    .populate('connection', CONNECTION_SUMMARY_FIELDS);
+    .populate([
+      { path: 'connection', select: CONNECTION_SUMMARY_FIELDS },
+      { path: 'labels', select: 'name color' },
+    ]);
   const truncated = accounts.length > MAX_ACCOUNTS_SCANNED;
   const visible = truncated ? accounts.slice(0, MAX_ACCOUNTS_SCANNED) : accounts;
   const accessibleIds = new Set(visible.map((a) => id(a)));
+  // Every scope belongs to the same person (one membership per workspace).
+  const starredIds = await starredAmong(
+    scopes[0].membership.user,
+    visible.map((a) => a._id),
+  );
   const workspaceById = crossWorkspace
     ? new Map(scopes.map((s) => [id(s.workspace), s.workspace]))
     : null;
@@ -136,6 +156,7 @@ async function loadViews(scopes, now, { crossWorkspace = false } = {}) {
     accountView(account, {
       now,
       accessibleIds,
+      starredIds,
       workspace: workspaceById?.get(id(account.workspace)),
     }),
   );
@@ -185,9 +206,25 @@ function compareBy(sort) {
       return byDate('createdAt', -1);
     case 'createdAt':
       return byDate('createdAt', 1);
+    case '-followers':
+      return byFollowers(-1, byName);
+    case 'followers':
+      return byFollowers(1, byName);
     default:
       return byName;
   }
+}
+
+/** Unknown follower counts (null) sort last in both directions: unknown is not 0. */
+function byFollowers(direction, tieBreak) {
+  return (a, b) => {
+    const av = a.followersCount;
+    const bv = b.followersCount;
+    if (av === bv) return tieBreak(a, b);
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return direction * (av - bv);
+  };
 }
 
 function matchesQuery(view, q) {
@@ -201,6 +238,7 @@ function matchesQuery(view, q) {
     view.connection?.displayName,
     view.linkedPage?.name,
     view.workspace?.name,
+    ...(view.labels ?? []).map((label) => label.name),
   ].some((value) => typeof value === 'string' && value.toLowerCase().includes(needle));
 }
 
@@ -213,17 +251,21 @@ function countBy(views, pick) {
   return out;
 }
 
+/** How many of `views` carry each label, keyed by label id. */
+function countLabels(views) {
+  const out = {};
+  for (const view of views) {
+    for (const label of view.labels ?? []) out[label.id] = (out[label.id] ?? 0) + 1;
+  }
+  return out;
+}
+
 /**
- * Search/filter/sort/paginate the destinations visible in `scopes`. Facets show stable totals
- * for filter controls: `platform` counts everything visible; `status`, `readiness` and
- * `attention` count the platform/login scope being viewed, before the remaining filters.
+ * Applies the listing filters and sort. Facets show stable totals for filter controls:
+ * `platform` counts everything visible; `status`, `readiness`, `attention`, `labels` and
+ * `starred` count the platform/login scope being viewed, before the remaining filters.
  */
-export async function queryAccounts(
-  scopes,
-  query,
-  { now = new Date(), crossWorkspace = false } = {},
-) {
-  const { views, truncated } = await loadViews(scopes, now, { crossWorkspace });
+function filterViews(views, query) {
   const scoped = views.filter(
     (v) =>
       (!query.platform || v.platform === query.platform) &&
@@ -234,15 +276,44 @@ export async function queryAccounts(
     status: countBy(scoped, (v) => v.health.connectionStatus),
     readiness: countBy(scoped, (v) => v.health.readiness),
     attention: scoped.filter((v) => v.health.needsAttention).length,
+    labels: countLabels(scoped),
+    starred: scoped.filter((v) => v.starred).length,
   };
+  const label = query.label ? String(query.label).toLowerCase() : null;
   const filtered = scoped.filter(
     (v) =>
       (!query.status || v.health.connectionStatus === query.status) &&
       (!query.readiness || v.health.readiness === query.readiness) &&
       (query.attention === undefined || v.health.needsAttention === query.attention) &&
+      (!label || v.labels.some((l) => l.id === label)) &&
+      (query.starred === undefined || v.starred === query.starred) &&
       matchesQuery(v, query.q),
   );
   filtered.sort(compareBy(query.sort));
+  return { filtered, facets };
+}
+
+/**
+ * Every destination matching the listing filters, in listing order, without pagination
+ * (the CSV export). Same access rules as queryAccounts.
+ */
+export async function filteredAccounts(
+  scopes,
+  query,
+  { now = new Date(), crossWorkspace = false } = {},
+) {
+  const { views, truncated } = await loadViews(scopes, now, { crossWorkspace });
+  return { items: filterViews(views, query).filtered, truncated };
+}
+
+/** Search/filter/sort/paginate the destinations visible in `scopes` (see filterViews). */
+export async function queryAccounts(
+  scopes,
+  query,
+  { now = new Date(), crossWorkspace = false } = {},
+) {
+  const { views, truncated } = await loadViews(scopes, now, { crossWorkspace });
+  const { filtered, facets } = filterViews(views, query);
   const { page, limit } = query;
   const start = (page - 1) * limit;
   return {
@@ -435,6 +506,8 @@ export async function accountDetail(workspace, membership, account, { now = new 
       path: 'connection',
       select: `${CONNECTION_SUMMARY_FIELDS} declinedScopes connectedBy lastError createdAt updatedAt lastRefreshedAt syncLockedUntil disconnectedAt`,
     },
+    { path: 'labels', select: 'name color' },
+    { path: 'notesUpdatedBy', select: 'name' },
   ]);
   const connection = account.populated('connection') ? account.connection : null;
   if (connection && canManageConnections) await connection.populate('connectedBy', 'name');
@@ -456,11 +529,13 @@ export async function accountDetail(workspace, membership, account, { now = new 
       : [],
   ]);
   const accessibleIds = new Set([id(account), ...(linkedPageDoc ? [id(linkedPageDoc)] : [])]);
-  const view = accountView(account, { now, accessibleIds });
+  const starredIds = await starredAmong(membership.user, [account._id]);
+  const view = accountView(account, { now, accessibleIds, starredIds });
   const health = view.health;
 
   return {
     account: view,
+    notes: notesView(account),
     connection: connection
       ? canManageConnections
         ? connectionView(connection, { now })

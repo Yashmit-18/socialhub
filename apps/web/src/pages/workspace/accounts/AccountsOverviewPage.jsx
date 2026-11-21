@@ -23,7 +23,7 @@ import {
   Share2,
   ShieldCheck,
 } from 'lucide-react';
-import { useId, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AccountFilters } from '../../../components/accounts/AccountFilters.jsx';
 import {
@@ -35,7 +35,13 @@ import {
 } from '../../../components/accounts/AccountBadges.jsx';
 import { AccountsTable } from '../../../components/accounts/AccountsTable.jsx';
 import { ConnectButtons } from '../../../components/accounts/ConnectButtons.jsx';
+import { ExportAccountsButton } from '../../../components/accounts/ExportAccountsButton.jsx';
 import { FollowersCard } from '../../../components/accounts/FollowersCard.jsx';
+import { ManageLabelsDialog } from '../../../components/accounts/ManageLabelsDialog.jsx';
+import {
+  LabelsCard,
+  StarredAccountsCard,
+} from '../../../components/accounts/OrganizationCards.jsx';
 import { Badge } from '../../../components/ui/Badge.jsx';
 import { FacebookIcon, InstagramIcon } from '../../../components/ui/Brand.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
@@ -55,6 +61,7 @@ import {
   needsReconnect,
 } from '../../../lib/meta.js';
 import {
+  useAccountLabels,
   useAccountList,
   useAccountSummary,
   useMetaIntegration,
@@ -81,6 +88,7 @@ const PAGE_SIZE = 25;
 const LOGIN_PREVIEW = 5;
 /** The "Needs attention" preview: the five most urgent destinations. */
 const ATTENTION_PARAMS = { attention: 'true', sort: 'attention', limit: 5 };
+const STARRED_PARAMS = { starred: 'true', sort: 'name', limit: 6 };
 /** Every list filter emptied (used before applying a single "show these" filter). */
 const NO_FILTERS = Object.fromEntries(ACCOUNT_FILTER_KEYS.map((key) => [key, '']));
 
@@ -832,6 +840,9 @@ function AccountsCard({
   columns,
   hrefFor,
   identityHrefFor,
+  labels,
+  exportPath,
+  onLabelClick,
 }) {
   const data = list.data;
   const items = data?.items ?? [];
@@ -887,7 +898,11 @@ function AccountsCard({
             facets={data?.facets}
             connections={connections}
             workspaces={workspaces}
+            labels={labels}
             showPlatform
+            actions={
+              exportPath ? <ExportAccountsButton path={exportPath} params={query.params} /> : null
+            }
           />
           {empty ?? (
             <AccountsTable
@@ -900,6 +915,8 @@ function AccountsCard({
               fetching={list.isPlaceholderData}
               hrefFor={hrefFor}
               identityHrefFor={identityHrefFor}
+              star
+              onLabelClick={onLabelClick}
             />
           )}
           {ready && items.length > 0 && (
@@ -971,6 +988,11 @@ export default function AccountsOverviewPage() {
   const crossAttention = useMyAccounts(ATTENTION_PARAMS, { enabled: allScope });
   const attention = allScope ? crossAttention : workspaceAttention;
 
+  // Organisation: labels belong to this workspace, stars to the signed-in person.
+  const labels = useAccountLabels(workspace.id, { enabled: !allScope });
+  const starred = useAccountList(workspace.id, STARRED_PARAMS, { enabled: !allScope });
+  const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
+
   const loginCount = manageLogins ? (connections.data?.length ?? 0) : 0;
   const accountsTotal = summary.data?.accounts?.total ?? 0;
   const hasAccounts = accountsTotal > 0 || totalOf(list.data) > 0;
@@ -984,6 +1006,8 @@ export default function AccountsOverviewPage() {
       if (next === 'all') {
         params.set('scope', 'all');
         params.delete('connectionId');
+        // Labels belong to one workspace.
+        params.delete('label');
       } else {
         params.delete('scope');
         params.delete('workspaceId');
@@ -1087,6 +1111,22 @@ export default function AccountsOverviewPage() {
         />
       )}
 
+      {!allScope && !summary.error && (summary.isPending || accountsTotal > 0) && (
+        <div className="grid gap-6 xl:grid-cols-2">
+          <StarredAccountsCard
+            list={starred}
+            hrefFor={hrefFor}
+            onShowAll={() => showOnly({ starred: 'true' })}
+          />
+          <LabelsCard
+            labels={labels}
+            canManage={canManage}
+            onShow={(label) => showOnly({ label: label.id })}
+            onManage={() => setManageLabelsOpen(true)}
+          />
+        </div>
+      )}
+
       <AccountsCard
         cardRef={tableRef}
         title={allScope ? 'Accounts in all your workspaces' : 'All accounts'}
@@ -1120,8 +1160,18 @@ export default function AccountsOverviewPage() {
         }
         hrefFor={hrefFor}
         identityHrefFor={identityHrefFor}
+        labels={allScope ? undefined : labels.data?.items}
+        exportPath={
+          allScope
+            ? '/social-accounts/export'
+            : `/workspaces/${workspace.id}/social-accounts/export`
+        }
+        onLabelClick={allScope ? undefined : (label) => showOnly({ label: label.id })}
       />
 
+      {canManage && !allScope && (
+        <ManageLabelsDialog open={manageLabelsOpen} onClose={() => setManageLabelsOpen(false)} />
+      )}
       {sync.dialog}
     </div>
   );

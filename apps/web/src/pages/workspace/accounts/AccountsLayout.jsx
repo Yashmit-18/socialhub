@@ -27,6 +27,7 @@ export default function AccountsLayout() {
 
   const tabs = [
     { to: base, label: 'Overview', end: true },
+    { to: `${base}/all`, label: 'All accounts', count: counts?.accounts.total },
     canManage && { to: `${base}/logins`, label: 'Logins', count: counts?.connections?.total },
     { to: `${base}/pages`, label: 'Facebook Pages', count: counts?.accounts.facebookPages },
     { to: `${base}/instagram`, label: 'Instagram', count: counts?.accounts.instagramAccounts },
