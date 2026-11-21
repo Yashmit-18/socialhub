@@ -57,6 +57,19 @@ describe('platform', () => {
     expect(res.headers['content-security-policy']).toBeTruthy();
   });
 
+  it('allows only same-origin scripts, and page-created blob: URLs for images and media', async () => {
+    const res = await api().get('/api/v1/health');
+    const directives = Object.fromEntries(
+      res.headers['content-security-policy'].split(';').map((d) => {
+        const [name, ...values] = d.trim().split(/\s+/);
+        return [name, values];
+      }),
+    );
+    expect(directives['script-src']).toEqual(["'self'"]);
+    expect(directives['img-src']).toEqual(["'self'", 'data:', 'https:', 'blob:']);
+    expect(directives['media-src']).toEqual(["'self'", 'blob:', 'https:']);
+  });
+
   it('echoes a safe incoming request id and generates one otherwise', async () => {
     const supplied = await api().get('/api/v1/health').set('X-Request-Id', 'trace-abc-12345');
     expect(supplied.headers['x-request-id']).toBe('trace-abc-12345');

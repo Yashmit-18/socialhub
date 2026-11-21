@@ -90,6 +90,14 @@ export const ACTIVITY_ACTIONS = Object.freeze({
   SOCIAL_ACCOUNT_ADDED: 'social_account.added',
   SOCIAL_ACCOUNT_RELINKED: 'social_account.relinked',
   SOCIAL_ACCOUNT_REMOVED: 'social_account.removed',
+  /** Composer drafts, stored media and account presets (Phase 4). */
+  CONTENT_PACKAGE_CREATED: 'content_package.created',
+  CONTENT_PACKAGE_UPDATED: 'content_package.updated',
+  CONTENT_PACKAGE_DELETED: 'content_package.deleted',
+  MEDIA_UPLOADED: 'media.uploaded',
+  MEDIA_DELETED: 'media.deleted',
+  ACCOUNT_PRESET_CREATED: 'account_preset.created',
+  ACCOUNT_PRESET_DELETED: 'account_preset.deleted',
 });
 
 /**
@@ -246,6 +254,12 @@ export const ERROR_CODES = Object.freeze({
   META_UNAVAILABLE: 'META_UNAVAILABLE',
   /** A synchronization of the same connection is already running. */
   SYNC_IN_PROGRESS: 'SYNC_IN_PROGRESS',
+  /** Media storage is not configured on this server (STORAGE_DRIVER). */
+  STORAGE_NOT_CONFIGURED: 'STORAGE_NOT_CONFIGURED',
+  /** The storage provider failed or was unreachable. */
+  STORAGE_UNAVAILABLE: 'STORAGE_UNAVAILABLE',
+  /** Completion was requested but the file has not arrived in storage. */
+  UPLOAD_INCOMPLETE: 'UPLOAD_INCOMPLETE',
 });
 
 /** Header the web client sends on cookie-authenticated endpoints (refresh/logout) as a CSRF guard. */

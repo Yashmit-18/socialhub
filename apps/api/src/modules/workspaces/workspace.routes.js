@@ -17,8 +17,11 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { clientContext } from '../../middleware/requestContext.js';
 import { validate } from '../../middleware/validate.js';
 import { loadWorkspace, requirePermission } from '../../middleware/workspaceAccess.js';
+import { mountAccountPresetRoutes } from '../accountPresets/accountPreset.routes.js';
 import { listActivity } from '../activity/activity.service.js';
+import { mountContentPackageRoutes } from '../contentPackages/contentPackage.routes.js';
 import * as invitations from '../invitations/invitation.service.js';
+import { mountMediaRoutes } from '../media/media.routes.js';
 import * as members from '../members/member.service.js';
 import { mountMetaWorkspaceRoutes } from '../meta/meta.routes.js';
 import { mountSocialAccountRoutes } from '../socialAccounts/socialAccount.routes.js';
@@ -260,6 +263,12 @@ export function workspacesRouter() {
   );
 
   mountMetaWorkspaceRoutes(scoped);
+
+  /* ------------------------------------------- composer: drafts, media, presets */
+
+  mountContentPackageRoutes(scoped);
+  mountMediaRoutes(scoped);
+  mountAccountPresetRoutes(scoped);
 
   return router;
 }

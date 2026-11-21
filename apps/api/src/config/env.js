@@ -87,6 +87,21 @@ const envSchema = z.object({
   INSTAGRAM_APP_SECRET: z.string().min(16).optional(),
   INSTAGRAM_SCOPES: csv.default(['instagram_business_basic', 'instagram_business_content_publish']),
 
+  /* --- Media storage for the composer. Unset = uploads disabled. --- */
+  STORAGE_DRIVER: z.enum(['s3', 'local']).optional(),
+  STORAGE_S3_BUCKET: z.string().min(1).optional(),
+  STORAGE_S3_REGION: z.string().min(1).default('us-east-1'),
+  /** Custom endpoint for S3-compatible providers (Cloudflare R2, MinIO, …). */
+  STORAGE_S3_ENDPOINT: z.string().url().optional(),
+  STORAGE_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  STORAGE_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  STORAGE_S3_FORCE_PATH_STYLE: booleanString.optional(),
+  /** Public HTTPS base URL of the bucket or its CDN; Meta fetches media from it. */
+  STORAGE_PUBLIC_BASE_URL: z.string().url().optional(),
+  /** Directory for STORAGE_DRIVER=local, relative to apps/api. */
+  STORAGE_LOCAL_DIR: z.string().min(1).default('./storage-data'),
+  STORAGE_UPLOAD_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+
   META_OAUTH_STATE_TTL_MINUTES: z.coerce.number().int().min(2).max(60).default(10),
   META_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),
 });
@@ -121,6 +136,25 @@ export function loadConfig(source = process.env) {
     if (Boolean(env[id]) !== Boolean(env[secret])) {
       throw new Error(
         `Invalid environment configuration: set both ${id} and ${secret}, or neither`,
+      );
+    }
+  }
+
+  if (env.STORAGE_DRIVER === 's3') {
+    const missing = [
+      'STORAGE_S3_BUCKET',
+      'STORAGE_S3_ACCESS_KEY_ID',
+      'STORAGE_S3_SECRET_ACCESS_KEY',
+      'STORAGE_PUBLIC_BASE_URL',
+    ].filter((name) => !env[name]);
+    if (missing.length) {
+      throw new Error(
+        `Invalid environment configuration: STORAGE_DRIVER=s3 also needs ${missing.join(', ')}`,
+      );
+    }
+    if (isProduction && !env.STORAGE_PUBLIC_BASE_URL.startsWith('https://')) {
+      throw new Error(
+        'Invalid environment configuration: STORAGE_PUBLIC_BASE_URL must be an https:// URL in production',
       );
     }
   }
@@ -181,6 +215,23 @@ export function loadConfig(source = process.env) {
         : null,
     },
     serveWebDist: env.SERVE_WEB_DIST ?? null,
+    storage: {
+      driver: env.STORAGE_DRIVER ?? null,
+      uploadTtlSeconds: env.STORAGE_UPLOAD_TTL_SECONDS,
+      local: { directory: env.STORAGE_LOCAL_DIR },
+      s3:
+        env.STORAGE_DRIVER === 's3'
+          ? {
+              bucket: env.STORAGE_S3_BUCKET,
+              region: env.STORAGE_S3_REGION,
+              endpoint: env.STORAGE_S3_ENDPOINT ?? null,
+              accessKeyId: env.STORAGE_S3_ACCESS_KEY_ID,
+              secretAccessKey: env.STORAGE_S3_SECRET_ACCESS_KEY,
+              forcePathStyle: env.STORAGE_S3_FORCE_PATH_STYLE,
+              publicBaseUrl: env.STORAGE_PUBLIC_BASE_URL,
+            }
+          : null,
+    },
     meta: {
       graphVersion: env.META_GRAPH_API_VERSION,
       stateTtlMinutes: env.META_OAUTH_STATE_TTL_MINUTES,

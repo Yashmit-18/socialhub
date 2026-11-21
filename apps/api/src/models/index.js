@@ -9,3 +9,6 @@ export { SocialAccount } from './SocialAccount.js';
 export { OAuthState } from './OAuthState.js';
 export { MetaDataDeletionRequest } from './MetaDataDeletionRequest.js';
 export { SyncRun } from './SyncRun.js';
+export { MediaAsset } from './MediaAsset.js';
+export { ContentPackage } from './ContentPackage.js';
+export { AccountPreset } from './AccountPreset.js';

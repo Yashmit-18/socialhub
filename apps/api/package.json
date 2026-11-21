@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "meta:sync": "node --env-file-if-exists=.env scripts/sync-meta-connections.js",
+    "storage:verify": "node --env-file-if-exists=.env scripts/verify-storage.js",
+    "media:cleanup": "node --env-file-if-exists=.env scripts/cleanup-media.js",
     "meta:verify": "node --env-file-if-exists=.env scripts/verify-meta-integration.js"
   },
   "dependencies": {

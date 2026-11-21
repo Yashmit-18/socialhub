@@ -18,6 +18,7 @@ import { invitationsRouter } from './modules/invitations/invitation.routes.js';
 import { integrationsRouter, metaPublicRouter } from './modules/meta/meta.routes.js';
 import { crossWorkspaceAccountsRouter } from './modules/socialAccounts/socialAccount.routes.js';
 import { workspacesRouter } from './modules/workspaces/workspace.routes.js';
+import { getStorage } from './storage/index.js';
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const VERSION = '0.1.0';
@@ -74,6 +75,11 @@ function mountWebApp(app, distPath) {
 export function createApp(overrides = {}) {
   const rateLimit = { ...config.rateLimit, ...overrides.rateLimit };
   const app = express();
+  const storage = getStorage();
+  // Browsers upload media straight to object storage: allow that one origin, nothing else.
+  const connectSrc = storage?.uploadOrigin
+    ? { 'connect-src': ["'self'", storage.uploadOrigin] }
+    : {};
 
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -84,8 +90,12 @@ export function createApp(overrides = {}) {
       logger,
       genReqId: (req) => req.id,
       autoLogging: { ignore: (req) => req.url === '/api/v1/health' },
-      customLogLevel: (_req, res, err) =>
-        err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+      // 502 / 503 are expected operational answers (a provider outage, storage or Meta not
+      // configured): warnings, so real server errors stand out in the logs.
+      customLogLevel: (_req, res, err) => {
+        if (res.statusCode === 502 || res.statusCode === 503) return 'warn';
+        return err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+      },
       // Lean access logs; never include headers (cookies/tokens) or link tokens embedded in URLs.
       serializers: {
         req: (req) => ({ id: req.id, method: req.method, url: redactUrl(req.url) }),
@@ -97,8 +107,12 @@ export function createApp(overrides = {}) {
     helmet({
       contentSecurityPolicy: {
         directives: {
-          // Social profile pictures (Meta CDN) are rendered from https URLs.
-          'img-src': ["'self'", 'data:', 'https:'],
+          // Social profile pictures (Meta CDN) are rendered from https URLs. blob: URLs are
+          // created by the page itself (local previews of files the user picked in the
+          // composer); scripts stay limited to 'self', so nothing else can create them.
+          'img-src': ["'self'", 'data:', 'https:', 'blob:'],
+          'media-src': ["'self'", 'blob:', 'https:'],
+          ...connectSrc,
           // Upgrading requests breaks plain-http local/staging hosts; enforce it in production only.
           'upgrade-insecure-requests': config.isProduction ? [] : null,
         },
@@ -106,6 +120,12 @@ export function createApp(overrides = {}) {
     }),
   );
   app.use('/api', cors(corsOptions()));
+  // Drafts carry up to four long texts (63,206 characters each, 3–4 bytes per character in
+  // many scripts), so they get a larger body limit than every other route.
+  app.use(
+    /^\/api\/v1\/workspaces\/[a-f\d]{24}\/content-packages(?:\/|$)/i,
+    express.json({ limit: '1mb' }),
+  );
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 
@@ -131,6 +151,8 @@ export function createApp(overrides = {}) {
   v1.use('/workspaces', workspacesRouter());
   v1.use('/integrations', integrationsRouter());
   v1.use('/social-accounts', crossWorkspaceAccountsRouter());
+  // Upload target and file serving of the local-disk storage driver (development / tests).
+  if (storage?.router) v1.use('/storage', storage.router());
   // OAuth callbacks and Meta platform callbacks (no SocialHub session; verified by state/signature).
   v1.use(metaPublicRouter());
 

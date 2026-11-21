@@ -246,7 +246,12 @@ export const socialAccountQuerySchema = z.strictObject({
   connectionId: objectIdSchema.optional(),
   sort: z.enum(ACCOUNT_SORTS).default('name'),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
-  limit: z.coerce.number().int().min(1).max(LIMITS.ACCOUNT_ACCESS_MAX).default(LIMITS.ACCOUNT_ACCESS_MAX),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(LIMITS.ACCOUNT_ACCESS_MAX)
+    .default(LIMITS.ACCOUNT_ACCESS_MAX),
 });
 
 /** Cross-workspace listing adds an optional workspace filter. */

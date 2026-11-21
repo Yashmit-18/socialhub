@@ -40,7 +40,11 @@ export function errorHandler(err, req, res, _next) {
   const known = normalise(err);
   const status = known?.status ?? 500;
 
-  if (!known || status >= 500) {
+  if (known && status >= 500) {
+    // An expected operational condition (storage not configured, a provider outage): worth a
+    // warning, but it is not a crash, so no stack trace.
+    (req.log ?? logger).warn({ code: known.code, requestId: req.id }, known.message);
+  } else if (!known) {
     (req.log ?? logger).error({ err, requestId: req.id }, 'Unhandled error');
   }
 

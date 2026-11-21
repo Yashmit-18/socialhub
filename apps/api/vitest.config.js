@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -24,6 +26,9 @@ export default defineConfig({
       META_GRAPH_API_VERSION: 'v27.0',
       INSTAGRAM_APP_ID: '2222222222',
       INSTAGRAM_APP_SECRET: 'test-instagram-app-secret-0123456789',
+      // Media tests use the real local-disk storage driver in a throwaway directory.
+      STORAGE_DRIVER: 'local',
+      STORAGE_LOCAL_DIR: path.join(os.tmpdir(), `socialhub-test-storage-${process.pid}`),
     },
   },
 });

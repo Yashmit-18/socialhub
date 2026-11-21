@@ -19,8 +19,11 @@ import {
   validationError,
 } from '../../lib/errors.js';
 import {
+  AccountPreset,
   ActivityLog,
+  ContentPackage,
   Invitation,
+  MediaAsset,
   Membership,
   OAuthState,
   SocialAccount,
@@ -30,6 +33,7 @@ import {
 } from '../../models/index.js';
 import { revokeAtMetaIfUnused } from '../meta/metaConnection.service.js';
 import { listActivity, recordActivity } from '../activity/activity.service.js';
+import { removeWorkspaceObjects } from '../media/media.service.js';
 import { assertPassword } from '../auth/auth.service.js';
 import { accessibleAccountFilter } from '../socialAccounts/socialAccount.service.js';
 
@@ -232,6 +236,9 @@ const WORKSPACE_SCOPED_MODELS = [
   SocialConnection,
   OAuthState,
   SyncRun,
+  ContentPackage,
+  AccountPreset,
+  MediaAsset,
 ];
 
 export async function deleteWorkspace(workspace, actor, { confirmation, password }) {
@@ -247,6 +254,9 @@ export async function deleteWorkspace(workspace, actor, { confirmation, password
     '+accessToken',
   );
   const tokens = connections.map((c) => (c.hasAccessToken() ? c.getAccessToken() : null));
+
+  // Stored media files are removed while their records still say where they are.
+  await removeWorkspaceObjects(workspace._id);
 
   await runInTransaction(async (session) => {
     // Remove the workspace document first so it is immediately inaccessible even if the
