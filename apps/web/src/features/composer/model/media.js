@@ -1,3 +1,4 @@
+import { COMPOSER_LIMITS, MEDIA_MIME_TYPES } from '@socialhub/shared';
 import { MEDIA_KINDS, MEDIA_MAX_ITEMS } from './composerState.js';
 
 /**
@@ -14,10 +15,7 @@ import { MEDIA_KINDS, MEDIA_MAX_ITEMS } from './composerState.js';
  * WebP/HEIC because neither platform accepts them (constants/platformRules.js).
  */
 
-export const ACCEPTED_TYPES = Object.freeze({
-  [MEDIA_KINDS.IMAGE]: Object.freeze(['image/jpeg', 'image/png', 'image/gif']),
-  [MEDIA_KINDS.VIDEO]: Object.freeze(['video/mp4', 'video/quicktime']),
-});
+export const ACCEPTED_TYPES = MEDIA_MIME_TYPES;
 
 /** Some systems (notably Windows for .mov) report an empty MIME type; fall back to extensions. */
 const EXTENSION_TYPES = Object.freeze({
@@ -76,8 +74,8 @@ export const ACCEPT_ATTRIBUTE = [
  * per-platform limits are checked per destination. Decimal units (1 MB = 1,000,000 bytes).
  */
 export const UPLOAD_LIMITS = Object.freeze({
-  [MEDIA_KINDS.IMAGE]: 30 * 1000 * 1000,
-  [MEDIA_KINDS.VIDEO]: 1000 * 1000 * 1000,
+  [MEDIA_KINDS.IMAGE]: COMPOSER_LIMITS.IMAGE_MAX_BYTES,
+  [MEDIA_KINDS.VIDEO]: COMPOSER_LIMITS.VIDEO_MAX_BYTES,
 });
 
 export function extensionOf(fileName = '') {

@@ -72,7 +72,7 @@ function linkTo(contentPackage, savedRevision, input) {
   };
 }
 
-export function useServerDraft({ workspaceId, state, dispatch }) {
+export function useServerDraft({ workspaceId, state, dispatch, availableAccountIds = null }) {
   const [available] = useState(() => getComposerCapabilities().serverDrafts);
   const queryClient = useQueryClient();
   /** The server draft the composer content belongs to: { draft, key } | null. */
@@ -82,6 +82,8 @@ export function useServerDraft({ workspaceId, state, dispatch }) {
   const [error, setError] = useState(null);
 
   const latest = useRef(state);
+  /** Accounts the person can use now (null while unknown): others are left out of saves. */
+  const accountsRef = useRef(availableAccountIds);
   const linkRef = useRef(null);
   const queue = useRef(Promise.resolve());
   /** Bumped whenever the composer content is replaced (open completed, reset). */
@@ -92,12 +94,13 @@ export function useServerDraft({ workspaceId, state, dispatch }) {
   const pendingLoad = useRef(null);
   useLayoutEffect(() => {
     latest.current = state;
+    accountsRef.current = availableAccountIds;
     if (pendingLoad.current !== null && pendingLoad.current !== state) pendingLoad.current = null;
   });
 
   const prepared = useMemo(
-    () => (available ? toContentPackageInput(state) : null),
-    [available, state],
+    () => (available ? toContentPackageInput(state, { availableAccountIds }) : null),
+    [available, state, availableAccountIds],
   );
   const inputKey = useMemo(() => (prepared ? JSON.stringify(prepared.input) : ''), [prepared]);
   const dirty = available && (link ? inputKey !== link.key : hasContent(state));
@@ -126,7 +129,9 @@ export function useServerDraft({ workspaceId, state, dispatch }) {
       return enqueue(async () => {
         const current = requestedIn === lineage.current;
         const target = asNew || !current ? null : (linkRef.current?.draft ?? null);
-        const { input, omittedMedia } = toContentPackageInput(snapshot);
+        const { input, omittedMedia } = toContentPackageInput(snapshot, {
+          availableAccountIds: accountsRef.current,
+        });
         if (current) {
           setPhase('saving');
           setError(null);
@@ -174,7 +179,11 @@ export function useServerDraft({ workspaceId, state, dispatch }) {
           return contentPackage;
         }
         const loaded = fromContentPackage(contentPackage);
-        const next = linkTo(contentPackage, 0, toContentPackageInput(loaded).input);
+        const next = linkTo(
+          contentPackage,
+          0,
+          toContentPackageInput(loaded, { availableAccountIds: accountsRef.current }).input,
+        );
         lineage.current += 1;
         pendingLoad.current = latest.current;
         linkRef.current = next;

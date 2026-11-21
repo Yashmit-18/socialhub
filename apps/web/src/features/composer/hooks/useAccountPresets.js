@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { COMPOSER_LIMITS } from '@socialhub/shared';
 import { useState } from 'react';
 import { createClientId } from '../model/ids.js';
 import { getComposerCapabilities } from '../services/capabilities.js';
@@ -36,7 +37,7 @@ export const PRESET_STORAGE = Object.freeze({
   UNAVAILABLE: 'unavailable',
 });
 
-export const PRESET_NAME_MAX = 40;
+export const PRESET_NAME_MAX = COMPOSER_LIMITS.PRESET_NAME_MAX;
 
 export const PRESET_MESSAGES = Object.freeze({
   nameRequired: 'Enter a name for the preset.',

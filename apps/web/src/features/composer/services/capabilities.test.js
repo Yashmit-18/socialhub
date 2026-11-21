@@ -76,10 +76,15 @@ describe('CAPABILITY_MESSAGES', () => {
     expect(Object.isFrozen(CAPABILITY_MESSAGES)).toBe(true);
   });
 
-  it('says plainly that each capability is not available yet', () => {
-    for (const message of Object.values(CAPABILITY_MESSAGES)) {
-      expect(message).toMatch(/not available yet/);
+  it('says plainly why each capability is unavailable, without blaming a missing API', () => {
+    for (const key of ['serverDrafts', 'mediaUpload', 'serverPresets']) {
+      // The API exists: these are off because their flag is not set for this build.
+      expect(CAPABILITY_MESSAGES[key]).toMatch(/not switched on for this site/);
+      expect(CAPABILITY_MESSAGES[key]).toMatch(/in this browser/);
+      expect(CAPABILITY_MESSAGES[key]).not.toMatch(/API|not available yet/);
     }
+    // Publishing really does not exist.
+    expect(CAPABILITY_MESSAGES.publishing).toMatch(/not available yet/);
   });
 
   it('labels device-only fallbacks as staying in this browser', () => {

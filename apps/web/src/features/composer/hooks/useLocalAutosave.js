@@ -4,7 +4,9 @@ import { fromLocalDraft, toLocalDraft } from '../model/serialize.js';
 import {
   clearLocalDraft,
   isLocalStorageAvailable,
+  localDraftKey,
   readLocalDraft,
+  resumeLocalDrafts,
   writeLocalDraft,
 } from '../services/localStore.js';
 
@@ -28,6 +30,12 @@ import {
  *    visibilitychange) and when the hook unmounts (in-app navigation), so leaving inside the
  *    debounce window loses nothing.
  *
+ *  - Every composer tab of one person + workspace shares the same draft slot. When another tab
+ *    writes or removes it (a `storage` event, re-checked when this tab becomes visible), this
+ *    tab stops claiming "saved": the status becomes 'error' with reason 'replaced', so the
+ *    leave-page guard is armed. Nothing is rewritten automatically (two tabs would overwrite
+ *    each other forever): the next edit or "Save draft" here writes this tab's content.
+ *
  * The draft slot (user + workspace) is chosen once per mount: remount (key) the composer when
  * either changes.
  *
@@ -36,7 +44,11 @@ import {
  *   'pending'     a change is waiting for the debounce
  *   'saved'       the current content is saved in this browser at `savedAt`
  *   'paused'      an earlier device draft waits for restore() / discardRestorable()
- *   'error'       the last write failed (`reason` 'quota' | 'error'); retried on the next change
+ *   'error'       the last write failed (`reason` 'quota' | 'error'), or another tab changed
+ *                 the slot (`reason` 'replaced'); the next change writes again
+ *
+ * `reason` stays set while a new change is 'pending', so callers can keep treating the content
+ * as unsaved until a write actually succeeds.
  *   'unavailable' this browser blocks storage (`reason` 'unavailable')
  */
 
@@ -46,13 +58,14 @@ const serializeDraft = (state) => JSON.stringify(toLocalDraft(state));
 const EMPTY_DRAFT_KEY = serializeDraft(createInitialComposerState());
 const NOTHING_WRITTEN = Object.freeze({ key: EMPTY_DRAFT_KEY, savedAt: null, reason: null });
 
-function readRestorable(userId, workspaceId) {
-  const stored = readLocalDraft(userId, workspaceId);
+function toRestorable(stored) {
   if (!stored) return null;
   const { state, missingMedia } = fromLocalDraft(stored.data);
   if (!hasContent(state) && missingMedia.length === 0) return null;
   return { savedAt: stored.savedAt, data: stored.data, state, missingMedia };
 }
+
+const readRestorable = (userId, workspaceId) => toRestorable(readLocalDraft(userId, workspaceId));
 
 function setUp(userId, workspaceId) {
   const scope = userId && workspaceId ? { userId, workspaceId } : null;
@@ -132,6 +145,46 @@ export function useLocalAutosave({
     };
   }, [writeIfChanged]);
 
+  // A composer is open for this person again: device drafts may be written (they are refused
+  // between sign-out and the next mount, see clearLocalDraftsForUser).
+  useEffect(() => {
+    if (scope) resumeLocalDrafts(scope.userId);
+  }, [scope]);
+
+  // Another tab shares this slot: notice when it writes or removes the draft.
+  useEffect(() => {
+    if (!scope || !available) return undefined;
+    const slotKey = localDraftKey(scope.userId, scope.workspaceId);
+    const check = () => {
+      const stored = readLocalDraft(scope.userId, scope.workspaceId);
+      const storedAt = stored?.savedAt ?? null;
+      const offer = toRestorable(stored);
+      // Paused: keep the offered draft in step with the slot (or resume when it is gone).
+      setRestorable((current) =>
+        current === null || current.savedAt === storedAt ? current : offer,
+      );
+      // Saved here, but the slot no longer holds this tab's write.
+      setRecord((current) =>
+        current.reason || current.savedAt === null || current.savedAt === storedAt
+          ? current
+          : { ...current, reason: 'replaced' },
+      );
+    };
+    const onStorage = (event) => {
+      // `key` is null when the whole storage was cleared.
+      if (event.key === null || event.key === slotKey) check();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [scope, available]);
+
   /**
    * Saves the current content now ("Save draft"). Returns { ok: true, savedAt } or
    * { ok: false, reason: 'unavailable' | 'quota' | 'error' | 'paused' | 'empty' }.
@@ -154,13 +207,20 @@ export function useLocalAutosave({
   const restore = useCallback(() => {
     if (!restorable) return null;
     setRestorable(null);
-    setRecord({
-      key: serializeDraft(restorable.state),
-      savedAt: restorable.savedAt,
-      reason: null,
-    });
+    if (hasContent(restorable.state)) {
+      setRecord({
+        key: serializeDraft(restorable.state),
+        savedAt: restorable.savedAt,
+        reason: null,
+      });
+    } else {
+      // The draft held only files (which can't be kept): there is nothing left to save, so the
+      // slot is removed instead of being offered again on every visit.
+      if (scope) clearLocalDraft(scope.userId, scope.workspaceId);
+      setRecord(NOTHING_WRITTEN);
+    }
     return restorable.state;
-  }, [restorable]);
+  }, [restorable, scope]);
 
   /** Deletes the earlier device draft and resumes autosave for the current content. */
   const discardRestorable = useCallback(() => {

@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useOptionalWorkspace } from '../../context/WorkspaceContext.jsx';
+import { clearLocalDraftsForUser } from '../../features/composer/services/localStore.js';
 import { useTheme } from '../../hooks/useTheme.js';
 import { useWorkspaces } from '../../lib/queries.js';
 import { cn } from '../../lib/utils.js';
@@ -163,7 +164,7 @@ function SidebarContent({ workspace, can, onNavigate }) {
         <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Publishing</p>
         <p className="mt-1 text-xs leading-relaxed text-muted">
           {workspace && can(PERMISSIONS.CONTENT_CREATE)
-            ? 'You can compose, preview and save posts as drafts in this browser. '
+            ? 'You can compose, preview and save posts as drafts. '
             : ''}
           Publishing to Facebook and Instagram isn&rsquo;t available yet.
         </p>
@@ -213,7 +214,12 @@ function UserMenu() {
             danger
             onClick={async () => {
               close();
+              const userId = user?.id;
               await signOut();
+              // Composer drafts are plain text in this browser: don't leave them behind for
+              // the next person on a shared computer. (Done after sign-out so the composer's
+              // own unmount autosave can't write a draft back.)
+              clearLocalDraftsForUser(userId);
               navigate('/login', { replace: true });
             }}
           >

@@ -23,10 +23,19 @@ const ICON_TONES = {
 const SAVED_HERE = 'Saved in this browser';
 const UNAVAILABLE_HERE = 'Autosave is off: this browser blocks storage';
 
+const REPLACED_HERE = 'Changed in another tab: not saved here';
+
 const localErrorLabel = (reason) =>
   reason === 'quota'
     ? "Couldn't autosave: this browser's storage is full"
-    : "Couldn't autosave in this browser";
+    : reason === 'replaced'
+      ? REPLACED_HERE
+      : "Couldn't autosave in this browser";
+
+const localErrorTitle = (reason) =>
+  reason === 'replaced'
+    ? 'Another SocialHub tab saved or discarded the draft in this browser. Edit or save here to keep this version.'
+    : undefined;
 
 /**
  * Wording for device autosave (useLocalAutosave). `announcement` feeds the polite live region:
@@ -54,7 +63,8 @@ function localView(local) {
         tone: 'success',
         label: SAVED_HERE,
         savedAt: local.savedAt,
-        title: 'Only you can see it, on this device. Attached files are not kept.',
+        title:
+          'Kept in this browser until you discard it or sign out. Attached files are not kept.',
         announcement: SAVED_HERE,
       };
     case 'paused':
@@ -67,7 +77,13 @@ function localView(local) {
       };
     case 'error': {
       const label = localErrorLabel(local.reason);
-      return { icon: TriangleAlert, tone: 'danger', label, announcement: label };
+      return {
+        icon: TriangleAlert,
+        tone: local.reason === 'replaced' ? 'warning' : 'danger',
+        label,
+        title: localErrorTitle(local.reason),
+        announcement: label,
+      };
     }
     case 'unavailable':
       return {
@@ -93,7 +109,20 @@ function serverView(server, local) {
         label: 'Saving…',
         announcement: 'Saving draft…',
       };
-    case 'saved':
+    case 'saved': {
+      // Files that aren't on the server are not part of the team draft: say so, always.
+      const omitted = server.omittedMedia?.length ?? 0;
+      if (omitted > 0) {
+        const label = `Saved to team drafts without ${omitted} ${omitted === 1 ? 'file' : 'files'}`;
+        return {
+          icon: TriangleAlert,
+          tone: 'warning',
+          label,
+          savedAt: server.draft?.savedAt ?? null,
+          title: `${omitted === 1 ? 'One attached file isn’t' : `${omitted} attached files aren’t`} uploaded, so the team draft doesn’t include ${omitted === 1 ? 'it' : 'them'}.`,
+          announcement: label,
+        };
+      }
       return {
         icon: CloudCheck,
         tone: 'success',
@@ -101,6 +130,7 @@ function serverView(server, local) {
         savedAt: server.draft?.savedAt ?? null,
         announcement: 'Saved to team drafts',
       };
+    }
     case 'error':
       return {
         icon: TriangleAlert,

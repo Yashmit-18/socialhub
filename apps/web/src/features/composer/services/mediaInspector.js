@@ -102,12 +102,20 @@ export function inspectMediaFile(file, { kind, url, timeoutMs = INSPECTION_TIMEO
       element.preload = 'metadata';
       element.muted = true;
       element.playsInline = true;
-      element.onloadedmetadata = () =>
-        succeed({
-          width: positive(element.videoWidth),
-          height: positive(element.videoHeight),
-          durationSec: duration(element.duration),
-        });
+      element.onloadedmetadata = () => {
+        const width = positive(element.videoWidth);
+        const height = positive(element.videoHeight);
+        // Audio-only files, or a picture track this browser can't decode, report 0×0. Their
+        // dimensions are unknown, so the platform checks must say so rather than pass silently.
+        if (width === null || height === null) {
+          fail(
+            INSPECTION_ERROR_CODES.UNREADABLE,
+            `This browser couldn't read the picture in ${name}, so its size can't be checked.`,
+          );
+          return;
+        }
+        succeed({ width, height, durationSec: duration(element.duration) });
+      };
     } else {
       element.decoding = 'async';
       element.onload = () => {

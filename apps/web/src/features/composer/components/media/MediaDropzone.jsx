@@ -104,6 +104,9 @@ export function MediaDropzone({
   className,
 }) {
   const inputRef = useRef(null);
+  const zoneRef = useRef(null);
+  /** Focus was inside the zone when files were delivered (restored after a layout switch). */
+  const refocusRef = useRef(false);
   const depthRef = useRef(0);
   const [dragging, setDragging] = useState(false);
   const titleId = useId();
@@ -131,8 +134,19 @@ export function MediaDropzone({
 
   const deliver = (files) => {
     if (blocked || files.length === 0) return;
+    refocusRef.current = Boolean(zoneRef.current?.contains(document.activeElement));
     onFiles?.(files);
   };
+
+  // Adding the first file switches to the compact layout, which remounts "Browse files". If
+  // the keyboard was on it, put focus on its replacement instead of letting it fall to <body>.
+  useEffect(() => {
+    if (!refocusRef.current) return;
+    refocusRef.current = false;
+    const zone = zoneRef.current;
+    if (!zone || zone.contains(document.activeElement)) return;
+    (zone.querySelector('button:not([disabled])') ?? zone).focus();
+  }, [compact]);
 
   const handleDragEnter = (event) => {
     if (!carriesFiles(event.dataTransfer)) return;
@@ -196,6 +210,7 @@ export function MediaDropzone({
   return (
     <div className={className}>
       <div
+        ref={zoneRef}
         role="group"
         aria-labelledby={titleId}
         aria-describedby={`${hintId} ${countId}`}

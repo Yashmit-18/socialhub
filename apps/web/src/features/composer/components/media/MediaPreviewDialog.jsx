@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Button } from '../../../../components/ui/Button.jsx';
 import { Modal } from '../../../../components/ui/Modal.jsx';
 import { cn } from '../../../../lib/utils.js';
 import { INSPECTION_STATUS, MEDIA_KINDS, UPLOAD_STATUS } from '../../model/composerState.js';
@@ -167,9 +168,17 @@ export function MediaPreviewDialog({ media = [], index = null, onClose, onNaviga
       size="lg"
       title={item && <span className="block wrap-anywhere">{item.fileName}</span>}
       description={item ? `${index + 1} of ${total}` : undefined}
+      footer={
+        <Button variant="secondary" onClick={close}>
+          Done
+        </Button>
+      }
     >
       {item && (
         <div className="space-y-5">
+          <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {`${item.fileName}, ${index + 1} of ${total}`}
+          </p>
           <div className="relative overflow-hidden rounded-xl bg-slate-950 ring-1 ring-slate-900/5 dark:ring-white/10">
             <Stage key={`${item.id}:${item.previewUrl ?? ''}`} item={item} />
             {navigable && (

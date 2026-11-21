@@ -390,16 +390,28 @@ describe('ComposerActionBar', () => {
         {...barProps({ issueSummary: { errors: 2, warnings: 1 }, onShowIssues })}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Readiness check: 2 errors · 1 warning' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Readiness check, 3 issues: 2 errors · 1 warning' }),
+    );
     expect(onShowIssues).toHaveBeenCalledTimes(1);
   });
 
-  it('shortens the readiness summary on small screens without changing what is announced', () => {
+  it('shortens the readiness summary on small screens and keeps that text in the name', () => {
     render(<ComposerActionBar {...barProps({ issueSummary: { errors: 2, warnings: 1 } })} />);
     const short = screen.getByText('3 issues');
     expect(short).toHaveAttribute('aria-hidden', 'true');
     expect(short).toHaveClass('sm:hidden');
     expect(screen.getByText('2 errors · 1 warning')).toHaveClass('max-sm:sr-only');
+    // WCAG 2.5.3: what phones show ("3 issues") is also part of what is announced.
+    expect(screen.getByText('Readiness check, 3 issues:')).toHaveClass('sr-only');
+  });
+
+  it('makes saving the primary action and Publish visibly unavailable', () => {
+    render(<ComposerActionBar {...barProps()} />);
+    expect(screen.getByRole('button', { name: /save draft/i })).toHaveClass('bg-brand-600');
+    const publish = screen.getByRole('button', { name: 'Publish' });
+    expect(publish).toBeDisabled();
+    expect(publish).not.toHaveClass('bg-brand-600');
   });
 });
 

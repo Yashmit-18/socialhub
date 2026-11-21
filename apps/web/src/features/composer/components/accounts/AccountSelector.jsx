@@ -296,12 +296,12 @@ export function AccountSelector({
             onChange={setPlatform}
             counts={countByPlatform(accounts)}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SearchField
               value={query}
               onChange={setQuery}
               inputRef={searchRef}
-              className="flex-1"
+              className="min-w-[12rem] flex-1"
             />
             <AccountPresets
               accounts={accounts}

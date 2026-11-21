@@ -139,6 +139,40 @@ export function describeActivity(entry) {
       };
     case ACTIVITY_ACTIONS.SOCIAL_ACCOUNT_REMOVED:
       return { icon: Trash2, tone: 'danger', actor, text: `removed ${target} from the workspace` };
+    case ACTIVITY_ACTIONS.CONTENT_PACKAGE_CREATED:
+      return { icon: Share2, tone: 'brand', actor, text: 'saved a new draft' };
+    case ACTIVITY_ACTIONS.CONTENT_PACKAGE_UPDATED:
+      return { icon: Settings, tone: 'neutral', actor, text: 'edited a draft' };
+    case ACTIVITY_ACTIONS.CONTENT_PACKAGE_DELETED:
+      return { icon: Trash2, tone: 'danger', actor, text: 'deleted a draft' };
+    case ACTIVITY_ACTIONS.MEDIA_UPLOADED:
+      return {
+        icon: Share2,
+        tone: 'success',
+        actor,
+        text: `uploaded ${entry.target?.label ?? 'a file'}`,
+      };
+    case ACTIVITY_ACTIONS.MEDIA_DELETED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `deleted the file ${entry.target?.label ?? ''}`.trim(),
+      };
+    case ACTIVITY_ACTIONS.ACCOUNT_PRESET_CREATED:
+      return {
+        icon: KeyRound,
+        tone: 'brand',
+        actor,
+        text: `created the account preset ${entry.target?.label ?? ''}`.trim(),
+      };
+    case ACTIVITY_ACTIONS.ACCOUNT_PRESET_DELETED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `deleted the account preset ${entry.target?.label ?? ''}`.trim(),
+      };
     default:
       return { icon: Settings, tone: 'neutral', actor, text: entry.action };
   }

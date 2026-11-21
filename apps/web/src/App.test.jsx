@@ -172,7 +172,9 @@ describe('permission-aware UI', () => {
     // Phase 3 wording: a "setup required" state that explains what is missing.
     const notice = await screen.findByRole('region', { name: 'Meta setup required' });
     expect(within(notice).getByText(/META_APP_ID and META_APP_SECRET/)).toBeInTheDocument();
-    expect(within(notice).getByText(/cannot connect, reconnect or synchronize/)).toBeInTheDocument();
+    expect(
+      within(notice).getByText(/cannot connect, reconnect or synchronize/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Connect Facebook/ })).not.toBeInTheDocument();
   });
 

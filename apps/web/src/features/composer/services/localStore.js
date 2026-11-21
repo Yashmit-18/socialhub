@@ -5,6 +5,9 @@
  * This is genuine storage on this device only. The UI always labels it that way. It is not
  * shared with the team and is not a server draft. Media files are never stored here: only
  * their names and types, so the person can be told which files to add again.
+ *
+ * Drafts are plain text in localStorage: anyone using this browser profile could read them,
+ * so they are removed when the person signs out (clearLocalDraftsForUser).
  */
 
 const DRAFT_PREFIX = 'sh-composer-draft:v1';
@@ -120,6 +123,7 @@ export function readLocalDraft(userId, workspaceId) {
 
 /** Saves `data` (see model/serialize.js → toLocalDraft). Returns `{ ok, savedAt?, reason? }`. */
 export function writeLocalDraft(userId, workspaceId, data, savedAt = new Date().toISOString()) {
+  if (signedOutUsers.has(userId)) return { ok: false, reason: 'unavailable' };
   const result = writeJson(localDraftKey(userId, workspaceId), {
     version: LOCAL_DRAFT_VERSION,
     savedAt,
@@ -130,6 +134,40 @@ export function writeLocalDraft(userId, workspaceId, data, savedAt = new Date().
 
 export function clearLocalDraft(userId, workspaceId) {
   remove(localDraftKey(userId, workspaceId));
+}
+
+/** People whose drafts were cleared on sign-out; writes resume when a composer mounts again. */
+const signedOutUsers = new Set();
+
+/** Lets device drafts be written again for this person (called when a composer mounts). */
+export function resumeLocalDrafts(userId) {
+  signedOutUsers.delete(userId);
+}
+
+/**
+ * Removes every device draft of one person (all workspaces). Called on explicit sign-out so
+ * unpublished posts don't stay readable in a shared browser. Presets are kept: they hold no
+ * post content. Returns the number of drafts removed.
+ */
+export function clearLocalDraftsForUser(userId) {
+  if (!userId) return 0;
+  // The composer may still be mounted and flush a pending change while it unmounts during
+  // sign-out: refuse those late writes so nothing is written back after the clean-up.
+  signedOutUsers.add(userId);
+  const storage = getStorage();
+  if (!storage) return 0;
+  const prefix = `${DRAFT_PREFIX}:${userId}:`;
+  try {
+    const keys = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+    return keys.length;
+  } catch {
+    return 0;
+  }
 }
 
 /* ----------------------------------------------------------------- presets */

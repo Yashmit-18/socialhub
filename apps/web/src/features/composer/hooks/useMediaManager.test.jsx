@@ -31,6 +31,7 @@ import {
   MAX_REJECTIONS,
   UPLOAD_MAX_POLLS,
   UPLOAD_POLL_INTERVAL_MS,
+  UPLOAD_SLOW_POLL_INTERVAL_MS,
   useMediaManager,
 } from './useMediaManager.js';
 
@@ -146,7 +147,11 @@ function skipPollDelay() {
   return vi
     .spyOn(globalThis, 'setTimeout')
     .mockImplementation((callback, ms, ...args) =>
-      realSetTimeout(callback, ms === UPLOAD_POLL_INTERVAL_MS ? 0 : ms, ...args),
+      realSetTimeout(
+        callback,
+        ms === UPLOAD_POLL_INTERVAL_MS || ms === UPLOAD_SLOW_POLL_INTERVAL_MS ? 0 : ms,
+        ...args,
+      ),
     );
 }
 
@@ -284,6 +289,16 @@ describe('inspectMediaFile (services/mediaInspector.js)', () => {
     await expect(
       inspect(mp4(), { kind: MEDIA_KINDS.VIDEO, url: 'blob:mock/4' }),
     ).resolves.toMatchObject({ durationSec: null });
+  });
+
+  it('rejects a video whose picture has no readable size (audio-only, undecodable track)', async () => {
+    const { inspectMediaFile: inspect } = await loadActual();
+    fakeVideo({ width: 0, height: 0, duration: 30 });
+
+    // Resolving with null dimensions would let the aspect-ratio checks pass silently.
+    await expect(
+      inspect(mp4('audio-only.mp4'), { kind: MEDIA_KINDS.VIDEO, url: 'blob:mock/6' }),
+    ).rejects.toMatchObject({ code: 'UNREADABLE' });
   });
 
   it('rejects when the video can’t be read', async () => {
@@ -659,14 +674,22 @@ describe('useMediaManager — uploads through the media API', () => {
     act(() => xhrs[0].respond(200));
 
     await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.PROCESSING));
-    expect(item(result).upload.mediaId).toBeNull();
+    // The bytes are stored, so the server id is kept: a team draft can already reference the
+    // file. It is still not "uploaded" until the API says READY.
+    expect(item(result).upload.mediaId).toBe('m1');
+    expect(item(result).upload.status).not.toBe(UPLOAD_STATUS.UPLOADED);
   });
 
-  it(`gives up after ${UPLOAD_MAX_POLLS} polls with an honest message`, async () => {
-    skipPollDelay();
+  it(`keeps waiting past ${UPLOAD_MAX_POLLS} polls, checking less often, until the server is ready`, async () => {
+    const delays = skipPollDelay();
+    let polls = 0;
     const api = mediaApi({
       'POST /workspaces/w1/media/m1/complete': () => jsonResponse(200, asset('PROCESSING')),
-      'GET /workspaces/w1/media/m1': () => jsonResponse(200, asset('PROCESSING')),
+      'GET /workspaces/w1/media/m1': () => {
+        polls += 1;
+        // Long processing (e.g. a video transcode): ready only after the fast polls ran out.
+        return jsonResponse(200, asset(polls > UPLOAD_MAX_POLLS + 2 ? 'READY' : 'PROCESSING'));
+      },
     });
     const xhrs = installFakeXhr();
     const { result } = renderManager();
@@ -675,13 +698,13 @@ describe('useMediaManager — uploads through the media API', () => {
 
     act(() => xhrs[0].respond(200));
 
-    // (Not 3000 ms: skipPollDelay shortens exactly that delay.)
-    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.FAILED), {
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.UPLOADED), {
       timeout: 4500,
     });
-    expect(api.count('GET /workspaces/w1/media/m1')).toBe(UPLOAD_MAX_POLLS);
-    expect(item(result).upload.error).toMatch(/taking longer than expected/);
-    expect(item(result).upload.mediaId).toBeNull();
+    // Never reported as failed, and the server id was never dropped.
+    expect(item(result).upload).toMatchObject({ mediaId: 'm1', error: null });
+    expect(api.count('GET /workspaces/w1/media/m1')).toBe(UPLOAD_MAX_POLLS + 3);
+    expect(delays).toHaveBeenCalledWith(expect.any(Function), UPLOAD_SLOW_POLL_INTERVAL_MS);
   });
 
   it('reports the server’s processing failure reason', async () => {

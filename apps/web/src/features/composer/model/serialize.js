@@ -119,8 +119,14 @@ const isStoredOnServer = (m) =>
  *
  * `platformCaptions` lists only customized platforms: PATCH replaces the whole object, so a
  * platform that is absent uses the shared caption (contract §4.3).
+ *
+ * `availableAccountIds` (optional) is the list of accounts the person can use right now.
+ * Selected accounts outside it are left out of `targetAccountIds`, exactly as the readiness
+ * check says ("no longer available to you and will be left out"); the API would reject them.
+ * Leave it out while the account list is unknown: nothing is filtered then.
  */
-export function toContentPackageInput(state) {
+export function toContentPackageInput(state, { availableAccountIds = null } = {}) {
+  const available = Array.isArray(availableAccountIds) ? new Set(availableAccountIds) : null;
   const platformCaptions = {};
   for (const platform of COMPOSER_PLATFORMS) {
     if (typeof state.platformCaptions[platform] === 'string') {
@@ -138,7 +144,9 @@ export function toContentPackageInput(state) {
       keywords: [...state.keywords],
       firstComment: state.firstComment,
       media: uploaded.map((m) => ({ mediaId: m.upload.mediaId, altText: m.altText })),
-      targetAccountIds: [...state.selectedAccountIds],
+      targetAccountIds: available
+        ? state.selectedAccountIds.filter((id) => available.has(id))
+        : [...state.selectedAccountIds],
     },
     omittedMedia,
   };

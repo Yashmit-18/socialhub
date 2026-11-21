@@ -57,7 +57,9 @@ function IssueChip({ summary, onShowIssues }) {
   const content = (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="sr-only">Readiness check:</span>{' '}
+      <span className="sr-only">
+        {total ? `Readiness check, ${plural(total, 'issue')}:` : 'Readiness check:'}
+      </span>{' '}
       {total ? (
         <>
           <span className="sm:hidden" aria-hidden="true">
@@ -190,7 +192,7 @@ export function ComposerActionBar({
             <div className="ml-auto flex items-center gap-2 sm:ml-0">
               {onSaveDraft && (
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   loading={saving}
                   disabled={!canSave}
                   onClick={() => onSaveDraft()}
@@ -205,7 +207,12 @@ export function ComposerActionBar({
                   <span className="sr-only sm:not-sr-only">{saveLabel}</span>
                 </Button>
               )}
-              <Button disabled aria-describedby={noteId} className="max-sm:h-9 max-sm:px-3">
+              <Button
+                variant="secondary"
+                disabled
+                aria-describedby={noteId}
+                className="max-sm:h-9 max-sm:px-3"
+              >
                 <Send className="h-4 w-4" aria-hidden="true" />
                 Publish
               </Button>

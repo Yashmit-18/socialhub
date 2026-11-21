@@ -1,7 +1,8 @@
-import { AtSign, CircleAlert, Hash } from 'lucide-react';
+import { AtSign, CircleAlert, Hash, TriangleAlert } from 'lucide-react';
 import { cn } from '../../../../lib/utils.js';
 import { platformLabel } from '../../constants/platformRules.js';
 import { PlatformGlyph } from '../shared/PlatformIcon.jsx';
+import { SOFT_LIMIT_NOTE } from './limits.js';
 
 /** Share of the limit at which a counter turns amber. */
 const NEAR_LIMIT = 0.9;
@@ -11,7 +12,8 @@ const amount = (n, unit) => `${num(n)} ${n === 1 ? unit : `${unit}s`}`;
 
 const TONES = {
   ok: 'text-slate-500 dark:text-slate-400',
-  near: 'text-amber-600 dark:text-amber-400',
+  near: 'text-amber-700 dark:text-amber-400',
+  'over-soft': 'text-amber-700 dark:text-amber-400',
   over: 'text-rose-600 dark:text-rose-400',
 };
 
@@ -21,9 +23,9 @@ const RING_TONES = {
   over: 'text-rose-500',
 };
 
-function usageState(count, max) {
+function usageState(count, max, soft) {
   if (max === null) return 'ok';
-  if (count > max) return 'over';
+  if (count > max) return soft ? 'over-soft' : 'over';
   return count >= max * NEAR_LIMIT ? 'near' : 'ok';
 }
 
@@ -75,9 +77,11 @@ function UsageRing({ ratio, className }) {
  *  - unit: 'character' (default) | 'hashtag' | 'mention' …, pluralised with "s"
  *  - icon: optional lucide icon shown before the numbers
  *  - showRing: show the progress ring (default true when there is a limit)
+ *  - soft: the limit is not confirmed in Meta's documentation (rules.unverified). Going over
+ *    it is a warning (amber, "over the usual limit"), never an error.
  *  - id: element id, so a textarea can reference the counter with aria-describedby
  *
- * The root carries `data-state="ok" | "near" | "over"`.
+ * The root carries `data-state="ok" | "near" | "over-soft" | "over"`.
  */
 export function CharacterCount({
   count,
@@ -87,18 +91,22 @@ export function CharacterCount({
   unit = 'character',
   icon: Icon,
   showRing = true,
+  soft = false,
   id,
   className,
 }) {
   const value = Math.max(0, Math.trunc(Number(count) || 0));
   const limit = typeof max === 'number' && Number.isFinite(max) && max > 0 ? max : null;
-  const state = usageState(value, limit);
+  const state = usageState(value, limit, soft);
+  const isOver = state === 'over' || state === 'over-soft';
   const spokenName = srLabel ?? (typeof label === 'string' ? label : null);
   const lead = spokenName ? `${spokenName}: ` : '';
 
   let spoken;
   if (limit === null) spoken = `${lead}${amount(value, unit)}`;
   else if (state === 'over') spoken = `${lead}${amount(value - limit, unit)} over the limit`;
+  else if (state === 'over-soft')
+    spoken = `${lead}${amount(value - limit, unit)} over the usual limit (${SOFT_LIMIT_NOTE})`;
   else spoken = `${lead}${amount(limit - value, unit)} left`;
 
   let shown;
@@ -109,6 +117,7 @@ export function CharacterCount({
     <span
       id={id}
       data-state={state}
+      title={state === 'over-soft' ? `Over the usual limit (${SOFT_LIMIT_NOTE})` : undefined}
       className={cn(
         'inline-flex min-w-0 items-center text-xs tabular-nums transition-colors',
         TONES[state],
@@ -118,13 +127,15 @@ export function CharacterCount({
       <span aria-hidden="true" className="inline-flex items-center gap-1">
         {state === 'over' ? (
           <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+        ) : state === 'over-soft' ? (
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
         ) : (
           limit !== null &&
           showRing && <UsageRing ratio={value / limit} className={RING_TONES[state]} />
         )}
         {Icon && <Icon className="h-3 w-3 shrink-0" />}
         {label && <span className="font-medium">{label}</span>}
-        <span className={state === 'over' ? 'font-semibold' : undefined}>{shown}</span>
+        <span className={isOver ? 'font-semibold' : undefined}>{shown}</span>
       </span>
       <span className="sr-only">{spoken}</span>
     </span>
@@ -145,8 +156,9 @@ const UNIT_ICONS = { hashtag: Hash, mention: AtSign };
  *
  * Props:
  *  - platform: SOCIAL_PLATFORMS value
- *  - items: [{ id, unit: 'character'|'hashtag'|'mention', count, max }] — build `max` from
- *    PLATFORM_RULES; items without a limit show a plain count.
+ *  - items: [{ id, unit: 'character'|'hashtag'|'mention', count, max, soft? }] — build `max`
+ *    from PLATFORM_RULES (and `soft` from rules.unverified); items without a limit show a
+ *    plain count.
  */
 export function PlatformCounts({ platform, items, className }) {
   const label = platformLabel(platform);
@@ -171,6 +183,7 @@ export function PlatformCounts({ platform, items, className }) {
           count={item.count}
           max={item.max}
           unit={item.unit}
+          soft={item.soft}
           srLabel={label}
           icon={UNIT_ICONS[item.unit]}
           showRing={!UNIT_ICONS[item.unit]}

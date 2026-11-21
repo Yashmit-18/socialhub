@@ -34,8 +34,8 @@ export function KeywordEditor({ state, dispatch, id, className }) {
           <p className="flex items-start gap-1.5">
             <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
             <span>
-              Keywords are stored with the post in SocialHub for search and reporting. They are
-              never added to captions or sent to Facebook or Instagram.
+              Keywords are for your team&rsquo;s own reference and are saved with this draft. They
+              are never added to captions or sent to Facebook or Instagram.
             </span>
           </p>
         }

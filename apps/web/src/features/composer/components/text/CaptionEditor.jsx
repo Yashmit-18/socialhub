@@ -14,6 +14,7 @@ import {
 import { HASHTAG_PLACEMENTS, composeCaption, countChars } from '../../model/text.js';
 import { platformOutput } from '../../model/validation.js';
 import { CharacterCount, InlinePlatformGlyph, PlatformCounts } from './CharacterCount.jsx';
+import { isSoftLimit, overHardLimit } from './limits.js';
 
 const ALL = 'ALL';
 const LABEL_CLASS = 'text-sm font-medium text-slate-700 dark:text-slate-200';
@@ -79,13 +80,15 @@ export function ComposerTextarea({
 
 /** Counter items for a platform's caption, from PLATFORM_RULES (never hard-coded limits). */
 function captionCounts(output, platform, idBase) {
-  const rules = PLATFORM_RULES[platform]?.caption ?? {};
+  const platformRules = PLATFORM_RULES[platform];
+  const rules = platformRules?.caption ?? {};
   const items = [
     {
       id: `${idBase}-${platform}-characters`,
       unit: 'character',
       count: output.captionLength,
       max: rules.maxChars ?? null,
+      soft: isSoftLimit(platformRules, 'caption.maxChars'),
     },
   ];
   if (rules.maxHashtags) {
@@ -94,6 +97,7 @@ function captionCounts(output, platform, idBase) {
       unit: 'hashtag',
       count: output.captionHashtags,
       max: rules.maxHashtags,
+      soft: isSoftLimit(platformRules, 'caption.maxHashtags'),
     });
   }
   if (rules.maxMentions) {
@@ -102,12 +106,14 @@ function captionCounts(output, platform, idBase) {
       unit: 'mention',
       count: output.captionMentions,
       max: rules.maxMentions,
+      soft: isSoftLimit(platformRules, 'caption.maxMentions'),
     });
   }
   return items;
 }
 
-const overLimit = (items) => items.some((item) => item.max && item.count > item.max);
+// Only limits that Meta documents make the caption invalid; unverified ones just warn.
+const overLimit = overHardLimit;
 
 const hashtagsInCaption = (state) =>
   state.hashtags.length > 0 && state.hashtagPlacement === HASHTAG_PLACEMENTS.CAPTION;

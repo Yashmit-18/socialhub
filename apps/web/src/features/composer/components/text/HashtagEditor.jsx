@@ -8,6 +8,7 @@ import { COMPOSER_PLATFORMS, composerActions } from '../../model/composerState.j
 import { HASHTAG_PLACEMENTS, TEXT_LIMITS, parseHashtagInput } from '../../model/text.js';
 import { platformOutput } from '../../model/validation.js';
 import { InlinePlatformGlyph } from './CharacterCount.jsx';
+import { SOFT_LIMIT_NOTE, isSoftLimit } from './limits.js';
 import { TagInput } from './TagInput.jsx';
 
 const COMMIT_KEYS = ['Enter', ',', ' '];
@@ -50,6 +51,7 @@ function hashtagUsage(state, platforms) {
         where: 'caption',
         count: output.captionHashtags,
         max: rules.caption.maxHashtags,
+        soft: isSoftLimit(rules, 'caption.maxHashtags'),
         advisoryMax: rules.caption.advisoryMaxHashtags ?? null,
         advisoryNote: rules.caption.advisoryNote ?? null,
       });
@@ -64,6 +66,7 @@ function hashtagUsage(state, platforms) {
         where: 'first comment',
         count: output.firstCommentHashtags,
         max: rules.firstComment.maxHashtags,
+        soft: isSoftLimit(rules, 'firstComment.maxHashtags'),
         advisoryMax: null,
         advisoryNote: null,
       });
@@ -72,13 +75,18 @@ function hashtagUsage(state, platforms) {
   return rows;
 }
 
-function HashtagUsageRow({ platform, where, count, max, advisoryMax, advisoryNote }) {
+function HashtagUsageRow({ platform, where, count, max, soft, advisoryMax, advisoryNote }) {
   const label = platformLabel(platform);
-  const over = count > max;
-  const advised = !over && advisoryMax !== null && count > advisoryMax;
-  const near = !over && (advised || count >= max * NEAR_LIMIT);
+  // A limit that Meta's docs do not confirm only warns: it is never shown as a hard error.
+  const softOver = Boolean(soft) && count > max;
+  const over = !soft && count > max;
+  const advised = !over && !softOver && advisoryMax !== null && count > advisoryMax;
+  const near = softOver || (!over && (advised || count >= max * NEAR_LIMIT));
   return (
-    <li className="space-y-1.5" data-state={over ? 'over' : near ? 'near' : 'ok'}>
+    <li
+      className="space-y-1.5"
+      data-state={over ? 'over' : softOver ? 'over-soft' : near ? 'near' : 'ok'}
+    >
       <p
         className={cn(
           'flex items-start gap-1.5 text-xs',
@@ -93,6 +101,9 @@ function HashtagUsageRow({ platform, where, count, max, advisoryMax, advisoryNot
         <span className="min-w-0">
           <span>{`${label}: ${count} of ${max} hashtags in the ${where}`}</span>
           {over && <span className="font-semibold"> · over the limit</span>}
+          {softOver && (
+            <span className="font-semibold">{` · over the usual limit (${SOFT_LIMIT_NOTE})`}</span>
+          )}
         </span>
       </p>
       <div

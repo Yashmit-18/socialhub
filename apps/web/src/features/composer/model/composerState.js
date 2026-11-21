@@ -1,4 +1,8 @@
-import { SOCIAL_PLATFORMS } from '@socialhub/shared';
+import {
+  COMPOSER_LIMITS,
+  MEDIA_KINDS as SHARED_MEDIA_KINDS,
+  SOCIAL_PLATFORMS,
+} from '@socialhub/shared';
 import { HASHTAG_PLACEMENTS, TEXT_LIMITS, mergeUnique, removeItem } from './text.js';
 
 /**
@@ -15,7 +19,7 @@ export const COMPOSER_PLATFORMS = Object.freeze([
   SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT,
 ]);
 
-export const MEDIA_KINDS = Object.freeze({ IMAGE: 'IMAGE', VIDEO: 'VIDEO' });
+export const MEDIA_KINDS = SHARED_MEDIA_KINDS;
 
 /** Whether the browser could read a file's dimensions / duration. */
 export const INSPECTION_STATUS = Object.freeze({
@@ -74,7 +78,7 @@ export function createMediaItem({
   };
 }
 
-export const ALT_TEXT_MAX = 1000;
+export const ALT_TEXT_MAX = COMPOSER_LIMITS.ALT_TEXT_MAX;
 
 export function createInitialComposerState() {
   return {
@@ -154,7 +158,7 @@ export const composerActions = Object.freeze({
 });
 
 /** The media count cap across all platforms (per-platform limits are validation issues). */
-export const MEDIA_MAX_ITEMS = 20;
+export const MEDIA_MAX_ITEMS = COMPOSER_LIMITS.MEDIA_MAX_ITEMS;
 
 const isPlatform = (platform) => COMPOSER_PLATFORMS.includes(platform);
 const bump = (state, patch) => ({ ...state, ...patch, revision: state.revision + 1 });

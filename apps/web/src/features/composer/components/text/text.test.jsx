@@ -65,7 +65,7 @@ describe('CharacterCount', () => {
     );
     const counter = document.getElementById('count');
     expect(counter).toHaveAttribute('data-state', 'near');
-    expect(counter).toHaveClass('text-amber-600');
+    expect(counter).toHaveClass('text-amber-700');
     expect(screen.getByText('Instagram: 220 characters left')).toBeInTheDocument();
 
     rerender(<CharacterCount id="count" label="Instagram" count={2200} max={2200} />);
@@ -413,7 +413,18 @@ describe('HashtagEditor', () => {
     });
     expect(screen.getByText('Instagram: 0 of 30 hashtags in the caption')).toBeInTheDocument();
     const row = screen.getByText('Instagram: 6 of 5 hashtags in the first comment').closest('li');
+    // Instagram's 5-per-comment figure comes from a Help Center page that another one
+    // contradicts: it warns ("over the usual limit"), it is never shown as a hard error.
+    expect(row).toHaveAttribute('data-state', 'over-soft');
+    expect(row).toHaveTextContent("over the usual limit (not confirmed in Meta's documentation)");
+    expect(row).not.toHaveTextContent('over the limit');
+  });
+
+  it('shows a confirmed caption hashtag limit as a hard error', () => {
+    renderWithComposer(hashtagEditor([IG]), { hashtags: tags(31) });
+    const row = screen.getByText('Instagram: 31 of 30 hashtags in the caption').closest('li');
     expect(row).toHaveAttribute('data-state', 'over');
+    expect(row).toHaveTextContent('over the limit');
   });
 
   it('clears all hashtags and offers an undo', async () => {
@@ -466,8 +477,10 @@ describe('KeywordEditor', () => {
     expect(screen.getByText('Internal only')).toBeInTheDocument();
     const input = screen.getByRole('textbox', { name: 'SEO keywords' });
     expect(input).toHaveAccessibleDescription(
-      /stored with the post in SocialHub for search and reporting.*never added to captions or sent to Facebook or Instagram/,
+      /saved with this draft.*never added to captions or sent to Facebook or Instagram/,
     );
+    // No claim of SocialHub-side storage, search or reporting: none of that exists yet.
+    expect(input).not.toHaveAccessibleDescription(/stored .* in SocialHub|search and reporting/);
 
     await user.type(input, 'summer sale{Enter}');
     expect(latest().keywords).toEqual(['summer sale']);
@@ -769,18 +782,21 @@ describe('FirstCommentField', () => {
     expect(screen.queryByText(PLATFORM_RULES[IG].firstComment.note)).not.toBeInTheDocument();
   });
 
-  it('flags a comment over the limit', () => {
+  it('warns, without marking the field invalid, past a comment limit Meta does not document', () => {
     const { container } = renderWithComposer(firstComment([IG]), {
       firstComment: 'x'.repeat(2201),
     });
-    expect(screen.getByText('Instagram: 1 character over the limit')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'First comment' })).toHaveAttribute(
+    // 2,200 is an industry figure for Instagram comments, not a documented limit.
+    expect(
+      screen.getByText(
+        "Instagram: 1 character over the usual limit (not confirmed in Meta's documentation)",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Instagram: 1 character over the limit')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'First comment' })).not.toHaveAttribute(
       'aria-invalid',
-      'true',
     );
-    expect(container.querySelector('[aria-live="polite"]')).toHaveTextContent(
-      'The Instagram first comment is over the limit.',
-    );
+    expect(container.querySelector('[aria-live="polite"]')).not.toHaveTextContent('over the limit');
   });
 
   it('shows a generic count and a hint before any account is chosen', async () => {

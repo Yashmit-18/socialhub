@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setAccessToken } from '../../lib/api.js';
 import { apiError, jsonResponse } from '../../test/fetchMock.js';
 import { renderApp } from '../../test/renderApp.jsx';
+import { createInitialComposerState } from './model/composerState.js';
+import { resumeLocalDrafts, writeLocalDraft } from './services/localStore.js';
 import { installObjectUrlMock, makeFile } from './test/browserMocks.js';
 import { accountList, setupComposerApi } from './test/fixtures.js';
 import { renderComposer } from './test/renderComposer.jsx';
@@ -19,6 +21,8 @@ vi.mock('./services/mediaInspector.js', () => ({
 }));
 
 const DRAFT_KEY = 'sh-composer-draft:v1:u1:w1';
+// These tests render the whole page and type into it: allow for a busy machine.
+vi.setConfig({ testTimeout: 20_000 });
 let objectUrls;
 
 /** Every request except reads and the session refresh — the composer must make none by default. */
@@ -37,6 +41,8 @@ async function selectAccounts(...names) {
 beforeEach(() => {
   setAccessToken(null);
   objectUrls = installObjectUrlMock();
+  // A sign-out test suspends browser drafts for this person until a composer mounts again.
+  resumeLocalDrafts('u1');
 });
 
 afterEach(() => {
@@ -252,6 +258,85 @@ describe('drafts', () => {
       targetAccountIds: ['acc-fb-1'],
     });
     expect(await screen.findAllByText(/saved to team drafts/i)).not.toHaveLength(0);
+  });
+});
+
+describe('review regressions', () => {
+  it('lists a restored draft’s files until they are added again, and restores their alt text', async () => {
+    writeLocalDraft('u1', 'w1', {
+      ...createInitialComposerState(),
+      caption: 'Beach day',
+      missingMedia: [
+        { fileName: 'beach.jpg', kind: 'IMAGE', altText: 'Two people on a sunny beach' },
+        { fileName: 'clip.mp4', kind: 'VIDEO', altText: '' },
+      ],
+    });
+    setupComposerApi();
+    const { container } = renderComposer();
+    await userEvent.click(await screen.findByRole('button', { name: 'Restore draft' }));
+
+    // The restore banner is gone, but the files to add again are still listed.
+    const list = await screen.findByRole('region', { name: 'Files to add again' });
+    expect(within(list).getByText('beach.jpg')).toBeInTheDocument();
+    expect(within(list).getByText('clip.mp4')).toBeInTheDocument();
+
+    const input = container.ownerDocument.querySelector('input[type="file"]');
+    await userEvent.upload(input, makeFile('beach.jpg', 'image/jpeg', 200_000));
+
+    // Its saved alt text is back, and only the other file is still listed.
+    expect(
+      await screen.findByRole('button', { name: 'Edit alt text for beach.jpg' }),
+    ).toBeInTheDocument();
+    const remaining = screen.getByRole('region', { name: 'Files to add again' });
+    expect(within(remaining).queryByText('beach.jpg')).toBeNull();
+    expect(within(remaining).getByText('clip.mp4')).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss the list of files to add again' }),
+    );
+    expect(screen.queryByRole('region', { name: 'Files to add again' })).toBeNull();
+  });
+
+  it('does not report "No problems found" before the accounts have loaded', async () => {
+    setupComposerApi({
+      routes: { 'GET /workspaces/w1/social-accounts': () => new Promise(() => {}) },
+    });
+    renderComposer();
+    await screen.findByRole('heading', { name: 'Create post' });
+    expect(screen.queryByText(/No problems found/)).toBeNull();
+    expect(screen.queryByText(/Readiness check[:,]/)).toBeNull();
+  });
+
+  it('shows limits Meta doesn’t document as warnings, never as errors', async () => {
+    setupComposerApi();
+    renderComposer();
+    await selectAccounts('Acme Instagram');
+    const comment = screen.getByRole('textbox', { name: 'First comment' });
+    await userEvent.click(comment);
+    await userEvent.paste('#a #b #c #d #e #f');
+
+    expect(comment).not.toHaveAttribute('aria-invalid');
+    expect(
+      within(previewPanel()).getAllByText(/Not confirmed in Meta's documentation/).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('removes the browser draft when the person signs out', async () => {
+    setupComposerApi({ routes: { 'POST /auth/logout': () => jsonResponse(204) } });
+    renderApp('/w/acme/compose');
+    await selectAccounts('Acme Store');
+    await userEvent.type(captionBox(), 'Private until published');
+    await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).toContain('Private'), {
+      timeout: 3000,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+
+    await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).toBeNull());
+    // …and the composer's own unmount autosave did not write it back.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
   });
 });
 

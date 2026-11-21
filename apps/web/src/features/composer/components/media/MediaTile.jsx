@@ -243,6 +243,9 @@ function UploadStatus({ item, upload, uploadAvailable, onRetryUpload, onCancelUp
   }
 
   if (upload.status === UPLOAD_STATUS.FAILED) {
+    // Files reopened from a team draft have no local copy to send again: "Retry" would do
+    // nothing, so the way forward is to remove the file and add it again.
+    const hasLocalFile = !String(item.id).startsWith('remote_');
     return (
       <div className="space-y-1 text-[11px] leading-4">
         <p className="flex items-start gap-1 text-rose-600 dark:text-rose-400">
@@ -256,7 +259,10 @@ function UploadStatus({ item, upload, uploadAvailable, onRetryUpload, onCancelUp
             )}
           </span>
         </p>
-        {uploadAvailable && onRetryUpload && (
+        {!hasLocalFile && (
+          <p className="text-slate-600 dark:text-slate-300">Remove it and add the file again.</p>
+        )}
+        {uploadAvailable && onRetryUpload && hasLocalFile && (
           <button
             type="button"
             onClick={() => onRetryUpload(item.id)}
@@ -403,7 +409,9 @@ export function MediaTile({
       {...dragHandlers}
       draggable={draggable || undefined}
       className={cn(
-        '@container relative flex min-w-0 flex-col rounded-2xl border bg-white p-2 shadow-xs transition duration-150 dark:bg-white/[0.03]',
+        // `isolate`: the tile's own layers (badges, remove button) must not rise above page
+        // chrome such as the sticky action bar.
+        '@container relative isolate flex min-w-0 flex-col rounded-2xl border bg-white p-2 shadow-xs transition duration-150 dark:bg-white/[0.03]',
         dropPosition
           ? 'border-brand-400 ring-4 ring-brand-500/15 dark:border-brand-400/70'
           : 'border-slate-200/80 dark:border-white/10',

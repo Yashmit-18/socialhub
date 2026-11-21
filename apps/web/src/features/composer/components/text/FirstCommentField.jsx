@@ -7,19 +7,22 @@ import { HASHTAG_PLACEMENTS, composeFirstComment, countChars } from '../../model
 import { platformOutput } from '../../model/validation.js';
 import { ComposerTextarea } from './CaptionEditor.jsx';
 import { CharacterCount, InlinePlatformGlyph, PlatformCounts } from './CharacterCount.jsx';
+import { isSoftLimit, overHardLimit } from './limits.js';
 
 const GENERIC_NOTE =
   'Publishing is not available yet. Once it is, the first comment is posted from the same account right after the post.';
 
 /** Counter items for a platform's first comment, from PLATFORM_RULES. */
 function commentCounts(output, platform, idBase) {
-  const rules = PLATFORM_RULES[platform]?.firstComment ?? {};
+  const platformRules = PLATFORM_RULES[platform];
+  const rules = platformRules?.firstComment ?? {};
   const items = [
     {
       id: `${idBase}-${platform}-characters`,
       unit: 'character',
       count: output.firstCommentLength,
       max: rules.maxChars ?? null,
+      soft: isSoftLimit(platformRules, 'firstComment.maxChars'),
     },
   ];
   if (rules.maxHashtags) {
@@ -28,6 +31,7 @@ function commentCounts(output, platform, idBase) {
       unit: 'hashtag',
       count: output.firstCommentHashtags,
       max: rules.maxHashtags,
+      soft: isSoftLimit(platformRules, 'firstComment.maxHashtags'),
     });
   }
   if (rules.maxMentions) {
@@ -36,12 +40,14 @@ function commentCounts(output, platform, idBase) {
       unit: 'mention',
       count: output.firstCommentMentions,
       max: rules.maxMentions,
+      soft: isSoftLimit(platformRules, 'firstComment.maxMentions'),
     });
   }
   return items;
 }
 
-const overLimit = (items) => items.some((item) => item.max && item.count > item.max);
+// Only limits that Meta documents make the comment invalid; unverified ones just warn.
+const overLimit = overHardLimit;
 
 /**
  * Optional first comment. Counters show the composed comment (including hashtags when they are

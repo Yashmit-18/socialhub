@@ -1,6 +1,6 @@
 import { PERMISSIONS, ROLE_LABELS } from '@socialhub/shared';
 import { Eye, Hash, ImagePlus, Lock, MessageCircle, PenLine, Search, Send } from 'lucide-react';
-import { useCallback, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { toast } from 'sonner';
 import { PageHeader } from '../../components/layout/AppShell.jsx';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
@@ -14,6 +14,7 @@ import { ComposerActionBar } from './components/drafts/ComposerActionBar.jsx';
 import { DraftRestoreBanner } from './components/drafts/DraftRestoreBanner.jsx';
 import { DraftsPanel } from './components/drafts/DraftsPanel.jsx';
 import { DraftStatus } from './components/drafts/DraftStatus.jsx';
+import { FilesToReAdd } from './components/drafts/FilesToReAdd.jsx';
 import { UnsavedChangesDialog } from './components/drafts/UnsavedChangesDialog.jsx';
 import { MediaDropzone } from './components/media/MediaDropzone.jsx';
 import { MediaGrid } from './components/media/MediaGrid.jsx';
@@ -74,6 +75,9 @@ function NoPermission({ role }) {
     </>
   );
 }
+
+/** Delay between the last edit and the automatic save of an existing team draft. */
+export const SERVER_AUTOSAVE_DELAY_MS = 3000;
 
 const VIEWS = [
   { id: 'compose', label: 'Compose', icon: PenLine },
@@ -160,46 +164,111 @@ function Composer() {
   const [view, setView] = useState('compose');
   const [previewId, setPreviewId] = useState(null);
   const [draftsOpen, setDraftsOpen] = useState(false);
+  /** Files a restored device draft had (browser drafts keep names, not contents). */
+  const [filesToReAdd, setFilesToReAdd] = useState([]);
+  /** Spoken confirmation after files are added (the grid announces moves and removals). */
+  const [mediaAnnouncement, setMediaAnnouncement] = useState('');
 
   const accountsQuery = useSocialAccounts(workspace.id);
+  // A failed background refetch keeps the accounts already loaded: only "no data" is an error.
   const accountsStatus = accountsQuery.isPending
     ? 'loading'
-    : accountsQuery.error
+    : accountsQuery.data === undefined && accountsQuery.error
       ? 'error'
       : 'ready';
+  const accountsReady = accountsStatus === 'ready';
   const accounts = useMemo(() => normalizeAccounts(accountsQuery.data), [accountsQuery.data]);
+  const availableAccountIds = useMemo(
+    () => (accountsReady ? accounts.map((account) => account.id) : null),
+    [accounts, accountsReady],
+  );
   const validation = useMemo(
-    () =>
-      validateComposer(state, accounts, undefined, { accountsReady: accountsStatus === 'ready' }),
-    [state, accounts, accountsStatus],
+    () => validateComposer(state, accounts, undefined, { accountsReady }),
+    [state, accounts, accountsReady],
   );
 
   const media = useMediaManager({ media: state.media, dispatch, workspaceId: workspace.id });
   const autosave = useLocalAutosave({ state, userId: user.id, workspaceId: workspace.id });
-  const server = useServerDraft({ workspaceId: workspace.id, state, dispatch });
+  const server = useServerDraft({
+    workspaceId: workspace.id,
+    state,
+    dispatch,
+    availableAccountIds,
+  });
   const presets = useAccountPresets({ workspaceId: workspace.id, userId: user.id });
 
   const contentPresent = hasContent(state);
-  // Files that only exist in this tab (no server copy) are lost on leaving: device drafts
-  // can't keep file contents.
   const hasLocalFiles = state.media.some((m) => !m.upload.mediaId);
+  // Attached files survive leaving the page only when a saved team draft references all of
+  // them: browser drafts keep file names, never contents or server ids.
+  const mediaAtRisk =
+    state.media.length > 0 &&
+    !(server.available && server.status === 'saved' && server.omittedMedia.length === 0);
+  // `autosave.reason` stays set until a write succeeds, so the guard stays on while a retry
+  // is pending after a failed write or after another tab replaced the browser draft.
   const unsaved =
     contentPresent &&
-    (hasLocalFiles || ['error', 'unavailable', 'paused'].includes(autosave.status));
+    (mediaAtRisk ||
+      Boolean(autosave.reason) ||
+      ['error', 'unavailable', 'paused'].includes(autosave.status));
   const guard = useUnsavedChangesGuard({ when: unsaved });
   const issueCount = validation.errors.length + validation.warnings.length;
+  const conflicted = server.available && server.status === 'conflict';
+
+  // Team-draft autosave: once a draft exists on the server, later edits are saved a few
+  // seconds after the last change. It never creates a draft by itself (the first save is the
+  // person's choice), and it stops after a conflict or an error until they save by hand, so a
+  // failing request is not repeated forever. The browser draft keeps running underneath.
+  const serverDraftId = server.draft?.id ?? null;
+  const { dirty: serverDirty, status: serverStatus, save: saveToServer } = server;
+  useEffect(() => {
+    if (!serverDraftId || !serverDirty || serverStatus !== 'idle') return undefined;
+    const timer = setTimeout(() => {
+      // The outcome is shown by the draft status; a failure here must not raise an error toast
+      // for something the person did not ask for.
+      saveToServer().catch(() => {});
+    }, SERVER_AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [serverDraftId, serverDirty, serverStatus, saveToServer, state]);
+
+  // Keyboard focus must not end up hidden under the sticky header or the sticky action bar
+  // (WCAG 2.4.11): reserve their height when the browser scrolls a focused control into view.
+  useEffect(() => {
+    const root = document.documentElement;
+    const previous = { top: root.style.scrollPaddingTop, bottom: root.style.scrollPaddingBottom };
+    root.style.scrollPaddingTop = '5rem';
+    root.style.scrollPaddingBottom = '8rem';
+    return () => {
+      root.style.scrollPaddingTop = previous.top;
+      root.style.scrollPaddingBottom = previous.bottom;
+    };
+  }, []);
+
+  const changeView = useCallback((next) => {
+    setView(next);
+    // Textareas can't measure themselves while their panel is hidden: let them re-measure.
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+  }, []);
 
   const saveDraft = async () => {
     if (server.available) {
       try {
-        const { omittedMedia } = await server.save();
-        toast.success('Draft saved to your team’s drafts', {
-          description: omittedMedia?.length
-            ? `${omittedMedia.length} ${omittedMedia.length === 1 ? 'file isn’t' : 'files aren’t'} uploaded yet, so ${omittedMedia.length === 1 ? 'it isn’t' : 'they aren’t'} included.`
-            : undefined,
-        });
+        // After a conflict the linked draft belongs to someone else's newer version: saving
+        // again would conflict forever, so this version is kept as a new team draft instead.
+        const { omittedMedia } = await server.save({ asNew: conflicted });
+        const description = omittedMedia?.length
+          ? `${omittedMedia.length} ${omittedMedia.length === 1 ? 'file isn’t' : 'files aren’t'} uploaded yet, so ${omittedMedia.length === 1 ? 'it isn’t' : 'they aren’t'} included.`
+          : undefined;
+        toast.success(
+          conflicted ? 'Saved as a new team draft' : 'Draft saved to your team’s drafts',
+          { description },
+        );
       } catch (err) {
-        toast.error(err?.message ?? 'The draft could not be saved.');
+        // Show the API's field messages (422) when it sent them, not just the summary.
+        const fields = Object.values(err?.fields ?? {}).filter(Boolean);
+        toast.error(err?.message ?? 'The draft could not be saved.', {
+          description: fields.length ? fields.slice(0, 3).join(' ') : undefined,
+        });
       }
       return;
     }
@@ -208,7 +277,7 @@ function Composer() {
       toast.success('Draft saved in this browser', {
         description: hasLocalFiles
           ? 'Attached files aren’t kept in browser drafts. Add them again if you restore it.'
-          : 'Only you can see it, on this device.',
+          : 'It stays in this browser until you discard it or sign out.',
       });
       return;
     }
@@ -225,42 +294,75 @@ function Composer() {
     // useMediaManager releases object URLs and aborts uploads for items that leave the state.
     dispatch(composerActions.reset());
     media.clearRejections();
+    setFilesToReAdd([]);
     if (server.available) server.reset();
     // While an earlier device draft is waiting to be restored, the device slot still holds
     // that draft (nothing newer was written), so it must not be deleted along with this post.
     if (!autosave.restorable) autosave.clear();
     toast.success('Post discarded');
+    // The Discard button is disabled now, so focus would fall to <body>: move it to the start
+    // of the composer once the confirmation dialog has closed.
+    requestAnimationFrame(() => document.getElementById('composer-accounts')?.focus());
   };
 
   const restore = () => {
+    const missing = autosave.restorable?.missingMedia ?? [];
     const restored = autosave.restore();
     if (!restored) return;
     dispatch(composerActions.load(restored));
+    setFilesToReAdd(missing);
     if (server.available) server.reset();
   };
 
-  const showSection = useCallback((field) => {
-    const id = FIELD_SECTIONS[field];
-    if (!id) return;
-    setView('compose');
-    requestAnimationFrame(() => {
-      const section = document.getElementById(id);
-      section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-      section?.focus({ preventScroll: true });
-    });
-  }, []);
+  /** Adds files; a file that a restored draft listed gets its saved alt text back. */
+  const addFiles = (files) => {
+    const result = media.addFiles(files);
+    if (result.added.length > 0) {
+      const total = state.media.length + result.added.length;
+      setMediaAnnouncement(
+        `Added ${result.added.length} ${result.added.length === 1 ? 'file' : 'files'}. ${total} of ${MEDIA_MAX_ITEMS} attached.`,
+      );
+    }
+    if (filesToReAdd.length === 0 || result.added.length === 0) return result;
+    const remaining = [...filesToReAdd];
+    for (const item of result.added) {
+      const index = remaining.findIndex(
+        (file) => file.fileName === item.fileName && file.kind === item.kind,
+      );
+      if (index === -1) continue;
+      const [match] = remaining.splice(index, 1);
+      if (match.altText) dispatch(composerActions.setMediaAltText(item.id, match.altText));
+    }
+    if (remaining.length !== filesToReAdd.length) setFilesToReAdd(remaining);
+    return result;
+  };
+
+  const showSection = useCallback(
+    (field) => {
+      const id = FIELD_SECTIONS[field];
+      if (!id) return;
+      changeView('compose');
+      requestAnimationFrame(() => {
+        const section = document.getElementById(id);
+        section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        section?.focus({ preventScroll: true });
+      });
+    },
+    [changeView],
+  );
 
   const showIssues = useCallback(() => {
-    setView('preview');
-    requestAnimationFrame(() =>
-      document
-        .getElementById('composer-readiness')
-        ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }),
-    );
-  }, []);
+    changeView('preview');
+    requestAnimationFrame(() => {
+      const panel = document.getElementById('composer-readiness');
+      panel?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      panel?.focus({ preventScroll: true });
+    });
+  }, [changeView]);
 
   const openServerDraft = async (id) => {
     await server.open(id);
+    setFilesToReAdd([]);
     setDraftsOpen(false);
   };
 
@@ -286,6 +388,10 @@ function Composer() {
         </div>
       )}
 
+      {filesToReAdd.length > 0 && (
+        <FilesToReAdd className="mb-6" files={filesToReAdd} onDismiss={() => setFilesToReAdd([])} />
+      )}
+
       <div
         role="note"
         className="mb-6 flex items-start gap-3 rounded-2xl border border-sky-200/80 bg-sky-50/70 px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100"
@@ -298,7 +404,7 @@ function Composer() {
         </p>
       </div>
 
-      <ViewSwitch view={view} onChange={setView} issueCount={issueCount} />
+      <ViewSwitch view={view} onChange={changeView} issueCount={issueCount} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
         <div
@@ -341,8 +447,11 @@ function Composer() {
                 onCancelUpload={media.cancelUpload}
                 uploadAvailable={media.uploadAvailable}
               />
+              <p role="status" aria-live="polite" className="sr-only">
+                {mediaAnnouncement}
+              </p>
               <MediaDropzone
-                onFiles={media.addFiles}
+                onFiles={addFiles}
                 count={state.media.length}
                 max={MEDIA_MAX_ITEMS}
                 uploadAvailable={media.uploadAvailable}
@@ -385,7 +494,7 @@ function Composer() {
             id="composer-keywords"
             icon={Search}
             title="Internal SEO keywords"
-            description="For search and reporting inside SocialHub. Never published."
+            description="Your team’s own reference, saved with the draft. Never published."
           >
             <KeywordEditor state={state} dispatch={dispatch} />
           </Section>
@@ -396,12 +505,12 @@ function Composer() {
           role="tabpanel"
           aria-labelledby="composer-tab-preview"
           className={cn(
-            'min-w-0 space-y-6 xl:sticky xl:top-24',
+            'min-w-0 space-y-6 xl:sticky xl:top-24 xl:-m-1 xl:max-h-[calc(100vh-12.5rem)] xl:overflow-y-auto xl:overscroll-contain xl:p-1',
             view !== 'preview' && 'hidden xl:block',
           )}
         >
           <PublishingPreview state={state} accounts={validation.selected} status={accountsStatus} />
-          <div id="composer-readiness" className="scroll-mt-24">
+          <div id="composer-readiness" tabIndex={-1} className="scroll-mt-24 focus:outline-none">
             <ReadinessPanel
               validation={validation}
               accounts={accounts}
@@ -416,12 +525,22 @@ function Composer() {
 
       <ComposerActionBar
         status={<DraftStatus local={autosave} server={server} />}
-        issueSummary={{ errors: validation.errors.length, warnings: validation.warnings.length }}
+        issueSummary={
+          accountsReady
+            ? { errors: validation.errors.length, warnings: validation.warnings.length }
+            : undefined
+        }
         onShowIssues={showIssues}
         onSaveDraft={saveDraft}
         saving={server.status === 'saving'}
         canSave={contentPresent}
-        saveLabel={server.available ? 'Save draft' : 'Save draft in this browser'}
+        saveLabel={
+          conflicted
+            ? 'Save as a new draft'
+            : server.available
+              ? 'Save draft'
+              : 'Save draft in this browser'
+        }
         onDiscard={discard}
         discardDisabled={!contentPresent}
         onOpenDrafts={server.available ? () => setDraftsOpen(true) : undefined}
@@ -450,7 +569,7 @@ function Composer() {
           onClose={() => setDraftsOpen(false)}
           workspaceId={workspace.id}
           currentDraftId={server.draft?.id ?? null}
-          hasUnsavedChanges={server.dirty}
+          hasUnsavedChanges={server.dirty || server.omittedMedia.length > 0}
           onOpen={openServerDraft}
         />
       )}

@@ -33,8 +33,10 @@ import { inspectMediaFile } from '../services/mediaInspector.js';
 
 /** Poll interval while the media API reports PROCESSING. */
 export const UPLOAD_POLL_INTERVAL_MS = 3000;
-/** Polls before the composer stops waiting for PROCESSING to finish. */
+/** After this many polls the composer keeps waiting, but checks less often. */
 export const UPLOAD_MAX_POLLS = 20;
+/** Poll interval once processing has taken longer than UPLOAD_MAX_POLLS polls. */
+export const UPLOAD_SLOW_POLL_INTERVAL_MS = 15000;
 /** How many "couldn't add" messages are kept (most recent last). */
 export const MAX_REJECTIONS = 5;
 
@@ -174,20 +176,21 @@ async function uploadToServer({ id, entry, workspaceId, dispatch, signal }) {
 
   let asset = (await completeMediaUpload(workspaceId, mediaId, { signal }))?.media;
   throwIfAborted(signal);
+  // The bytes are stored: the file stays PROCESSING with its server id (so a team draft can
+  // already reference it) until the API says READY or FAILED. Long transcodes are not treated
+  // as failures: after UPLOAD_MAX_POLLS the composer simply checks less often.
   for (let polls = 0; asset?.status === SERVER_STATUS.PROCESSING; polls += 1) {
     if (polls === 0) {
       dispatch(
         composerActions.updateMedia(id, {
-          upload: { status: UPLOAD_STATUS.PROCESSING, progress: 1, error: null },
+          upload: { status: UPLOAD_STATUS.PROCESSING, mediaId, progress: 1, error: null },
         }),
       );
     }
-    if (polls >= UPLOAD_MAX_POLLS) {
-      throw new Error(
-        'SocialHub is taking longer than expected to process this file. Retry to upload it again.',
-      );
-    }
-    await wait(UPLOAD_POLL_INTERVAL_MS, signal);
+    await wait(
+      polls < UPLOAD_MAX_POLLS ? UPLOAD_POLL_INTERVAL_MS : UPLOAD_SLOW_POLL_INTERVAL_MS,
+      signal,
+    );
     asset = (await getMedia(workspaceId, mediaId, { signal }))?.media;
     throwIfAborted(signal);
   }

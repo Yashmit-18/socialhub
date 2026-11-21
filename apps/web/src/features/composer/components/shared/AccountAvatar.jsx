@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Avatar } from '../../../../components/ui/Avatar.jsx';
 import { cn } from '../../../../lib/utils.js';
 import { PlatformIcon } from './PlatformIcon.jsx';
@@ -13,11 +14,16 @@ const SIZES = {
  */
 export function AccountAvatar({ account, size = 'md', showPlatform = true, className }) {
   const s = SIZES[size] ?? SIZES.md;
+  // The URL that failed to load (Meta CDN links expire): show initials for it instead.
+  const [failedUrl, setFailedUrl] = useState(null);
+  const pictureUrl =
+    account.pictureUrl && account.pictureUrl !== failedUrl ? account.pictureUrl : null;
   return (
     <span className={cn('relative inline-flex shrink-0', s.box, className)} aria-hidden="true">
-      {account.pictureUrl ? (
+      {pictureUrl ? (
         <img
-          src={account.pictureUrl}
+          src={pictureUrl}
+          onError={() => setFailedUrl(pictureUrl)}
           alt=""
           className={cn(s.box, 'rounded-full object-cover ring-2 ring-white dark:ring-slate-900')}
           referrerPolicy="no-referrer"

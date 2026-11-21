@@ -1,3 +1,8 @@
+import {
+  COMPOSER_LIMITS,
+  HASHTAG_PLACEMENTS as SHARED_HASHTAG_PLACEMENTS,
+} from '@socialhub/shared';
+
 /**
  * Pure text rules for the composer: character counting, hashtag / mention / keyword parsing
  * and the caption composition algorithm.
@@ -8,19 +13,21 @@
  * from what is published.
  */
 
-export const HASHTAG_PLACEMENTS = Object.freeze({
-  /** Hashtags are appended to the end of the caption. */
-  CAPTION: 'CAPTION',
-  /** Hashtags are appended to the first comment instead of the caption. */
-  FIRST_COMMENT: 'FIRST_COMMENT',
-});
+/**
+ * CAPTION: hashtags are appended to the end of the caption.
+ * FIRST_COMMENT: they are appended to the first comment instead.
+ */
+export const HASHTAG_PLACEMENTS = SHARED_HASHTAG_PLACEMENTS;
 
-/** SocialHub's own input limits (not Meta's): keep editors usable and payloads bounded. */
+/**
+ * SocialHub's own input limits (not Meta's). They come from packages/shared, where the API
+ * enforces the same numbers.
+ */
 export const TEXT_LIMITS = Object.freeze({
-  HASHTAG_MAX_LENGTH: 100,
-  HASHTAGS_MAX: 60,
-  KEYWORD_MAX_LENGTH: 60,
-  KEYWORDS_MAX: 25,
+  HASHTAG_MAX_LENGTH: COMPOSER_LIMITS.HASHTAG_MAX_LENGTH,
+  HASHTAGS_MAX: COMPOSER_LIMITS.HASHTAGS_MAX,
+  KEYWORD_MAX_LENGTH: COMPOSER_LIMITS.KEYWORD_MAX_LENGTH,
+  KEYWORDS_MAX: COMPOSER_LIMITS.KEYWORDS_MAX,
 });
 
 /**
@@ -44,7 +51,7 @@ const MENTION_IN_TEXT =
   /(?<![\p{L}\p{M}\p{N}_.@])@([A-Za-z0-9_](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9_])?)/gu;
 const TAG_SEPARATORS = /[\s,，、;#＃]+/u;
 
-const fold = (value) => value.toLocaleLowerCase();
+const fold = (value) => value.toLowerCase();
 
 /**
  * Normalizes one hashtag entered by a person. Returns `{ tag }` (without "#") or `{ error }`.
