@@ -209,6 +209,12 @@ export function expiryFromSeconds(expiresIn, now = Date.now()) {
   return Number.isFinite(seconds) && seconds > 0 ? new Date(now + seconds * 1000) : null;
 }
 
+/** A count field (e.g. followers_count) as a non-negative integer, or null when unusable. */
+export function countFrom(value) {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
 /** debug_token reports epoch seconds, with 0 meaning "never". */
 export function dateFromEpoch(seconds) {
   const n = Number(seconds);

@@ -263,11 +263,71 @@ function requireUsable(connection) {
   }
 }
 
+/* -------------------------------------------------------------- follower counts */
+
+const FOLLOWER_READ_CONCURRENCY = 4;
+/** Follower reads run inside a sync (lock: SYNC_LOCK_MS); whatever is left keeps its old value. */
+const FOLLOWER_READ_BUDGET_MS = 30_000;
+
+/** Which permissions a follower read needs, per destination kind (see the Meta clients). */
+function canReadFollowers(connection, candidate) {
+  if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) return true; // required scope
+  const granted = new Set(connection.grantedScopes ?? []);
+  if (!granted.has('pages_read_engagement')) return false;
+  return candidate.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE || granted.has('instagram_basic');
+}
+
+function readFollowers(connection, candidate) {
+  return connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN
+    ? instagram.fetchInstagramFollowersCount(candidate.accessToken)
+    : facebook.fetchFollowersCount(candidate.externalId, candidate.accessToken);
+}
+
+/**
+ * Best effort: sets `followersCount` on each candidate to the number Meta returned, or null
+ * when Meta answered without one. A candidate whose read was skipped (permission not granted,
+ * time budget used up, rate limited) or failed keeps `followersCount` undefined, which leaves
+ * the stored value untouched. A refused follower read never fails discovery or a sync.
+ */
+async function withFollowerCounts(connection, candidates) {
+  const queue = candidates.filter((c) => c.accessToken && canReadFollowers(connection, c));
+  const deadline = Date.now() + FOLLOWER_READ_BUDGET_MS;
+  let stop = false;
+  const worker = async () => {
+    while (!stop && queue.length > 0 && Date.now() < deadline) {
+      const candidate = queue.shift();
+      try {
+        candidate.followersCount = await readFollowers(connection, candidate);
+      } catch (err) {
+        if (!(err instanceof MetaApiError)) throw err;
+        if (err.kind === META_ERROR_KINDS.RATE_LIMITED) stop = true;
+        logger.warn(
+          {
+            err: err.toLog?.() ?? err.message,
+            connectionId: String(connection._id),
+            platform: candidate.platform,
+            externalId: candidate.externalId,
+          },
+          'Follower count not available from Meta',
+        );
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: FOLLOWER_READ_CONCURRENCY }, worker));
+  return candidates;
+}
+
 /**
  * Live list of destinations the identity can reach, including their tokens.
  * Internal only — callers must never return these objects to a client.
+ * `followers: true` also reads follower counts (adding and syncing do; discovery does not).
  */
-async function fetchCandidates(connection) {
+async function fetchCandidates(connection, { followers = false } = {}) {
+  const candidates = await fetchDestinations(connection);
+  return followers ? withFollowerCounts(connection, candidates) : candidates;
+}
+
+async function fetchDestinations(connection) {
   const token = connection.getAccessToken();
   if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) {
     const profile = await instagram.fetchInstagramProfile(token);
@@ -550,6 +610,13 @@ function applyCandidate(account, candidate, connection, now) {
     publishingStatusReason: publishing.reason ?? undefined,
     lastSyncedAt: now,
   });
+  // undefined: not read this time, keep what is stored; null: Meta returned no count.
+  if (candidate.followersCount !== undefined) {
+    account.set({
+      followersCount: candidate.followersCount ?? undefined,
+      followersCountUpdatedAt: candidate.followersCount === null ? undefined : now,
+    });
+  }
   account.setAccessToken(candidate.accessToken);
 }
 
@@ -590,7 +657,11 @@ async function linkInstagramToPages(workspaceId, session = null) {
 export async function connectAccounts(workspace, actor, connectionId, requested, context) {
   const connection = await loadConnection(workspace._id, connectionId);
   requireUsable(connection);
-  const candidates = await callMeta(connection, () => fetchCandidates(connection), { context });
+  const candidates = await callMeta(
+    connection,
+    () => fetchCandidates(connection, { followers: true }),
+    { context },
+  );
   const byKey = new Map(candidates.map((c) => [keyOf(c.platform, c.externalId), c]));
   const now = new Date();
   const result = { added: [], updated: [], relinked: [], skipped: [] };
@@ -719,7 +790,7 @@ export async function connectAccounts(workspace, actor, connectionId, requested,
 async function refreshConnectionAccounts(connection, candidates, session = null) {
   const accounts = await SocialAccount.find({ connection: connection._id }).session(session);
   if (accounts.length === 0) return { refreshed: 0, lost: 0 };
-  candidates ??= await fetchCandidates(connection);
+  candidates ??= await fetchCandidates(connection, { followers: true });
   const byKey = new Map(candidates.map((c) => [keyOf(c.platform, c.externalId), c]));
   const now = new Date();
   let refreshed = 0;
@@ -930,7 +1001,7 @@ export async function syncConnection(
       }
       // Always hit Meta with the token: this is the health check for Instagram Login and
       // confirms Page access for Facebook Login.
-      candidates = await fetchCandidates(connection);
+      candidates = await fetchCandidates(connection, { followers: true });
     } catch (err) {
       if (!(err instanceof MetaApiError)) throw err;
       const outcome = OUTCOME_FOR_KIND[err.kind] ?? SYNC_OUTCOMES.FAILED;

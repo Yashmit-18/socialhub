@@ -36,7 +36,10 @@ for await (const connection of cursor) {
     // Not an error of the connection: the provider is not configured or a sync is running.
     if (err.code === ERROR_CODES.META_NOT_CONFIGURED || err.code === ERROR_CODES.SYNC_IN_PROGRESS) {
       skipped += 1;
-      logger.warn({ connectionId: String(connection._id), code: err.code }, 'Meta connection sync skipped');
+      logger.warn(
+        { connectionId: String(connection._id), code: err.code },
+        'Meta connection sync skipped',
+      );
       continue;
     }
     failed += 1;

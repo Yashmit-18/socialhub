@@ -95,6 +95,32 @@ export class FakeMeta {
     this.fbUsers.get(userId).roles.set(id, [...tasks]);
   }
 
+  /**
+   * Sets followers_count for a Page, a Page-linked Instagram account or an Instagram Login
+   * account (by its professional account id). `undefined` makes Meta omit the field;
+   * { error: 'rate_limited' | 'permission' | 'transient' } makes the read fail.
+   */
+  setFollowers(id, value) {
+    this.followers ??= new Map();
+    this.followers.set(String(id), value);
+  }
+
+  followersResponse(id) {
+    const value = this.followers?.get(String(id));
+    if (value?.error === 'rate_limited') return graphError(400, 32, 'Page request limit reached');
+    if (value?.error === 'permission')
+      return graphError(
+        403,
+        10,
+        '(#10) This endpoint requires the pages_read_engagement permission',
+      );
+    if (value?.error === 'transient')
+      return json(500, {
+        error: { message: 'Service temporarily unavailable', code: 2, is_transient: true },
+      });
+    return json(200, value === undefined ? { id } : { id, followers_count: value });
+  }
+
   removePageRole(userId, pageId) {
     this.fbUsers.get(userId).roles.delete(pageId);
   }
@@ -284,6 +310,10 @@ export class FakeMeta {
       return json(200, { data: { ...base, is_valid: true } });
     }
 
+    if (String(params.access_token ?? '').startsWith('pagetoken_') && method === 'GET') {
+      return this.pageTokenGraph(route, params);
+    }
+
     const [user, error] = this.fbUserFromToken(params);
     if (error) return error;
 
@@ -348,6 +378,48 @@ export class FakeMeta {
     return graphError(404, 803, `Fake Meta: unknown Facebook route ${method} ${route}`);
   }
 
+  /**
+   * GET /{page-id or ig-user-id}?fields=followers_count with a Page token. The token is only
+   * valid while its user is valid and still has a role on the Page; the Page field needs
+   * pages_read_engagement, the IG User field instagram_basic + pages_read_engagement.
+   */
+  pageTokenGraph(route, params) {
+    const [, pageId, userId] = /^pagetoken_(.+)_([^_]+)$/.exec(params.access_token) ?? [];
+    const user = this.fbUsers.get(userId);
+    const proof = createHmac('sha256', FB_APP_SECRET).update(params.access_token).digest('hex');
+    if (!user || !user.roles.has(pageId) || user.state !== 'valid') {
+      return graphError(400, 190, 'Error validating access token', 460);
+    }
+    if (params.appsecret_proof !== proof) {
+      return graphError(400, 100, 'Invalid appsecret_proof provided in the API argument');
+    }
+    const page = this.pages.get(pageId);
+    const nodeId = route.slice(1);
+    const isPage = nodeId === pageId;
+    const isLinkedInstagram = page.instagram?.id === nodeId;
+    if (!isPage && !isLinkedInstagram) {
+      return graphError(
+        400,
+        100,
+        `Unsupported get request. Object with ID '${nodeId}' does not exist`,
+      );
+    }
+    if (params.fields !== 'followers_count') {
+      return graphError(400, 100, `Fake Meta: unsupported fields ${params.fields}`);
+    }
+    const needed = isPage
+      ? ['pages_read_engagement']
+      : ['instagram_basic', 'pages_read_engagement'];
+    if (!needed.every((p) => user.granted.includes(p))) {
+      return graphError(
+        403,
+        10,
+        `(#10) This endpoint requires the ${needed.join(', ')} permission`,
+      );
+    }
+    return this.followersResponse(nodeId);
+  }
+
   instagramCodeExchange(method, params) {
     if (method !== 'POST')
       return json(405, { error_type: 'OAuthException', code: 405, error_message: 'POST required' });
@@ -402,7 +474,7 @@ export class FakeMeta {
     return [user, null, record];
   }
 
-  instagramGraph(method, path, params) {
+  async instagramGraph(method, path, params) {
     if (path === '/access_token') {
       if (params.client_secret !== IG_APP_SECRET || params.grant_type !== 'ig_exchange_token') {
         return graphError(400, 101, 'Invalid client secret');
@@ -427,6 +499,13 @@ export class FakeMeta {
     if (/^\/v\d+\.\d+\/me$/.test(path)) {
       const [user, error] = this.igUserFromToken(params.access_token, ['ig_long', 'ig_short']);
       if (error) return error;
+      if (params.fields === 'followers_count') {
+        // Same { data: [...] } wrapping as the profile read.
+        const response = this.followersResponse(user.accountId);
+        if (!response.ok) return response;
+        const body = await response.json();
+        return json(200, { data: [{ ...body, id: user.id }] });
+      }
       return json(200, {
         data: [
           {

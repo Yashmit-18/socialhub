@@ -4,7 +4,14 @@
  */
 import { INSTAGRAM_ACCOUNT_TYPES } from '@socialhub/shared';
 import { instagramSettings, metaSettings } from './settings.js';
-import { META_HOSTS, expiryFromSeconds, metaRequest, scopesFrom, unwrapSingle } from './http.js';
+import {
+  META_HOSTS,
+  countFrom,
+  expiryFromSeconds,
+  metaRequest,
+  scopesFrom,
+  unwrapSingle,
+} from './http.js';
 
 function settings() {
   const ig = instagramSettings();
@@ -80,6 +87,22 @@ const ACCOUNT_TYPES = {
   MEDIA_CREATOR: INSTAGRAM_ACCOUNT_TYPES.CREATOR,
   CREATOR: INSTAGRAM_ACCOUNT_TYPES.CREATOR,
 };
+
+/**
+ * Follower count of the logged-in professional account (GET graph.instagram.com/me with
+ * fields=followers_count; permission instagram_business_basic). Kept out of
+ * fetchInstagramProfile so a refused follower read never breaks connecting or syncing.
+ * Returns null when Meta answers without the field.
+ */
+export async function fetchInstagramFollowersCount(accessToken) {
+  const body = unwrapSingle(
+    await metaRequest(`${META_HOSTS.instagramGraph}/${metaSettings().graphVersion}/me`, {
+      query: { fields: 'followers_count' },
+      accessToken,
+    }),
+  );
+  return countFrom(body?.followers_count);
+}
 
 export async function fetchInstagramProfile(accessToken) {
   const body = unwrapSingle(

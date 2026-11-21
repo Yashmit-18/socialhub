@@ -4,7 +4,14 @@
  * Official endpoints only; every call is server-side.
  */
 import { facebookSettings, metaSettings } from './settings.js';
-import { META_HOSTS, dateFromEpoch, expiryFromSeconds, metaRequest, scopesFrom } from './http.js';
+import {
+  META_HOSTS,
+  countFrom,
+  dateFromEpoch,
+  expiryFromSeconds,
+  metaRequest,
+  scopesFrom,
+} from './http.js';
 
 const MAX_PAGE_REQUESTS = 50;
 
@@ -167,6 +174,24 @@ export async function fetchManagedPages(accessToken) {
     if (!after) break;
   }
   return pages;
+}
+
+/**
+ * Follower count of one Page or Page-linked Instagram professional account
+ * (GET /{id}?fields=followers_count). Page: "Number of page followers", read with the Page
+ * token (needs pages_read_engagement). IG User: "Total number of Instagram users following
+ * the user" (needs instagram_basic + pages_read_engagement). Requested separately from
+ * /me/accounts so that a refused follower read can never break Page discovery.
+ * Returns null when Meta answers without the field.
+ */
+export async function fetchFollowersCount(nodeId, accessToken) {
+  const fb = settings();
+  const body = await metaRequest(graphUrl(`/${encodeURIComponent(nodeId)}`), {
+    query: { fields: 'followers_count' },
+    accessToken,
+    appSecret: fb.appSecret,
+  });
+  return countFrom(body?.followers_count);
 }
 
 /** Removes this app's authorization for the identity (all workspaces!). Callers must check. */

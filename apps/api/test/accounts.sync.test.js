@@ -995,9 +995,10 @@ describe('transient Meta failures and rate limits (simulated Meta)', () => {
       'GET /debug_token',
       'GET /me/permissions',
       'GET /me/accounts',
+      'GET /5001', // the Page's follower count (accounts.followers.test.js)
     ]);
     // The failed attempt never reached Meta's handler; the retry and the other calls did.
-    expect(fake.calls.length - served).toBe(3);
+    expect(fake.calls.length - served).toBe(4);
     expect((await runsOf(alice)).map((run) => run.outcome)).toEqual(['SUCCESS']);
   });
 

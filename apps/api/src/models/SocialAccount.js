@@ -50,6 +50,13 @@ const socialAccountSchema = new mongoose.Schema(
     publishingStatusReason: { type: String },
     connectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     lastSyncedAt: { type: Date },
+    /**
+     * followers_count exactly as Meta last returned it, refreshed when the destination is
+     * added or synced. Absent when Meta has never returned one (unknown, which is not 0).
+     */
+    followersCount: { type: Number, min: 0 },
+    /** When followersCount was read from Meta. */
+    followersCountUpdatedAt: { type: Date },
   },
   { timestamps: true },
 );

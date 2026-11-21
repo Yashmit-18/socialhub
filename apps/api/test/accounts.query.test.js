@@ -51,6 +51,20 @@ const NO_ACCOUNTS = {
   unavailable: 0,
 };
 const META_CONFIGURED = { facebookConfigured: true, instagramConfigured: true };
+/**
+ * Combined followers when Meta returned no count for any destination (the simulator omits
+ * followers_count unless a test sets one): unknown, never 0. See accounts.followers.test.js.
+ */
+const unknownFollowers = (facebookMissing = 0, instagramMissing = 0) => ({
+  total: null,
+  facebook: null,
+  instagram: null,
+  counted: 0,
+  missing: facebookMissing + instagramMissing,
+  facebookMissing,
+  instagramMissing,
+  asOf: null,
+});
 /** Token material of any kind: simulated Meta tokens, the encrypted envelope, token fields. */
 const TOKEN_MATERIAL =
   /pagetoken_|fb_long_|fb_short_|ig_long_|ig_short_|accessToken|access_token|ciphertext|authTag|keyVersion/;
@@ -654,6 +668,8 @@ describe('workspace account listing (simulated Meta)', () => {
       publishingStatus: 'READY',
       connectedBy: owner.user.id,
       lastSyncedAt: expect.any(String),
+      followersCount: null,
+      followersCountUpdatedAt: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
       connection: loginSummary(portfolio.connections.alice, 'Alice', ALICE_PICTURE),
@@ -1004,7 +1020,13 @@ describe('account summary (simulated Meta)', () => {
     for (const member of [team.owner, team.admin]) {
       const res = await accountSummary(member.token, team.workspace.id);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ accounts, connections, meta: META_CONFIGURED, truncated: false });
+      expect(res.body).toEqual({
+        accounts,
+        followers: unknownFollowers(4, 2),
+        connections,
+        meta: META_CONFIGURED,
+        truncated: false,
+      });
     }
     // Least privilege: no accounts assigned yet, and never login figures.
     for (const member of [team.editor, team.viewer]) {
@@ -1012,6 +1034,7 @@ describe('account summary (simulated Meta)', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         accounts: NO_ACCOUNTS,
+        followers: unknownFollowers(),
         connections: null,
         meta: META_CONFIGURED,
         truncated: false,
@@ -1020,6 +1043,7 @@ describe('account summary (simulated Meta)', () => {
     const cross = await as(team.owner.token).get('/api/v1/social-accounts/summary');
     expect(cross.body).toEqual({
       accounts,
+      followers: unknownFollowers(4, 2),
       connections,
       meta: META_CONFIGURED,
       truncated: false,
@@ -1786,6 +1810,7 @@ describe('role-based account visibility (simulated Meta)', () => {
         restricted: 1,
         unavailable: 0,
       },
+      followers: unknownFollowers(1, 1),
       connections: null,
       meta: META_CONFIGURED,
       truncated: false,

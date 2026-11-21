@@ -74,6 +74,9 @@ export function accountView(account, { now = new Date(), accessibleIds, workspac
   const linkedPageId = account.linkedFacebookPage ? id(account.linkedFacebookPage) : null;
   const view = {
     ...json,
+    // null = Meta has not returned a count (unknown), which clients must not show as 0.
+    followersCount: json.followersCount ?? null,
+    followersCountUpdatedAt: json.followersCountUpdatedAt ?? null,
     connection: connectionSummary(connection, now),
     linkedPage:
       account.platform === SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT &&
@@ -256,6 +259,53 @@ export async function queryAccounts(
 /* ------------------------------------------------------------------------ summary */
 
 /**
+ * Combined followers of the visible destinations, from the counts Meta last returned.
+ * Sums only known counts: destinations without one are reported in `missing`, never added
+ * as 0, and a total is null when no destination in it has a count. A destination visible in
+ * several workspaces is counted once (its most recently read count). It is a sum per
+ * destination, so a person following several of them is counted once for each.
+ */
+export function combinedFollowers(views) {
+  const unique = new Map();
+  for (const view of views) {
+    const key = `${view.platform}:${view.externalId}`;
+    const seen = unique.get(key);
+    if (!seen || followersReadAt(view) > followersReadAt(seen)) unique.set(key, view);
+  }
+  const out = {
+    total: null,
+    facebook: null,
+    instagram: null,
+    counted: 0,
+    missing: 0,
+    facebookMissing: 0,
+    instagramMissing: 0,
+    asOf: null,
+  };
+  for (const view of unique.values()) {
+    const side = view.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE ? 'facebook' : 'instagram';
+    if (view.followersCount === null) {
+      out.missing += 1;
+      out[`${side}Missing`] += 1;
+      continue;
+    }
+    out.counted += 1;
+    out.total = (out.total ?? 0) + view.followersCount;
+    out[side] = (out[side] ?? 0) + view.followersCount;
+    // The oldest read among the counted figures: the whole total is at least this fresh.
+    const at = followersReadAt(view);
+    if (at > 0 && (out.asOf === null || at < out.asOf)) out.asOf = at;
+  }
+  return { ...out, asOf: out.asOf === null ? null : new Date(out.asOf).toISOString() };
+}
+
+/** Epoch ms of a view's follower read; -1 without a count so any counted copy wins. */
+function followersReadAt(view) {
+  if (view.followersCount === null) return -1;
+  return view.followersCountUpdatedAt ? new Date(view.followersCountUpdatedAt).getTime() : 0;
+}
+
+/**
  * Dashboard figures for the scopes. Connection figures need social_connections:manage and
  * only cover workspaces where the user has it; otherwise `connections` is null.
  */
@@ -299,6 +349,7 @@ export async function summarizeAccounts(scopes, { now = new Date() } = {}) {
 
   return {
     accounts,
+    followers: combinedFollowers(views),
     connections,
     meta: {
       facebookConfigured: Boolean(facebookSettings()),
