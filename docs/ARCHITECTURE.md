@@ -129,14 +129,68 @@ erDiagram
   change it incrementally (`PATCH …/account-access {add, remove}` per member, and
   `PATCH /social-accounts/:id/access {grant, revoke}` per destination). Removing one account
   from an `ALL` member converts them to `SELECTED` with every other current account.
-  Writes are conditional on the membership's `updatedAt` (optimistic concurrency), so a
-  concurrent change answers `409` instead of being silently overwritten.
+  Incremental writes are conditional on the membership's `updatedAt` (optimistic
+  concurrency), so a concurrent change answers `409` instead of being silently overwritten.
+  The web editor therefore sends only the accounts added and removed (PATCH) while a member
+  stays on selected accounts, and replaces the grant (PUT) only when switching to or from
+  all accounts.
+
+### Composer backend (Phase 4, implemented 2026-11-21)
+
+| Model            | Purpose                                                                                                                                                                                                                                                 | Key invariants (enforced by indexes)                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `ContentPackage` | The content of one post. In status `DRAFT` it is a composer draft: caption, per-platform captions, hashtags and their placement, internal SEO keywords, first comment, ordered media with alt text, target accounts, `version`, `createdBy`/`updatedBy` | index (`workspace`,`status`,`updatedAt` desc,`_id` desc) for the draft list; index `media.media`                               |
+| `MediaAsset`     | One uploaded image or video: kind, status, declared name/type/size, verified dimensions and duration, server-generated `storageKey`, `uploadedBy`, `uploadExpiresAt`                                                                                    | unique `storageKey`; index (`workspace`,`_id`); indexes (`status`,`uploadExpiresAt`) and (`status`,`completedAt`) for clean-up |
+| `AccountPreset`  | A named set of social accounts shared in a workspace                                                                                                                                                                                                    | unique (`workspace`,`nameKey`): one name per workspace, whatever the case                                                      |
+
+**Drafts and optimistic concurrency.** Every save is a full replacement that names the
+`version` it was based on. The update filters on that version and increments it in one
+`findOneAndUpdate`, so a stale save matches nothing and answers `409`. Two people can never
+silently overwrite each other, and no lock or transaction is needed.
+
+**Account access.** Drafts and presets can only reference accounts their author can use
+(`accessibleAccountFilter`). Readers only ever get back the accounts they can use themselves.
+A member cannot change a draft that targets an account they cannot use, because a full save
+would silently drop it.
+
+**Media upload flow.**
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant A as API
+  participant S as Object storage
+  B->>A: POST /workspaces/:id/media/uploads {fileName, mimeType, sizeBytes, kind}
+  A->>A: validate, create MediaAsset (PENDING_UPLOAD), generate upload key and final key
+  A-->>B: { media, upload: { url, method, headers, expiresAt } }
+  B->>S: PUT bytes to the upload key (presigned: one key, type and size)
+  B->>A: POST /workspaces/:id/media/:mediaId/complete
+  A->>S: copy upload key to final key
+  A->>S: HEAD + ranged GET of the final key (size, magic bytes, dimensions)
+  A-->>B: { media: READY | FAILED }
+```
+
+- The API never proxies file bytes (the `local` development driver is the exception: it is
+  both the API and the storage).
+- Storage is behind one small interface (`src/storage`): `createUpload`, `stat`, `read`,
+  `remove`, `publicUrl`. Drivers: `s3` (S3-compatible, SigV4 presigning implemented with
+  `node:crypto`, no SDK) and `local`.
+- **A verified file cannot be changed through its upload link.** The link is signed for the
+  upload key only. Completion copies the object to a final key that no link can write to,
+  then verifies that copy; one completion request at a time holds a short claim on the
+  asset. Reusing the link later only rewrites the upload object, which the clean-up removes.
+- **Bucket layout.** `uploads/<workspace>/<asset>/…` holds unverified uploads and is
+  private. `workspaces/<workspace>/media/<asset>/…` holds verified files and is the only
+  publicly readable prefix. The API's key needs put, get and delete on objects plus list on
+  the bucket (so a missing object reads as 404, not 403); the API never lists.
+- **Not yet verified against a real bucket** (no storage configured as of 2026-11-21).
+- Nothing is `READY` until the stored object has been verified. Abandoned slots and unused
+  files are removed by `scripts/cleanup-media.js`.
 
 ### Planned (not implemented yet)
 
 | Model                                           | Phase | Shape (summary)                                                                                                                                                                                                                                         |
 | ----------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ContentPackage`                                | 4     | `workspace`, media asset refs, caption, hashtags, internal SEO keywords, alt text, first comment, `createdBy`                                                                                                                                           |
 | `Post`                                          | 4     | `workspace`, `contentPackage`, `scheduledAt`, per-destination caption overrides, aggregate status derived from jobs                                                                                                                                     |
 | `PublishingJob`                                 | 4     | `post`, `socialAccount`, status (`PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED`, `CANCELLED`, `RETRYING`), `attempts`, `externalPostId`, `lastError {code, message, permanent}`, `publishedAt`. Unique (`post`,`socialAccount`) is the idempotency key. |
 | `FacebookGroup`, `GroupCategory`, `SharingTask` | 5     | Manual group-sharing directory with relevance tags, share links, completion tracking. Duplicate prevention is a unique (`group`,`post`) index. No automation or scraping.                                                                               |
@@ -317,8 +371,9 @@ the only new collection is the `SyncRun` history.
   `refreshAccounts()` (`POST /social-accounts/refresh`, which syncs each distinct parent
   login once) run logins one after another, so Meta's rate limits are respected. One
   failure never stops the others. Every login gets a result: an `outcome` when Meta was
-  contacted, or a `skipReason` (`CONFIG_REQUIRED`, `IN_PROGRESS`, `NEEDS_RECONNECT`) when
-  it was not.
+  contacted, or a `skipReason` when nothing was written: `CONFIG_REQUIRED`, `IN_PROGRESS`
+  or `NEEDS_RECONNECT` (Meta was not contacted), or `SUPERSEDED` (the login was
+  disconnected, reconnected or removed while Meta was answering).
 - **Retries.** `metaRequest()` retries a `GET` once after a short delay when Meta's error is
   classified as transient. `POST` and `DELETE` are never retried.
 - **Relationships.** Sync updates the existing records in place, keyed by the unique
