@@ -144,14 +144,31 @@ export default function OverviewPage() {
             />
           </div>
 
-          {/* Totals cover only the accounts this member may see; hidden if the summary fails. */}
-          {!accountSummary.error &&
-            (accountSummary.isPending || accountSummary.data?.accounts?.total > 0) && (
-              <FollowersCard
-                followers={accountSummary.data?.followers}
-                loading={accountSummary.isPending}
+          {/* Totals cover only the accounts this member may see. Always shown, even with none. */}
+          {accountSummary.error ? (
+            <Card>
+              <ErrorState
+                title="Couldn’t load combined followers"
+                error={accountSummary.error}
+                onRetry={accountSummary.refetch}
               />
-            )}
+            </Card>
+          ) : (
+            <FollowersCard
+              followers={accountSummary.data?.followers}
+              accounts={accountSummary.data?.accounts}
+              loading={accountSummary.isPending}
+              emptyAction={
+                can(PERMISSIONS.SOCIAL_CONNECTIONS_MANAGE) ? (
+                  <ButtonLink to={`${base}/accounts`} variant="secondary" size="sm">
+                    Connect accounts <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  </ButtonLink>
+                ) : (
+                  <p className="text-xs text-muted">Ask a workspace owner or admin for access.</p>
+                )
+              }
+            />
+          )}
 
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">

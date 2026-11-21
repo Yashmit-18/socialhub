@@ -69,6 +69,62 @@ describe('FollowersCard', () => {
     );
     expect(screen.getByTestId('followers-total')).toHaveTextContent('—');
     expect(screen.getByText(/No follower counts yet/)).toBeInTheDocument();
+    expect(screen.queryByTestId('followers-split')).not.toBeInTheDocument();
+  });
+
+  it('splits the total between Facebook and Instagram and says which accounts it covers', () => {
+    render(
+      <FollowersCard
+        followers={followers()}
+        accounts={{ total: 3, facebookPages: 1, instagramAccounts: 2 }}
+      />,
+    );
+    const split = screen.getByTestId('followers-split');
+    expect(split).toHaveAttribute('aria-label', 'Facebook Pages 37%, Instagram accounts 63%');
+    expect(
+      within(screen.getByTestId('followers-facebook')).getByText('Across 1 Page'),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId('followers-instagram')).getByText('Across 2 accounts'),
+    ).toBeVisible();
+  });
+
+  it('says how many accounts were counted when some have no count', () => {
+    render(
+      <FollowersCard
+        followers={followers({ total: 2000, instagram: null, missing: 2, instagramMissing: 2 })}
+        accounts={{ total: 4, facebookPages: 1, instagramAccounts: 3 }}
+      />,
+    );
+    expect(
+      within(screen.getByTestId('followers-instagram')).getByText('1 of 3 accounts counted'),
+    ).toBeVisible();
+    // Only Facebook has a known count, so the bar shows a single segment.
+    expect(screen.getByTestId('followers-split')).toHaveAttribute(
+      'aria-label',
+      'Facebook Pages 100%',
+    );
+  });
+
+  it('stays visible with no accounts and shows the empty action', () => {
+    render(
+      <FollowersCard
+        followers={followers({
+          total: null,
+          facebook: null,
+          instagram: null,
+          counted: 0,
+          asOf: null,
+        })}
+        accounts={{ total: 0, facebookPages: 0, instagramAccounts: 0 }}
+        emptyAction={<button type="button">Connect accounts</button>}
+      />,
+    );
+    expect(screen.getByTestId('followers-total')).toHaveTextContent('—');
+    expect(screen.getByText(/No Facebook Pages or Instagram accounts are available/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Connect accounts' })).toBeVisible();
+    expect(screen.getByText('No Pages yet')).toBeVisible();
+    expect(screen.queryByText(/No follower counts yet/)).not.toBeInTheDocument();
   });
 });
 

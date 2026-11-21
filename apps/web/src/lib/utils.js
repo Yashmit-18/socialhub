@@ -1,5 +1,35 @@
+import { extendTailwindMerge } from 'tailwind-merge';
+
+/*
+ * Class merging. Tailwind decides conflicts by its stylesheet order, not by class order, so
+ * without merging cn('h-5 w-5', 'h-3 w-3') renders 20px (.h-5 is emitted after .h-3) and
+ * cn('bg-white', active && 'bg-brand-50') never shows the active colour. tailwind-merge keeps
+ * the LAST class of each conflicting group (per variant, e.g. `dark:` or `hover:`), so a
+ * caller's className or a conditional class always overrides the default before it.
+ *
+ * Registered so they merge in the right group:
+ * - `bg-gradient-to-*`: Tailwind v4 still supports these v3 names (used across the app), but
+ *   tailwind-merge only knows `bg-linear-to-*` and would otherwise read them as background
+ *   COLOURS, dropping the gradient when a colour follows it.
+ * - the custom `shadow-card` / `shadow-pop` shadows and `animate-fade-in` / `animate-scale-in`
+ *   animations from index.css.
+ * The `text-muted` utility is a text colour, which tailwind-merge already assumes for unknown
+ * `text-*` names; `surface` and the landing page's `lp-*` classes are unknown to it and kept.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    theme: {
+      shadow: ['card', 'pop'],
+      animate: ['fade-in', 'scale-in'],
+    },
+    classGroups: {
+      'bg-image': [{ bg: [{ gradient: [{ to: ['t', 'tr', 'r', 'br', 'b', 'bl', 'l', 'tl'] }] }] }],
+    },
+  },
+});
+
 export function cn(...parts) {
-  return parts.flat().filter(Boolean).join(' ');
+  return twMerge(parts);
 }
 
 export function initials(name = '') {

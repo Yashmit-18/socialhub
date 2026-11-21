@@ -691,6 +691,26 @@ Hierarchy rules:
 | 2026-11-21 | Combined follower totals                     | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                   |
 | 2026-11-21 | Cross-phase integration audit                | All automated checks pass; no real Meta app or real S3 bucket used                                              |
 | 2026-11-21 | Account organisation                         | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls |
+| 2026-11-21 | Followers on the Overview; class merging fix | Implemented and tested; follower counts still only read from the simulated Meta                                 |
+
+### Followers on the Overview and class merging fix (2026-11-21)
+
+- **Combined followers card:** a Facebook total, an Instagram total and a split bar showing
+  each platform's share (Overview and Social accounts › Overview). On the Overview each
+  figure also says "Across 6 Pages" or "4 of 6 Pages counted", and the card is now always
+  shown: with no accounts it says so and links owners and admins to Connect accounts, and
+  if the summary fails it shows an error with a retry instead of disappearing.
+- **`cn()` fix** (`apps/web/src/lib/utils.js`): `cn()` now uses `tailwind-merge` 3.7.0 (new
+  web dependency), so a later conflicting class wins. Before, Tailwind's stylesheet order
+  decided: `FacebookIcon className="h-3.5 w-3.5"` still rendered at `h-5`, and conditional
+  colours such as `cn('bg-white border-slate-200', active && 'bg-brand-50 border-brand-300')`
+  never showed (selected cards, pressed toggles, active tabs and filters). Registered with
+  it: the legacy `bg-gradient-to-*` names (otherwise read as background colours and
+  dropped) and the custom `shadow-card`, `shadow-pop`, `animate-fade-in` and
+  `animate-scale-in` tokens; `text-muted` merges as a text colour. Every class used in
+  `apps/web/src` was checked for being misread as a colour.
+- **Tests added:** web `utils.test.js` (8), `OverviewPage.test.jsx` (4) and 4 more in
+  `FollowersCard.test.jsx`.
 
 ### Account organisation (2026-11-21). Implemented
 
