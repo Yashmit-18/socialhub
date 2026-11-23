@@ -5,3 +5,4 @@ export * from './composer.js';
 export * from './publishing.js';
 export * from './accountLabels.js';
 export * from './groups.js';
+export * from './analytics.js';

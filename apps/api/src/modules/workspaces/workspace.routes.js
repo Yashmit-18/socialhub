@@ -18,6 +18,7 @@ import { clientContext } from '../../middleware/requestContext.js';
 import { validate } from '../../middleware/validate.js';
 import { loadWorkspace, requirePermission } from '../../middleware/workspaceAccess.js';
 import { mountAccountPresetRoutes } from '../accountPresets/accountPreset.routes.js';
+import { mountAnalyticsRoutes } from '../analytics/analytics.routes.js';
 import { mountGroupRoutes } from '../groups/groups.routes.js';
 import { listActivity } from '../activity/activity.service.js';
 import { mountContentPackageRoutes } from '../contentPackages/contentPackage.routes.js';
@@ -274,6 +275,8 @@ export function workspacesRouter() {
   // Facebook Group distribution (Phase 6): directory, shares and manual sharing tasks.
   mountGroupRoutes(scoped);
   mountPublishingRoutes(scoped);
+  // Analytics & Publishing Intelligence (docs/ANALYTICS.md).
+  mountAnalyticsRoutes(scoped);
 
   return router;
 }

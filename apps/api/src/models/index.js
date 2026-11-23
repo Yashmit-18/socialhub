@@ -20,3 +20,6 @@ export { GroupCategory } from './GroupCategory.js';
 export { FacebookGroup } from './FacebookGroup.js';
 export { GroupShare } from './GroupShare.js';
 export { SharingTask } from './SharingTask.js';
+export { AccountInsight } from './AccountInsight.js';
+export { PostInsight } from './PostInsight.js';
+export { AnalyticsSyncRun } from './AnalyticsSyncRun.js';

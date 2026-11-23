@@ -111,6 +111,10 @@ publishDestinationSchema.index({ workspace: 1, state: 1 });
 publishDestinationSchema.index({ state: 1, lockedUntil: 1 });
 publishDestinationSchema.index({ state: 1, dueAt: 1 });
 publishDestinationSchema.index({ contentPackage: 1, socialAccount: 1, state: 1 });
+// Analytics (docs/ANALYTICS.md): deliveries per account over a date range, and published posts
+// by completion time.
+publishDestinationSchema.index({ workspace: 1, socialAccount: 1, createdAt: 1 });
+publishDestinationSchema.index({ workspace: 1, state: 1, completedAt: -1 });
 
 jsonPlugin(publishDestinationSchema, { hidden: ['lockToken', 'lockedUntil', 'providerState'] });
 

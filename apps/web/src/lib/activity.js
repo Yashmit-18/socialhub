@@ -1,11 +1,13 @@
 import {
   ACTIVITY_ACTIONS,
+  ANALYTICS_ACTIVITY_ACTIONS,
   PUBLISH_ACTIVITY_ACTIONS,
   PUBLISH_BLOCK_REASONS,
   ROLE_LABELS,
 } from '@socialhub/shared';
 import {
   AlertTriangle,
+  BarChart3,
   ArrowRightLeft,
   Building2,
   KeyRound,
@@ -46,6 +48,15 @@ function describePublishing(entry, actor, m) {
   const simulated = m.simulated ? ' (simulation, nothing was posted)' : '';
   const account = entry.target?.label ?? 'an account';
   switch (entry.action) {
+    case ANALYTICS_ACTIVITY_ACTIONS.SYNC_REQUESTED:
+      return {
+        icon: BarChart3,
+        tone: 'neutral',
+        actor,
+        text: m.simulated
+          ? `made demo insights for ${accounts(m.accountCount)} (made up, not from Meta)`
+          : `synced insights for ${accounts(m.accountCount)}`,
+      };
     case PUBLISH_ACTIVITY_ACTIONS.JOB_CREATED:
       return {
         icon: Send,

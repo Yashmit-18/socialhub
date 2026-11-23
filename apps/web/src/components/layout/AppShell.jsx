@@ -1,6 +1,7 @@
 import { PERMISSIONS, ROLE_LABELS } from '@socialhub/shared';
 import {
   Activity,
+  BarChart3,
   Check,
   ChevronsUpDown,
   LayoutDashboard,
@@ -46,6 +47,11 @@ function navItems(slug, can) {
       to: `${base}/groups`,
       label: 'Group sharing',
       icon: Megaphone,
+    },
+    can(PERMISSIONS.ANALYTICS_READ) && {
+      to: `${base}/analytics`,
+      label: 'Analytics',
+      icon: BarChart3,
     },
     { to: `${base}/team`, label: 'Team', icon: Users },
     can(PERMISSIONS.ACTIVITY_READ) && { to: `${base}/activity`, label: 'Activity', icon: Activity },

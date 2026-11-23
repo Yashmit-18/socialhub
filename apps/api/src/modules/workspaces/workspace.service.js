@@ -19,10 +19,13 @@ import {
   validationError,
 } from '../../lib/errors.js';
 import {
+  AccountInsight,
   AccountLabel,
   AccountPreset,
   AccountStar,
+  AnalyticsSyncRun,
   FacebookGroup,
+  PostInsight,
   PublishDestination,
   PublishJob,
   GroupCategory,
@@ -256,6 +259,9 @@ const WORKSPACE_SCOPED_MODELS = [
   // Publishing records (Phase 5) and analytics (docs/ANALYTICS.md) belong to the workspace too.
   PublishJob,
   PublishDestination,
+  AccountInsight,
+  PostInsight,
+  AnalyticsSyncRun,
 ];
 
 export async function deleteWorkspace(workspace, actor, { confirmation, password }) {

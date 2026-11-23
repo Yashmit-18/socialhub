@@ -2,7 +2,9 @@ import { createApp } from './app.js';
 import { config } from './config/env.js';
 import { logger } from './config/logger.js';
 import { connectDatabase, disconnectDatabase } from './db/mongoose.js';
+import { startAnalyticsWorker } from './modules/analytics/analytics.worker.js';
 import { startPublishWorker } from './modules/publishing/publishing.worker.js';
+import { closeAnalyticsQueue } from './queue/analyticsQueue.js';
 import { WORKER_DRAIN_MS, closePublishQueue, getPublishQueue } from './queue/publishQueue.js';
 
 async function main() {
@@ -17,6 +19,8 @@ async function main() {
   // queue's state on /health and on the publishing screen.
   getPublishQueue();
   const publishWorker = config.publishing.inlineWorker ? startPublishWorker() : null;
+  // Insights syncs have their own queue and worker, so they never hold up publishing.
+  const analyticsWorker = config.analytics.inlineWorker ? startAnalyticsWorker() : null;
 
   let shuttingDown = false;
   const shutdown = async (signal) => {
@@ -30,8 +34,12 @@ async function main() {
     await Promise.all([
       new Promise((resolve) => server.close(resolve)),
       publishWorker?.close().catch((err) => logger.error({ err }, 'Error stopping worker')),
+      analyticsWorker
+        ?.close()
+        .catch((err) => logger.error({ err }, 'Error stopping analytics worker')),
     ]);
     await closePublishQueue().catch(() => {});
+    await closeAnalyticsQueue().catch(() => {});
     await disconnectDatabase().catch((err) => logger.error({ err }, 'Error closing MongoDB'));
     clearTimeout(forceExit);
     process.exit(0);

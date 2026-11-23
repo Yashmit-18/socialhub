@@ -143,6 +143,19 @@ const envSchema = z.object({
   PUBLISHING_REQUEUE_SECONDS: z.coerce.number().int().min(5).max(3600).default(120),
   PUBLISHING_RECOVERY_INTERVAL_SECONDS: z.coerce.number().int().min(2).max(3600).default(60),
 
+  /**
+   * Analytics insights (docs/ANALYTICS.md):
+   * disabled   nothing is synced (default); SocialHub publishing figures are still shown
+   * simulated  development only: syncs make DEMO insights, labelled as such; Meta is not called
+   * Reading real Meta insights is not enabled in this build, so there is no "live" value.
+   */
+  ANALYTICS_MODE: z.enum(['disabled', 'simulated']).default('disabled'),
+  /** Run the analytics worker inside the API process. Set false when `npm run worker` runs it. */
+  ANALYTICS_WORKER_INLINE: booleanString.optional(),
+  ANALYTICS_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
+  ANALYTICS_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(4),
+  ANALYTICS_RETRY_BASE_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
+
   META_OAUTH_STATE_TTL_MINUTES: z.coerce.number().int().min(2).max(60).default(10),
   META_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),
 });
@@ -198,6 +211,12 @@ export function loadConfig(source = process.env) {
         'Invalid environment configuration: STORAGE_PUBLIC_BASE_URL must be an https:// URL in production',
       );
     }
+  }
+
+  if (isProduction && env.ANALYTICS_MODE === 'simulated') {
+    throw new Error(
+      'Invalid environment configuration: ANALYTICS_MODE=simulated is for development only and cannot be used in production',
+    );
   }
 
   if (isProduction && env.PUBLISHING_MODE === 'simulated') {
@@ -290,6 +309,16 @@ export function loadConfig(source = process.env) {
       retryMaxMs: 15 * 60 * 1000,
       claimMs: env.PUBLISHING_CLAIM_SECONDS * 1000,
       requeueAfterMs: env.PUBLISHING_REQUEUE_SECONDS * 1000,
+      recoveryIntervalMs: env.PUBLISHING_RECOVERY_INTERVAL_SECONDS * 1000,
+    },
+    analytics: {
+      mode: env.ANALYTICS_MODE === 'simulated' ? 'SIMULATED' : 'DISABLED',
+      inlineWorker: env.ANALYTICS_WORKER_INLINE ?? true,
+      concurrency: env.ANALYTICS_CONCURRENCY,
+      maxAttempts: env.ANALYTICS_MAX_ATTEMPTS,
+      retryBaseMs: env.ANALYTICS_RETRY_BASE_SECONDS * 1000,
+      retryMaxMs: 30 * 60 * 1000,
+      claimMs: 10 * 60 * 1000,
       recoveryIntervalMs: env.PUBLISHING_RECOVERY_INTERVAL_SECONDS * 1000,
     },
     meta: {

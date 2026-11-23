@@ -65,6 +65,10 @@ export const PERMISSIONS = Object.freeze({
   /** Manual Facebook Group distribution workflow (Phase 5). */
   GROUPS_MANAGE: 'groups:manage',
   SHARING_TASKS_COMPLETE: 'sharing_tasks:complete',
+
+  /** Analytics & Publishing Intelligence: read the dashboards; ask for an insights sync. */
+  ANALYTICS_READ: 'analytics:read',
+  ANALYTICS_SYNC: 'analytics:sync',
 });
 
 const ALL_PERMISSIONS = Object.freeze(Object.values(PERMISSIONS));
@@ -74,6 +78,7 @@ const VIEWER_PERMISSIONS = [
   PERMISSIONS.MEMBERS_READ,
   PERMISSIONS.SOCIAL_ACCOUNTS_READ,
   PERMISSIONS.CONTENT_READ,
+  PERMISSIONS.ANALYTICS_READ,
 ];
 
 const EDITOR_PERMISSIONS = [
@@ -81,6 +86,7 @@ const EDITOR_PERMISSIONS = [
   PERMISSIONS.CONTENT_CREATE,
   PERMISSIONS.CONTENT_PUBLISH,
   PERMISSIONS.SHARING_TASKS_COMPLETE,
+  PERMISSIONS.ANALYTICS_SYNC,
 ];
 
 const ADMIN_PERMISSIONS = ALL_PERMISSIONS.filter(

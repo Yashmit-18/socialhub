@@ -18,6 +18,7 @@
     "worker": "node --env-file-if-exists=.env scripts/publish-worker.js",
     "queue:verify": "node --env-file-if-exists=.env scripts/verify-queue.js",
     "publishing:verify": "node --env-file-if-exists=.env scripts/verify-publishing-e2e.js",
+    "analytics:verify": "node --env-file-if-exists=.env scripts/verify-analytics-queue.js",
     "meta:verify": "node --env-file-if-exists=.env scripts/verify-meta-integration.js"
   },
   "dependencies": {

@@ -28,9 +28,12 @@ import * as facebook from '../../integrations/meta/facebook.js';
 import { META_ERROR_KINDS, MetaApiError, classifyMetaError } from '../../integrations/meta/http.js';
 import * as instagram from '../../integrations/meta/instagram.js';
 import {
+  AccountInsight,
   AccountStar,
+  AnalyticsSyncRun,
   Invitation,
   Membership,
+  PostInsight,
   SocialAccount,
   SocialConnection,
   SyncRun,
@@ -1326,6 +1329,14 @@ async function detachAccounts(workspaceId, accountIds, session) {
     { workspace: workspaceId, socialAccount: { $in: accountIds } },
     { session },
   );
+  // Insights read for these accounts, and their sync history, go with them (this also runs
+  // for Meta's data-deletion callback). Publishing history keeps its own name snapshots.
+  for (const Model of [AccountInsight, PostInsight, AnalyticsSyncRun]) {
+    await Model.deleteMany(
+      { workspace: workspaceId, socialAccount: { $in: accountIds } },
+      { session },
+    );
+  }
 }
 
 /** Deletes a connection and every destination obtained through it (and its sync history). */

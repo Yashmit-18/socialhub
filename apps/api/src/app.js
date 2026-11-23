@@ -19,7 +19,9 @@ import { invitationsRouter } from './modules/invitations/invitation.routes.js';
 import { integrationsRouter, metaPublicRouter } from './modules/meta/meta.routes.js';
 import { crossWorkspaceAccountsRouter } from './modules/socialAccounts/socialAccount.routes.js';
 import { workspacesRouter } from './modules/workspaces/workspace.routes.js';
+import { analyticsSettings } from './modules/analytics/analytics.settings.js';
 import { publishingSettings } from './modules/publishing/publishing.settings.js';
+import { analyticsQueueStatus } from './queue/analyticsQueue.js';
 import { getPublishQueue, publishQueueStatus } from './queue/publishQueue.js';
 import { getStorage } from './storage/index.js';
 
@@ -75,6 +77,7 @@ async function healthDetails(req, res, next) {
     uptimeSeconds: Math.round(process.uptime()),
     database: db,
     publishing: { mode: publishingSettings().mode, queue: queueStatus, counts, workers },
+    analytics: { mode: analyticsSettings().mode, queue: analyticsQueueStatus() },
     storage: { driver: storage?.name ?? null, publicUrls: Boolean(storage?.publicUrls) },
   });
 }
