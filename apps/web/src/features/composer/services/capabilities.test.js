@@ -31,7 +31,9 @@ describe('getComposerCapabilities', () => {
 
   it.each(FLAGS)('%s turns on %s only', (flag, capability) => {
     vi.stubEnv(flag, 'true');
-    expect(getComposerCapabilities()).toEqual({ ...ALL_OFF, [capability]: true });
+    // Publishing is done from saved team drafts, so it comes with them.
+    const extra = capability === 'serverDrafts' ? { publishing: true } : {};
+    expect(getComposerCapabilities()).toEqual({ ...ALL_OFF, [capability]: true, ...extra });
   });
 
   it('reads the flags each time it is called', () => {
@@ -53,13 +55,15 @@ describe('getComposerCapabilities', () => {
     }
   });
 
-  it('never turns publishing on, whatever the environment says', () => {
+  it('turns publishing on only together with team drafts, never through a flag of its own', () => {
     vi.stubEnv('VITE_COMPOSER_PUBLISHING', 'true');
-    for (const [flag] of FLAGS) vi.stubEnv(flag, 'true');
+    vi.stubEnv('VITE_COMPOSER_MEDIA_UPLOAD', 'true');
     expect(getComposerCapabilities().publishing).toBe(false);
     expect(
       getComposerCapabilities({ VITE_COMPOSER_PUBLISHING: 'true', publishing: true }).publishing,
     ).toBe(false);
+    vi.stubEnv('VITE_COMPOSER_SERVER_DRAFTS', 'true');
+    expect(getComposerCapabilities().publishing).toBe(true);
   });
 
   it('returns a frozen snapshot', () => {
@@ -83,8 +87,9 @@ describe('CAPABILITY_MESSAGES', () => {
       expect(CAPABILITY_MESSAGES[key]).toMatch(/in this browser/);
       expect(CAPABILITY_MESSAGES[key]).not.toMatch(/API|not available yet/);
     }
-    // Publishing really does not exist.
-    expect(CAPABILITY_MESSAGES.publishing).toMatch(/not available yet/);
+    // Real publishing really is not available: at most it is simulated.
+    expect(CAPABILITY_MESSAGES.publishing).toMatch(/Real publishing is not available yet/);
+    expect(CAPABILITY_MESSAGES.publishing).toMatch(/needs team drafts/);
   });
 
   it('labels device-only fallbacks as staying in this browser', () => {
@@ -141,10 +146,12 @@ describe('requireCapability', () => {
     expect(() => requireCapability(capability)).not.toThrow();
   });
 
-  it('always throws for publishing', () => {
+  it('throws for publishing unless team drafts are on', () => {
     vi.stubEnv('VITE_COMPOSER_PUBLISHING', 'true');
-    for (const [flag] of FLAGS) vi.stubEnv(flag, 'true');
+    vi.stubEnv('VITE_COMPOSER_MEDIA_UPLOAD', 'true');
     expect(() => requireCapability('publishing')).toThrow(CAPABILITY_MESSAGES.publishing);
+    vi.stubEnv('VITE_COMPOSER_SERVER_DRAFTS', 'true');
+    expect(() => requireCapability('publishing')).not.toThrow();
   });
 
   it('throws for capabilities that do not exist', () => {

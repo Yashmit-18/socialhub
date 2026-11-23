@@ -8,7 +8,10 @@
  *   - never calls that endpoint,
  *   - keeps the feature in this browser and says so, and
  *   - never reports a server-side success that did not happen.
- * Publishing has no flag: the publishing engine does not exist.
+ * Publishing has no flag of its own: a post is published from a saved team draft, so the
+ * composer can publish exactly when team drafts are on. Whether the server accepts posts, and
+ * whether it only simulates them, is decided at runtime by GET /publishing/status
+ * (PUBLISHING_MODE and the Redis queue), never by the build.
  *
  * Flags are read at call time (not import time) so tests can use `vi.stubEnv`.
  */
@@ -24,10 +27,11 @@ export function getComposerCapabilities(env = import.meta.env) {
     /** Workspace-shared account presets (contract §5). Flag: VITE_COMPOSER_SERVER_PRESETS. */
     serverPresets: isOn(env?.VITE_COMPOSER_SERVER_PRESETS),
     /**
-     * Publishing (contract §6). Deliberately not configurable: the publishing engine does not
-     * exist, so the composer never submits posts in this release.
+     * Publishing through the SocialHub publishing API (docs/PUBLISHING_API.md). Follows team
+     * drafts, because a publishing job is made from a saved draft; VITE_COMPOSER_PUBLISHING
+     * does not exist. Real posting to Meta is a server setting that this build cannot enable.
      */
-    publishing: false,
+    publishing: isOn(env?.VITE_COMPOSER_SERVER_DRAFTS),
   });
 }
 
@@ -40,8 +44,15 @@ export const CAPABILITY_MESSAGES = Object.freeze({
   serverPresets:
     'Shared presets are not switched on for this site. Presets are saved in this browser only.',
   publishing:
-    'Publishing is not available yet. The SocialHub publishing engine has not been built, so nothing is sent to Facebook or Instagram.',
+    'Publishing from the composer needs team drafts, which are not switched on for this site. Real publishing is not available yet, so nothing is sent to Facebook or Instagram.',
 });
+
+/**
+ * True in this release whatever the server says: real posting to Meta is not switched on
+ * (publishing runs in simulation at most). Shown wherever the composer talks about readiness.
+ */
+export const REAL_PUBLISHING_NOTE =
+  'Real publishing is not available yet: posts can only be simulated, so nothing is sent to Facebook or Instagram.';
 
 /** Thrown when code tries to use a capability that is switched off. No request is made. */
 export class CapabilityUnavailableError extends Error {

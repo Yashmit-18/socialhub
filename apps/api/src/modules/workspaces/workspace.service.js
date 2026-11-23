@@ -23,6 +23,8 @@ import {
   AccountPreset,
   AccountStar,
   FacebookGroup,
+  PublishDestination,
+  PublishJob,
   GroupCategory,
   GroupShare,
   ActivityLog,
@@ -251,6 +253,9 @@ const WORKSPACE_SCOPED_MODELS = [
   GroupCategory,
   GroupShare,
   SharingTask,
+  // Publishing records (Phase 5) and analytics (docs/ANALYTICS.md) belong to the workspace too.
+  PublishJob,
+  PublishDestination,
 ];
 
 export async function deleteWorkspace(workspace, actor, { confirmation, password }) {

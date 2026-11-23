@@ -10,7 +10,7 @@ import { CharacterCount, InlinePlatformGlyph, PlatformCounts } from './Character
 import { isSoftLimit, overHardLimit } from './limits.js';
 
 const GENERIC_NOTE =
-  'Publishing is not available yet. Once it is, the first comment is posted from the same account right after the post.';
+  'First comments are saved with the draft but not sent yet: publishing (simulated for now) sends the post without them.';
 
 /** Counter items for a platform's first comment, from PLATFORM_RULES. */
 function commentCounts(output, platform, idBase) {

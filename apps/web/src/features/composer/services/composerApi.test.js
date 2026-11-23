@@ -16,7 +16,6 @@ import {
   getMedia,
   listAccountPresets,
   listDrafts,
-  submitPost,
   updateDraft,
   uploadFileToStorage,
 } from './composerApi.js';
@@ -67,11 +66,6 @@ const CALLS = [
     () => createAccountPreset('w1', { name: 'Stores', socialAccountIds: ['acc-1'] }),
   ],
   ['deleteAccountPreset', 'serverPresets', () => deleteAccountPreset('w1', 'p_1')],
-  [
-    'submitPost',
-    'publishing',
-    () => submitPost('w1', { contentPackageId: 'cp_1', destinations: [{ socialAccountId: 'a' }] }),
-  ],
 ];
 
 /** Runs `fn` so that a synchronous throw and a rejected promise both become a rejection. */
@@ -179,17 +173,9 @@ describe('while the backend capabilities are off', () => {
     },
   );
 
-  it('never submits posts, even with every flag on', async () => {
-    for (const flag of [...Object.values(FLAG), 'VITE_COMPOSER_PUBLISHING']) {
-      vi.stubEnv(flag, 'true');
-    }
-    const mock = mockFetch({ 'POST /workspaces/w1/posts': () => jsonResponse(202, { post: {} }) });
-    setAccessToken('access-token');
-
-    await expect(
-      attempt(() => submitPost('w1', { contentPackageId: 'cp_1' })),
-    ).rejects.toBeInstanceOf(CapabilityUnavailableError);
-    expect(mock.fn).not.toHaveBeenCalled();
+  it('has no way to submit posts: publishing goes through POST /publish-jobs instead', async () => {
+    const api = await import('./composerApi.js');
+    expect(api.submitPost).toBeUndefined();
   });
 });
 

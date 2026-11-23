@@ -1,5 +1,16 @@
-import { PERMISSIONS, ROLE_LABELS } from '@socialhub/shared';
-import { Eye, Hash, ImagePlus, Lock, MessageCircle, PenLine, Search, Send } from 'lucide-react';
+import { HASHTAG_PLACEMENTS, PERMISSIONS, PUBLISHING_MODES, ROLE_LABELS } from '@socialhub/shared';
+import {
+  Eye,
+  FlaskConical,
+  Hash,
+  ImagePlus,
+  Lock,
+  MessageCircle,
+  PenLine,
+  Search,
+  Send,
+} from 'lucide-react';
+import { Link } from 'react-router';
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { toast } from 'sonner';
 import { PageHeader } from '../../components/layout/AppShell.jsx';
@@ -9,6 +20,9 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { useSocialAccounts } from '../../lib/queries.js';
 import { cn } from '../../lib/utils.js';
+import { ComposerPublishDialog } from '../publishing/ComposerPublishDialog.jsx';
+import { JobDetailsModal } from '../publishing/JobDetailsModal.jsx';
+import { usePublishingStatus } from '../publishing/usePublishing.js';
 import { AccountSelector } from './components/accounts/AccountSelector.jsx';
 import { ComposerActionBar } from './components/drafts/ComposerActionBar.jsx';
 import { DraftRestoreBanner } from './components/drafts/DraftRestoreBanner.jsx';
@@ -33,12 +47,14 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard.js';
 import { normalizeAccounts } from './model/accounts.js';
 import {
   MEDIA_MAX_ITEMS,
+  UPLOAD_STATUS,
   composerActions,
   composerReducer,
   createInitialComposerState,
   hasContent,
 } from './model/composerState.js';
 import { validateComposer } from './model/validation.js';
+import { CAPABILITY_MESSAGES } from './services/capabilities.js';
 
 /**
  * Universal Post Composer — /w/:slug/compose.
@@ -47,10 +63,14 @@ import { validateComposer } from './model/validation.js';
  * per platform), hashtags, first comment and internal SEO keywords, with live previews and a
  * readiness check against Meta's documented limits.
  *
- * Publishing is NOT available: the publishing engine does not exist, so nothing is ever sent
- * to Facebook or Instagram. Server drafts, media upload and shared presets are wired to the
- * proposed API (docs/COMPOSER_API_CONTRACT.md) behind capability flags that are off until the
- * backend ships them; until then drafts and presets are kept in this browser and labelled so.
+ * Publish saves the post as a team draft and hands it to the SocialHub publishing API
+ * (docs/PUBLISHING_API.md), now or at a scheduled time. What the server does with it depends
+ * on its PUBLISHING_MODE: in this release real posting to Meta is not switched on, so at most
+ * the post is SIMULATED (the queue and worker run, nothing reaches Facebook or Instagram), and
+ * the composer says so. Server drafts, media upload and shared presets use the API
+ * (docs/COMPOSER_API_CONTRACT.md) behind capability flags; while a flag is off, drafts and
+ * presets are kept in this browser and labelled so, and Publish (which needs a saved team
+ * draft) is unavailable.
  */
 export default function ComposerPage() {
   const { workspace, can, role } = useWorkspace();
@@ -168,6 +188,9 @@ function Composer() {
   const [filesToReAdd, setFilesToReAdd] = useState([]);
   /** Spoken confirmation after files are added (the grid announces moves and removals). */
   const [mediaAnnouncement, setMediaAnnouncement] = useState('');
+  const [publishOpen, setPublishOpen] = useState(false);
+  /** The job created by the last Publish, shown with its live per-account status. */
+  const [createdJob, setCreatedJob] = useState(null);
 
   const accountsQuery = useSocialAccounts(workspace.id);
   // A failed background refetch keeps the accounts already loaded: only "no data" is an error.
@@ -196,6 +219,10 @@ function Composer() {
     availableAccountIds,
   });
   const presets = useAccountPresets({ workspaceId: workspace.id, userId: user.id });
+  const canPublishRole = can(PERMISSIONS.CONTENT_PUBLISH);
+  const publishingStatus = usePublishingStatus(workspace.id, {
+    enabled: canPublishRole && server.available,
+  });
 
   const contentPresent = hasContent(state);
   const hasLocalFiles = state.media.some((m) => !m.upload.mediaId);
@@ -360,6 +387,58 @@ function Composer() {
     });
   }, [changeView]);
 
+  // ------------------------------------------------------------------ publishing
+  const simulatedMode = publishingStatus.data?.mode === PUBLISHING_MODES.SIMULATED;
+  // [full explanation for the note above the composer, short label under the Publish button]
+  const [publishUnavailable, publishShort] = (() => {
+    if (!canPublishRole) {
+      return ['Your role cannot publish posts in this workspace.', 'Your role cannot publish'];
+    }
+    if (!server.available) return [CAPABILITY_MESSAGES.publishing, 'Publishing needs team drafts'];
+    if (publishingStatus.isPending) {
+      return ['Checking whether publishing is available…', 'Checking publishing…'];
+    }
+    if (publishingStatus.error) {
+      return ['We could not check whether publishing is available.', 'Could not check publishing'];
+    }
+    const status = publishingStatus.data;
+    if (status.mode === PUBLISHING_MODES.DISABLED) {
+      return ['Publishing is switched off on this server.', 'Publishing is switched off'];
+    }
+    if (!status.canPublish) {
+      return [
+        status.message ?? 'The publishing queue is not available right now.',
+        'Publishing queue not available',
+      ];
+    }
+    return [null, null];
+  })();
+  const publishMessage =
+    publishShort ??
+    (simulatedMode ? 'Simulation only: nothing is posted' : 'Posts go to Facebook and Instagram');
+  const notUploaded = state.media.filter((m) => m.upload.status !== UPLOAD_STATUS.UPLOADED);
+  const publishBlockers = [];
+  if (notUploaded.length > 0) {
+    publishBlockers.push(
+      media.uploadAvailable
+        ? `${notUploaded.length} ${notUploaded.length === 1 ? 'file has' : 'files have'} not finished uploading. Wait for the upload, or remove files that failed.`
+        : 'Media upload is not switched on for this site, so attached files cannot be published. Remove them to publish the text only.',
+    );
+  }
+  if (!accountsReady) publishBlockers.push('Your accounts are still loading.');
+
+  /** Saves the draft so the server publishes exactly what is on screen; resolves to its id. */
+  const preparePublish = async () => {
+    if (server.status === 'saved' && server.draft && server.omittedMedia.length === 0) {
+      return server.draft.id;
+    }
+    const { contentPackage, omittedMedia } = await server.save({ asNew: conflicted });
+    if (omittedMedia?.length) {
+      throw new Error('Some files are not uploaded yet, so the post cannot be published as it is.');
+    }
+    return contentPackage.id;
+  };
+
   const openServerDraft = async (id) => {
     await server.open(id);
     setFilesToReAdd([]);
@@ -392,17 +471,11 @@ function Composer() {
         <FilesToReAdd className="mb-6" files={filesToReAdd} onDismiss={() => setFilesToReAdd([])} />
       )}
 
-      <div
-        role="note"
-        className="mb-6 flex items-start gap-3 rounded-2xl border border-sky-200/80 bg-sky-50/70 px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100"
-      >
-        <Send className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <p>
-          <span className="font-semibold">Publishing isn’t available yet.</span> The SocialHub
-          publishing engine hasn’t been built, so nothing is sent to Facebook or Instagram. You can
-          compose, preview and save drafts.
-        </p>
-      </div>
+      <PublishingNote
+        simulated={simulatedMode && !publishUnavailable}
+        unavailable={publishUnavailable}
+        publishingHref={`/w/${workspace.slug}/publishing`}
+      />
 
       <ViewSwitch view={view} onChange={changeView} issueCount={issueCount} />
 
@@ -544,8 +617,51 @@ function Composer() {
         onDiscard={discard}
         discardDisabled={!contentPresent}
         onOpenDrafts={server.available ? () => setDraftsOpen(true) : undefined}
-        publishingMessage="Publishing isn’t available yet"
+        onPublish={() => setPublishOpen(true)}
+        publishDisabled={Boolean(publishUnavailable)}
+        publishSimulated={simulatedMode}
+        publishingMessage={publishMessage}
       />
+
+      {publishOpen && (
+        <ComposerPublishDialog
+          workspaceId={workspace.id}
+          workspaceTimeZone={workspace.timezone}
+          accounts={validation.selected}
+          errors={accountsReady ? validation.errors.map((issue) => issue.message) : []}
+          warnings={accountsReady ? validation.warnings.map((issue) => issue.message) : []}
+          blockers={publishBlockers}
+          hasFirstComment={Boolean(state.firstComment.trim())}
+          hashtagsInFirstComment={
+            state.hashtagPlacement === HASHTAG_PLACEMENTS.FIRST_COMMENT && state.hashtags.length > 0
+          }
+          mediaCount={state.media.length}
+          prepare={preparePublish}
+          onClose={() => setPublishOpen(false)}
+          onCreated={(job) => {
+            setPublishOpen(false);
+            setCreatedJob(job);
+          }}
+        />
+      )}
+      {createdJob && (
+        <JobDetailsModal
+          key={createdJob.id}
+          workspaceId={workspace.id}
+          job={createdJob}
+          canAct={canPublishRole}
+          timeZone={workspace.timezone}
+          onClose={() => setCreatedJob(null)}
+          footerExtra={
+            <Link
+              to={`/w/${workspace.slug}/publishing`}
+              className="mr-auto inline-flex h-10 items-center text-sm font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
+            >
+              Open Publishing
+            </Link>
+          }
+        />
+      )}
 
       <MediaPreviewDialog
         media={state.media}
@@ -574,5 +690,44 @@ function Composer() {
         />
       )}
     </>
+  );
+}
+
+/** What Publish will do on this server, above the composer. */
+function PublishingNote({ simulated, unavailable, publishingHref }) {
+  const Icon = simulated ? FlaskConical : Send;
+  return (
+    <div
+      role="note"
+      className={cn(
+        'mb-6 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm',
+        simulated
+          ? 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-100'
+          : 'border-sky-200/80 bg-sky-50/70 text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100',
+      )}
+    >
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <p className="min-w-0">
+        {simulated ? (
+          <>
+            <span className="font-semibold">Simulation mode.</span> Publish runs the whole
+            publishing process (queue, worker, a result for each account), but nothing is posted to
+            Facebook or Instagram. Real publishing is not available yet.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">Real publishing isn’t available yet.</span>{' '}
+            {unavailable ?? 'Nothing is sent to Facebook or Instagram.'} You can compose, preview
+            and save drafts.
+          </>
+        )}{' '}
+        <Link
+          to={publishingHref}
+          className="font-medium underline underline-offset-2 hover:no-underline"
+        >
+          Publishing status
+        </Link>
+      </p>
+    </div>
   );
 }

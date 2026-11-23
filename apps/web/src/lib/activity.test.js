@@ -39,6 +39,19 @@ describe('describeActivity', () => {
     expect(d.text).toBe('updated the workspace name, time zone');
   });
 
+  it('explains a post SocialHub did not send because its author lost permission', () => {
+    const d = describeActivity({
+      action: 'publish_destination.blocked',
+      target: { type: 'publish_job', label: 'Acme Store' },
+      metadata: { reason: 'NO_ACCOUNT_ACCESS', simulated: true },
+    });
+    expect(d.actor).toBe('SocialHub');
+    expect(d.tone).toBe('danger');
+    expect(d.text).toBe(
+      'did not send a simulated post to Acme Store: the person who scheduled it may no longer use this account',
+    );
+  });
+
   it('falls back gracefully for unknown actions', () => {
     expect(describeActivity({ action: 'future.thing' }).text).toBe('future.thing');
   });

@@ -96,9 +96,9 @@ const seesEveryAccount = (membership) =>
 
 const READY_TEXT = {
   pageRole:
-    'SocialHub has the permissions and Page role this account needs for publishing. Publishing itself is not available yet.',
+    'SocialHub has the permissions and Page role this account needs for publishing. Real publishing is not available yet.',
   instagramLogin:
-    'SocialHub has the permissions this account needs for publishing. Publishing itself is not available yet.',
+    'SocialHub has the permissions this account needs for publishing. Real publishing is not available yet.',
 };
 
 /** Team access state of one member, as the API reports it. */

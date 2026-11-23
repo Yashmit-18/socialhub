@@ -1,10 +1,11 @@
 import mongoose from 'mongoose';
 import { ACTIVITY_ACTIONS, CONTENT_PACKAGE_STATUS, MEDIA_STATUS } from '@socialhub/shared';
-import { conflict, forbidden, notFound, validationError } from '../../lib/errors.js';
+import { conflict, notFound, validationError } from '../../lib/errors.js';
 import { ContentPackage, MediaAsset, SocialAccount } from '../../models/index.js';
 import { recordActivity } from '../activity/activity.service.js';
-import { mediaView } from '../media/media.service.js';
+import { hiddenMediaIds, mediaView } from '../media/media.service.js';
 import { accessibleAccountFilter } from '../socialAccounts/socialAccount.service.js';
+import { restrictedAccountIds, targetsAreVisible } from './contentAccess.js';
 
 /**
  * Composer drafts (docs/COMPOSER_API_CONTRACT.md §4). A draft is a ContentPackage in status
@@ -13,8 +14,11 @@ import { accessibleAccountFilter } from '../socialAccounts/socialAccount.service
  * Rules:
  *  - Every query is scoped to the workspace.
  *  - A draft can only target accounts its author can use (accessibleAccountFilter).
- *  - A draft that targets an account the caller cannot use can be read (with that account
- *    left out of the answer) but not changed or deleted by that caller.
+ *  - Visibility (contentAccess.js): owners, admins and members with access to all accounts
+ *    see every draft. Anyone else sees a draft only if they may use EVERY account it targets;
+ *    otherwise the draft does not exist for them (lists leave it out inside the query, and
+ *    reading, updating or deleting it answers 404 like an unknown id). A draft with no
+ *    accounts follows the content permissions alone.
  *  - Updates are full saves guarded by `version`: a stale version answers 409 and writes
  *    nothing, so two people can never silently overwrite each other.
  */
@@ -29,16 +33,6 @@ async function accessibleAmong(membership, candidates) {
   if (candidates.length === 0) return new Set();
   const rows = await SocialAccount.find({
     $and: [accessibleAccountFilter(membership), { _id: { $in: candidates } }],
-  }).select('_id');
-  return new Set(rows.map((row) => String(row._id)));
-}
-
-/** Ids, out of `candidates`, of accounts that still exist in the workspace. */
-async function existingAmong(workspaceId, candidates) {
-  if (candidates.length === 0) return new Set();
-  const rows = await SocialAccount.find({
-    workspace: workspaceId,
-    _id: { $in: candidates },
   }).select('_id');
   return new Set(rows.map((row) => String(row._id)));
 }
@@ -102,16 +96,25 @@ async function present(packages, membership) {
 
 const withPeople = (query) => query.populate('createdBy', 'name').populate('updatedBy', 'name');
 
-async function load(workspace, packageId) {
+/**
+ * A draft the member may see. Unknown ids, other workspaces' drafts and drafts that target an
+ * account the member cannot use all get the same 404, so nothing about them can be probed.
+ */
+async function load(workspace, membership, packageId) {
   const pkg = mongoose.isValidObjectId(packageId)
     ? await withPeople(ContentPackage.findOne({ _id: packageId, workspace: workspace._id }))
     : null;
-  if (!pkg) throw notFound('Draft not found');
+  if (!pkg || !targetsAreVisible(await restrictedAccountIds(membership), pkg.targetAccounts)) {
+    throw notFound('Draft not found');
+  }
   return pkg;
 }
 
-/** Checks the body against the workspace: account access and usable media. */
-async function resolveInput(workspace, membership, input) {
+/**
+ * Checks the body against the workspace: account access and usable media. A file the member
+ * may not see (one on a draft hidden from them) gets the same answer as a missing one.
+ */
+async function resolveInput(workspace, membership, actor, input) {
   const fields = {};
   const allowed = await accessibleAmong(membership, input.targetAccountIds);
   if (input.targetAccountIds.some((id) => !allowed.has(id.toLowerCase()))) {
@@ -125,7 +128,10 @@ async function resolveInput(workspace, membership, input) {
       _id: { $in: mediaIds },
       status: { $in: [MEDIA_STATUS.READY, MEDIA_STATUS.PROCESSING] },
     });
-    if (usable !== mediaIds.length) {
+    if (
+      usable !== mediaIds.length ||
+      (await hiddenMediaIds(workspace, membership, actor, mediaIds)).length
+    ) {
       fields.media = 'One or more attached files are missing or were not uploaded successfully';
     }
   }
@@ -142,19 +148,6 @@ async function resolveInput(workspace, membership, input) {
   };
 }
 
-/** A member may change a draft only if they can use every account it still targets. */
-async function assertCanModify(workspace, membership, pkg) {
-  const targets = ids(pkg.targetAccounts);
-  const [existing, allowed] = await Promise.all([
-    existingAmong(workspace._id, targets),
-    accessibleAmong(membership, targets),
-  ]);
-  // Accounts that were removed from the workspace no longer restrict anyone.
-  if (targets.some((id) => existing.has(id) && !allowed.has(id))) {
-    throw forbidden('This draft targets accounts you do not have access to.');
-  }
-}
-
 const logMeta = (pkg) => ({
   mediaCount: pkg.media.length,
   accountCount: pkg.targetAccounts.length,
@@ -162,6 +155,9 @@ const logMeta = (pkg) => ({
 
 export async function listDrafts(workspace, membership, { status, cursor, limit }) {
   const filter = { workspace: workspace._id, status };
+  // Drafts that target an account the member cannot use are left out by the query itself.
+  const restricted = await restrictedAccountIds(membership);
+  if (restricted?.length) filter.targetAccounts = { $nin: restricted };
   if (cursor) {
     const { at, id } = decodeCursor(cursor);
     filter.$or = [{ updatedAt: { $lt: at } }, { updatedAt: at, _id: { $lt: id } }];
@@ -171,20 +167,27 @@ export async function listDrafts(workspace, membership, { status, cursor, limit 
       .sort({ updatedAt: -1, _id: -1 })
       .limit(limit + 1),
   );
+  // Second check on what the query returned (an account's access can change mid-request).
   const page = rows.slice(0, limit);
   return {
-    items: await present(page, membership),
+    items: await present(
+      page.filter((pkg) => targetsAreVisible(restricted, pkg.targetAccounts)),
+      membership,
+    ),
     nextCursor: rows.length > limit ? encodeCursor(page.at(-1)) : null,
   };
 }
 
 export async function getDraft(workspace, membership, packageId) {
-  const [contentPackage] = await present([await load(workspace, packageId)], membership);
+  const [contentPackage] = await present(
+    [await load(workspace, membership, packageId)],
+    membership,
+  );
   return { contentPackage };
 }
 
 export async function createDraft(workspace, membership, actor, input, context) {
-  const data = await resolveInput(workspace, membership, input);
+  const data = await resolveInput(workspace, membership, actor, input);
   const pkg = await ContentPackage.create({
     ...data,
     workspace: workspace._id,
@@ -205,9 +208,8 @@ export async function createDraft(workspace, membership, actor, input, context) 
 
 export async function updateDraft(workspace, membership, actor, packageId, body, context) {
   const { version, ...input } = body;
-  const current = await load(workspace, packageId);
-  await assertCanModify(workspace, membership, current);
-  const data = await resolveInput(workspace, membership, input);
+  const current = await load(workspace, membership, packageId);
+  const data = await resolveInput(workspace, membership, actor, input);
 
   const now = new Date();
   const logIt = !current.updateLoggedAt || now - current.updateLoggedAt >= UPDATE_LOG_INTERVAL_MS;
@@ -218,7 +220,7 @@ export async function updateDraft(workspace, membership, actor, packageId, body,
       $set: { ...data, updatedBy: actor._id, ...(logIt ? { updateLoggedAt: now } : {}) },
       $inc: { version: 1 },
     },
-    { new: true },
+    { returnDocument: 'after' },
   );
   if (!updated) {
     const latest = await ContentPackage.findOne({ _id: current._id }).select('version');
@@ -241,8 +243,7 @@ export async function updateDraft(workspace, membership, actor, packageId, body,
 }
 
 export async function deleteDraft(workspace, membership, actor, packageId, context) {
-  const pkg = await load(workspace, packageId);
-  await assertCanModify(workspace, membership, pkg);
+  const pkg = await load(workspace, membership, packageId);
   await ContentPackage.deleteOne({ _id: pkg._id, workspace: workspace._id });
   await recordActivity({
     workspace,

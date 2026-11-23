@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import {
+  ACTIVE_JOB_STATUSES,
   ACTIVITY_ACTIONS,
   COMPOSER_LIMITS,
   ERROR_CODES,
@@ -13,10 +14,12 @@ import { config } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { randomToken } from '../../lib/crypto.js';
 import { AppError, conflict, forbidden, notFound } from '../../lib/errors.js';
-import { ContentPackage, MediaAsset } from '../../models/index.js';
+
+import { ContentPackage, MediaAsset, PublishJob } from '../../models/index.js';
 import { getStorage, requireStorage } from '../../storage/index.js';
 import { probeMedia } from '../../storage/mediaProbe.js';
 import { recordActivity } from '../activity/activity.service.js';
+import { restrictedAccountIds } from '../contentPackages/contentAccess.js';
 
 /**
  * Media uploads for the composer (docs/COMPOSER_API_CONTRACT.md §5).
@@ -66,6 +69,9 @@ export function mediaView(asset, storage = getStorage()) {
     createdAt: asset.createdAt,
   };
 }
+
+const neededByActiveJob = (mediaId) =>
+  PublishJob.exists({ 'content.media.media': mediaId, status: { $in: ACTIVE_JOB_STATUSES } });
 
 async function findAsset(workspace, mediaId) {
   const asset = mongoose.isValidObjectId(mediaId)
@@ -185,6 +191,9 @@ async function inspect(asset, storage, key) {
  */
 export async function completeUpload(workspace, actor, mediaId, context) {
   const found = await findAsset(workspace, mediaId);
+  // Only the person who started the upload finishes it. Anyone else gets the same answer as
+  // an unknown id: completing an existing file would otherwise return its URL.
+  if (String(found.uploadedBy) !== String(actor._id)) throw notFound('File not found');
   const storage = requireStorage();
   // Completing twice is harmless: the outcome of the first verification stands.
   if (found.status !== MEDIA_STATUS.PENDING_UPLOAD) return { media: mediaView(found, storage) };
@@ -266,18 +275,73 @@ export async function completeUpload(workspace, actor, mediaId, context) {
   return { media: mediaView(ready, storage) };
 }
 
-export async function getMedia(workspace, mediaId) {
-  return { media: mediaView(await findAsset(workspace, mediaId)) };
+/**
+ * Whether the member may see a file (and its URL). Files are unpublished content, so they
+ * follow the draft visibility rule (contentPackages/contentAccess.js): members who may use
+ * every account see every file; anyone else sees files they uploaded themselves and files on
+ * at least one draft they can see. Everything else answers like an unknown id, so ids
+ * (which are partly sequential) cannot be stepped through to reach hidden drafts' files.
+ */
+async function canSeeAsset(workspace, membership, actor, asset) {
+  if (String(asset.uploadedBy) === String(actor._id)) return true;
+  return (await hiddenMediaIds(workspace, membership, actor, [asset._id])).length === 0;
+}
+
+/**
+ * The ids among `mediaIds` that the member may not see, by the same rule as canSeeAsset.
+ * Drafts use it too: attaching a hidden draft's file to one's own draft would otherwise
+ * reveal it (and make it visible from then on).
+ */
+export async function hiddenMediaIds(workspace, membership, actor, mediaIds) {
+  if (!mediaIds.length) return [];
+  const restricted = await restrictedAccountIds(membership);
+  if (!restricted?.length) return [];
+  const ids = [...new Set(mediaIds.map((id) => String(id).toLowerCase()))];
+  const own = new Set(
+    (
+      await MediaAsset.distinct('_id', {
+        workspace: workspace._id,
+        _id: { $in: ids },
+        uploadedBy: actor._id,
+      })
+    ).map(String),
+  );
+  const others = ids.filter((id) => !own.has(id));
+  if (!others.length) return [];
+  const onVisibleDraft = new Set(
+    (
+      await ContentPackage.distinct('media.media', {
+        workspace: workspace._id,
+        'media.media': { $in: others },
+        targetAccounts: { $nin: restricted },
+      })
+    ).map(String),
+  );
+  return others.filter((id) => !onVisibleDraft.has(id));
+}
+
+export async function getMedia(workspace, membership, actor, mediaId) {
+  const asset = await findAsset(workspace, mediaId);
+  if (!(await canSeeAsset(workspace, membership, actor, asset))) throw notFound('File not found');
+  return { media: mediaView(asset) };
 }
 
 export async function deleteMedia(workspace, membership, actor, mediaId, context) {
   const asset = await findAsset(workspace, mediaId);
   const own = String(asset.uploadedBy) === String(actor._id);
+  // A file the member may not see answers like an unknown id (not 403), so deleting cannot
+  // be used to find out which ids exist.
+  if (!own && !(await canSeeAsset(workspace, membership, actor, asset))) {
+    throw notFound('File not found');
+  }
   if (!own && !hasPermission(membership.role, PERMISSIONS.MEMBERS_MANAGE)) {
     throw forbidden('Only the person who uploaded this file, or an admin, can delete it.');
   }
   if (await ContentPackage.exists({ workspace: workspace._id, 'media.media': asset._id })) {
     throw conflict('This file is used by a draft. Remove it from the draft first.');
+  }
+  if (await neededByActiveJob(asset._id)) {
+    throw conflict('This file belongs to a post that is still being published.');
   }
   const storage = getStorage();
   if (storage && storage.name === asset.storageDriver) {
@@ -345,6 +409,8 @@ export async function cleanupMedia({ now = new Date(), limit = 500 } = {}) {
   for (const asset of candidates) {
     const pending = asset.status === MEDIA_STATUS.PENDING_UPLOAD;
     if (!pending && (await ContentPackage.exists({ 'media.media': asset._id }))) continue;
+    // A post that is scheduled or on its way still needs its files, draft or no draft.
+    if (!pending && (await neededByActiveJob(asset._id))) continue;
     try {
       // A late upload to an expired slot may have left an object behind: remove it too.
       if (usable(asset)) {

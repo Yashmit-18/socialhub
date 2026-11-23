@@ -172,16 +172,8 @@ export async function deleteAccountPreset(workspaceId, presetId, options) {
   return api.delete(`${ws(workspaceId)}/account-presets/${id(presetId)}`, undefined, options);
 }
 
-/* ------------------------------------------------------------ §6 publishing */
+/* ------------------------------------------------------------ §7 publishing */
 
-/**
- * POST /workspaces/:id/posts  { contentPackageId, destinations: [{ socialAccountId }], scheduledAt }
- * → 202 { post: { id, status, jobs: [{ id, socialAccountId, status: 'PENDING' }] } }
- *
- * The publishing engine does not exist: the `publishing` capability is hard-wired off, so
- * this always throws CapabilityUnavailableError and no request is sent.
- */
-export async function submitPost(workspaceId, input, options) {
-  requireCapability('publishing');
-  return api.post(`${ws(workspaceId)}/posts`, input, options);
-}
+// Publishing does not go through this module. The proposed `POST /posts` (contract §7) was
+// never built; the composer publishes with POST /publish-jobs (docs/PUBLISHING_API.md)
+// through features/publishing/usePublishing.js, after saving the post as a team draft.

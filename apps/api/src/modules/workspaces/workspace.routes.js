@@ -25,6 +25,7 @@ import * as invitations from '../invitations/invitation.service.js';
 import { mountMediaRoutes } from '../media/media.routes.js';
 import * as members from '../members/member.service.js';
 import { mountMetaWorkspaceRoutes } from '../meta/meta.routes.js';
+import { mountPublishingRoutes } from '../publishing/publishing.routes.js';
 import { mountSocialAccountRoutes } from '../socialAccounts/socialAccount.routes.js';
 import { listConnections } from '../socialAccounts/socialAccount.service.js';
 import * as workspaces from './workspace.service.js';
@@ -272,6 +273,7 @@ export function workspacesRouter() {
   mountAccountPresetRoutes(scoped);
   // Facebook Group distribution (Phase 6): directory, shares and manual sharing tasks.
   mountGroupRoutes(scoped);
+  mountPublishingRoutes(scoped);
 
   return router;
 }

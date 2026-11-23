@@ -35,6 +35,7 @@ const GroupTasksPage = lazy(() => import('./features/groups/TasksPage.jsx'));
 const GroupSharesPage = lazy(() => import('./features/groups/SharesPage.jsx'));
 const GroupShareDetailPage = lazy(() => import('./features/groups/ShareDetailPage.jsx'));
 const GroupDirectoryPage = lazy(() => import('./features/groups/DirectoryPage.jsx'));
+const PublishingPage = lazy(() => import('./features/publishing/PublishingPage.jsx'));
 const MetaOAuthResultPage = lazy(() => import('./pages/MetaOAuthResultPage.jsx'));
 const TeamPage = lazy(() => import('./pages/workspace/TeamPage.jsx'));
 const ActivityPage = lazy(() => import('./pages/workspace/ActivityPage.jsx'));
@@ -106,6 +107,7 @@ export const routes = [
                   { path: 'directory', element: <GroupDirectoryPage /> },
                 ],
               },
+              { path: 'publishing', element: <PublishingPage /> },
               {
                 path: 'accounts',
                 element: <AccountsLayout />,

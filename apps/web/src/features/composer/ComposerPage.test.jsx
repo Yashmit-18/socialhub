@@ -99,7 +99,7 @@ describe('access and states', () => {
   });
 });
 
-describe('publishing is never simulated', () => {
+describe('publishing while team drafts are off', () => {
   it('keeps Publish disabled, explains why, and sends nothing while composing', async () => {
     const mock = setupComposerApi();
     renderComposer();
@@ -108,7 +108,8 @@ describe('publishing is never simulated', () => {
 
     const publish = screen.getByRole('button', { name: /^publish/i });
     expect(publish).toBeDisabled();
-    expect(screen.getAllByText(/Publishing isn.t available yet/).length).toBeGreaterThan(0);
+    expect(publish).toHaveAccessibleDescription(/needs team drafts/);
+    expect(screen.getAllByText(/Real publishing isn.t available yet/).length).toBeGreaterThan(0);
     await userEvent.click(publish);
 
     expect(screen.queryByText(/post (was )?published/i)).toBeNull();

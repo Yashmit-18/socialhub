@@ -105,6 +105,44 @@ const envSchema = z.object({
   STORAGE_LOCAL_DIR: z.string().min(1).default('./storage-data'),
   STORAGE_UPLOAD_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
 
+  /**
+   * Turns on GET /api/v1/health/details (version, queues, workers) for monitoring, answered
+   * only with `Authorization: Bearer <this token>`. Unset = that route does not exist. The
+   * public /health only says whether the API and its database are up.
+   */
+  HEALTH_DETAILS_TOKEN: z
+    .string()
+    .min(32, { error: 'HEALTH_DETAILS_TOKEN must be at least 32 characters' })
+    .optional(),
+
+  /* --- Publishing engine (BullMQ on Redis). --- */
+  /** redis:// or rediss:// URL. Unset = no queue: publishing answers 503 QUEUE_UNAVAILABLE. */
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, { error: 'REDIS_URL must start with redis:// or rediss://' })
+    .optional(),
+  /**
+   * disabled   jobs cannot be created (default)
+   * simulated  development only: the whole engine runs, nothing is sent to Meta
+   * Real publishing is not enabled in this build, so there is no "live" value.
+   */
+  PUBLISHING_MODE: z.enum(['disabled', 'simulated']).default('disabled'),
+  /** Run the publish worker inside the API process. Set false when `npm run worker` runs it. */
+  PUBLISHING_WORKER_INLINE: booleanString.optional(),
+  PUBLISHING_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+  /** Automatic attempts per destination, including the first one. */
+  PUBLISHING_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(4),
+  /** First retry delay; it doubles on every further attempt. */
+  PUBLISHING_RETRY_BASE_SECONDS: z.coerce.number().int().min(1).max(3600).default(30),
+  /**
+   * Recovery timings. Leave the defaults; the end-to-end check shortens them.
+   * CLAIM: how long a worker may hold one destination before it counts as interrupted.
+   * REQUEUE: how overdue a waiting destination must be before its queue entry is re-added.
+   */
+  PUBLISHING_CLAIM_SECONDS: z.coerce.number().int().min(15).max(3600).default(900),
+  PUBLISHING_REQUEUE_SECONDS: z.coerce.number().int().min(5).max(3600).default(120),
+  PUBLISHING_RECOVERY_INTERVAL_SECONDS: z.coerce.number().int().min(2).max(3600).default(60),
+
   META_OAUTH_STATE_TTL_MINUTES: z.coerce.number().int().min(2).max(60).default(10),
   META_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),
 });
@@ -160,6 +198,12 @@ export function loadConfig(source = process.env) {
         'Invalid environment configuration: STORAGE_PUBLIC_BASE_URL must be an https:// URL in production',
       );
     }
+  }
+
+  if (isProduction && env.PUBLISHING_MODE === 'simulated') {
+    throw new Error(
+      'Invalid environment configuration: PUBLISHING_MODE=simulated is for development only and cannot be used in production',
+    );
   }
 
   const appUrl = (env.APP_URL ?? env.CLIENT_ORIGIN[0]).replace(/\/+$/, '');
@@ -234,6 +278,19 @@ export function loadConfig(source = process.env) {
               publicBaseUrl: env.STORAGE_PUBLIC_BASE_URL,
             }
           : null,
+    },
+    healthDetailsToken: env.HEALTH_DETAILS_TOKEN ?? null,
+    publishing: {
+      mode: env.PUBLISHING_MODE === 'simulated' ? 'SIMULATED' : 'DISABLED',
+      redisUrl: env.REDIS_URL ?? null,
+      inlineWorker: env.PUBLISHING_WORKER_INLINE ?? true,
+      concurrency: env.PUBLISHING_CONCURRENCY,
+      maxAttempts: env.PUBLISHING_MAX_ATTEMPTS,
+      retryBaseMs: env.PUBLISHING_RETRY_BASE_SECONDS * 1000,
+      retryMaxMs: 15 * 60 * 1000,
+      claimMs: env.PUBLISHING_CLAIM_SECONDS * 1000,
+      requeueAfterMs: env.PUBLISHING_REQUEUE_SECONDS * 1000,
+      recoveryIntervalMs: env.PUBLISHING_RECOVERY_INTERVAL_SECONDS * 1000,
     },
     meta: {
       graphVersion: env.META_GRAPH_API_VERSION,

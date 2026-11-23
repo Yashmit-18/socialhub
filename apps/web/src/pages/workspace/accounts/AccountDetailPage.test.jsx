@@ -839,7 +839,7 @@ describe('account detail — Instagram accounts', () => {
     expect(within(health).getByText('Publishing permissions OK')).toBeInTheDocument();
     expect(
       within(health).getByText(
-        'SocialHub has the permissions this account needs for publishing. Publishing itself is not available yet.',
+        'SocialHub has the permissions this account needs for publishing. Real publishing is not available yet.',
       ),
     ).toBeInTheDocument();
     expect(within(health).getByText('Not applicable')).toBeInTheDocument();

@@ -6,10 +6,11 @@ import cors from 'cors';
 import express, { Router } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
-import { CLIENT_HEADER } from '@socialhub/shared';
+import { CLIENT_HEADER, QUEUE_STATUS } from '@socialhub/shared';
 import { config } from './config/env.js';
 import { logger } from './config/logger.js';
 import { databaseState } from './db/mongoose.js';
+import { safeEqual } from './lib/crypto.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { createApiLimiter, createAuthLimiter } from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
@@ -18,6 +19,8 @@ import { invitationsRouter } from './modules/invitations/invitation.routes.js';
 import { integrationsRouter, metaPublicRouter } from './modules/meta/meta.routes.js';
 import { crossWorkspaceAccountsRouter } from './modules/socialAccounts/socialAccount.routes.js';
 import { workspacesRouter } from './modules/workspaces/workspace.routes.js';
+import { publishingSettings } from './modules/publishing/publishing.settings.js';
+import { getPublishQueue, publishQueueStatus } from './queue/publishQueue.js';
 import { getStorage } from './storage/index.js';
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -35,6 +38,47 @@ export function redactUrl(url = '') {
     .replace(SECRET_QUERY_PARAMS, '$1[redacted]');
 }
 
+/**
+ * Monitoring details for the operator: server-wide queue counts and workers included, so it
+ * is only answered with `Authorization: Bearer <HEALTH_DETAILS_TOKEN>`. Without the token
+ * configured, or with a wrong one, the route answers like any unknown path (404).
+ */
+let healthTokenForTests;
+
+/** Test hook: the HEALTH_DETAILS_TOKEN to use (pass undefined to go back to the setting). */
+export function setHealthDetailsTokenForTests(token) {
+  if (!config.isTest) throw new Error('setHealthDetailsTokenForTests is only available in tests');
+  healthTokenForTests = token;
+}
+
+async function healthDetails(req, res, next) {
+  const expected =
+    healthTokenForTests === undefined ? config.healthDetailsToken : healthTokenForTests;
+  const given = /^Bearer (.+)$/.exec(req.get('authorization') ?? '')?.[1];
+  if (!expected || !given || !safeEqual(given, expected)) return next();
+  const db = databaseState();
+  const queue = getPublishQueue();
+  const queueStatus = publishQueueStatus();
+  let counts = null;
+  let workers = null;
+  if (queue && queueStatus === QUEUE_STATUS.READY) {
+    [counts, workers] = await Promise.all([
+      queue.counts().catch(() => null),
+      queue.workerCount().catch(() => null),
+    ]);
+  }
+  const storage = getStorage();
+  res.set('Cache-Control', 'no-store');
+  return res.status(db === 'connected' ? 200 : 503).json({
+    status: db === 'connected' ? 'ok' : 'degraded',
+    version: VERSION,
+    uptimeSeconds: Math.round(process.uptime()),
+    database: db,
+    publishing: { mode: publishingSettings().mode, queue: queueStatus, counts, workers },
+    storage: { driver: storage?.name ?? null, publicUrls: Boolean(storage?.publicUrls) },
+  });
+}
+
 function corsOptions() {
   return {
     origin(origin, callback) {
@@ -44,7 +88,14 @@ function corsOptions() {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', CLIENT_HEADER, 'X-Request-Id'],
-    exposedHeaders: ['X-Request-Id', 'RateLimit', 'RateLimit-Policy', 'Retry-After'],
+    // Content-Disposition carries the file name of CSV exports to a web app on another origin.
+    exposedHeaders: [
+      'X-Request-Id',
+      'RateLimit',
+      'RateLimit-Policy',
+      'Retry-After',
+      'Content-Disposition',
+    ],
     maxAge: 600,
   };
 }
@@ -130,16 +181,17 @@ export function createApp(overrides = {}) {
   app.use(cookieParser());
 
   const v1 = Router();
+  // Public: only whether the API and its database are up (load balancers, uptime checks).
+  // Versions, queues, workers and modes are on /health/details, for monitoring only.
   v1.get('/health', (_req, res) => {
     const db = databaseState();
     res.status(db === 'connected' ? 200 : 503).json({
       status: db === 'connected' ? 'ok' : 'degraded',
-      version: VERSION,
-      uptimeSeconds: Math.round(process.uptime()),
       database: db,
     });
   });
   v1.use(createApiLimiter({ perMinute: rateLimit.apiPerMinute }));
+  v1.get('/health/details', healthDetails);
   v1.use(
     '/auth',
     authRouter({

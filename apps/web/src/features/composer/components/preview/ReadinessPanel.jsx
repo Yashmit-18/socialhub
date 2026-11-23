@@ -14,7 +14,7 @@ import { cn } from '../../../../lib/utils.js';
 import { platformLabel } from '../../constants/platformRules.js';
 import { describeAccount } from '../../model/accounts.js';
 import { SEVERITY } from '../../model/validation.js';
-import { CAPABILITY_MESSAGES } from '../../services/capabilities.js';
+import { REAL_PUBLISHING_NOTE } from '../../services/capabilities.js';
 import { AccountAvatar } from '../shared/AccountAvatar.jsx';
 import { PlatformIcon } from '../shared/PlatformIcon.jsx';
 
@@ -355,7 +355,7 @@ export function ReadinessPanel({
       <CardFooter>
         <p className="flex w-full items-start gap-2 text-xs text-muted">
           <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          {`These checks show what Facebook and Instagram require. ${CAPABILITY_MESSAGES.publishing}`}
+          {`These checks show what Facebook and Instagram require. ${REAL_PUBLISHING_NOTE}`}
         </p>
       </CardFooter>
     </Card>

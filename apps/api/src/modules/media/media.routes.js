@@ -38,7 +38,9 @@ export function mountMediaRoutes(scoped) {
   );
 
   scoped.get('/media/:mediaId', read, validate({ params: mediaParams }), async (req, res) => {
-    res.json(await media.getMedia(req.workspace, req.valid.params.mediaId));
+    res.json(
+      await media.getMedia(req.workspace, req.membership, req.user, req.valid.params.mediaId),
+    );
   });
 
   scoped.delete('/media/:mediaId', write, validate({ params: mediaParams }), async (req, res) => {

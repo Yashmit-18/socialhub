@@ -1,4 +1,9 @@
-import { ACTIVITY_ACTIONS, ROLE_LABELS } from '@socialhub/shared';
+import {
+  ACTIVITY_ACTIONS,
+  PUBLISH_ACTIVITY_ACTIONS,
+  PUBLISH_BLOCK_REASONS,
+  ROLE_LABELS,
+} from '@socialhub/shared';
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -10,6 +15,7 @@ import {
   Megaphone,
   MailX,
   RefreshCw,
+  Send,
   Settings,
   Share2,
   ShieldCheck,
@@ -23,8 +29,74 @@ import {
 
 const role = (r) => ROLE_LABELS[r] ?? r;
 const provider = (p) => (p === 'INSTAGRAM_LOGIN' ? 'Instagram' : 'Facebook');
+
 const quoted = (name) => `“${name ?? ''}”`;
 const accounts = (n) => (n === 1 ? '1 account' : `${n ?? 'some'} accounts`);
+
+const BLOCK_REASONS = {
+  [PUBLISH_BLOCK_REASONS.NOT_A_MEMBER]: 'the person who scheduled it left the workspace',
+  [PUBLISH_BLOCK_REASONS.NO_PUBLISH_PERMISSION]:
+    'the person who scheduled it may no longer publish',
+  [PUBLISH_BLOCK_REASONS.NO_ACCOUNT_ACCESS]:
+    'the person who scheduled it may no longer use this account',
+};
+
+/** Publishing entries. Simulated jobs always say so: nothing was posted for them. */
+function describePublishing(entry, actor, m) {
+  const simulated = m.simulated ? ' (simulation, nothing was posted)' : '';
+  const account = entry.target?.label ?? 'an account';
+  switch (entry.action) {
+    case PUBLISH_ACTIVITY_ACTIONS.JOB_CREATED:
+      return {
+        icon: Send,
+        tone: 'brand',
+        actor,
+        text: `${m.scheduled ? 'scheduled' : 'sent'} a post to ${accounts(m.accountCount)}${simulated}`,
+      };
+    case PUBLISH_ACTIVITY_ACTIONS.JOB_CANCELLED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `cancelled a post for ${accounts(m.accountCount)}`,
+      };
+    case PUBLISH_ACTIVITY_ACTIONS.JOB_RESCHEDULED:
+      return {
+        icon: Send,
+        tone: 'neutral',
+        actor,
+        text: `changed the time of a scheduled post for ${accounts(m.accountCount)}${simulated}`,
+      };
+    case PUBLISH_ACTIVITY_ACTIONS.DESTINATION_RETRIED:
+      return { icon: RefreshCw, tone: 'neutral', actor, text: `retried publishing to ${account}` };
+    case PUBLISH_ACTIVITY_ACTIONS.DESTINATION_BLOCKED:
+      return {
+        icon: AlertTriangle,
+        tone: 'danger',
+        actor: 'SocialHub',
+        text: `did not send a ${m.simulated ? 'simulated ' : ''}post to ${account}: ${
+          BLOCK_REASONS[m.reason] ?? 'its author may no longer publish it'
+        }`,
+      };
+    case PUBLISH_ACTIVITY_ACTIONS.DESTINATION_CANCELLED:
+      return { icon: Trash2, tone: 'danger', actor, text: `cancelled publishing to ${account}` };
+    case PUBLISH_ACTIVITY_ACTIONS.JOB_FINISHED: {
+      const parts = [
+        m.published ? `${m.published} ${m.simulated ? 'simulated' : 'published'}` : null,
+        m.failed ? `${m.failed} failed` : null,
+        m.cancelled ? `${m.cancelled} cancelled` : null,
+      ].filter(Boolean);
+      return {
+        icon: m.failed ? AlertTriangle : Send,
+        tone: m.failed ? 'danger' : 'success',
+        actor: 'SocialHub',
+        text: `finished ${m.simulated ? 'a simulated post' : 'a post'}: ${parts.join(', ') || 'nothing sent'}`,
+      };
+    }
+    default:
+      return null;
+  }
+}
 
 const FIELD_LABELS = { name: 'name', slug: 'URL', timezone: 'time zone' };
 
@@ -33,6 +105,9 @@ export function describeActivity(entry) {
   const actor = entry.actorName ?? 'Someone';
   const target = entry.target?.label ?? 'a member';
   const m = entry.metadata ?? {};
+
+  const publishing = describePublishing(entry, actor, m);
+  if (publishing) return publishing;
 
   switch (entry.action) {
     case ACTIVITY_ACTIONS.WORKSPACE_CREATED:

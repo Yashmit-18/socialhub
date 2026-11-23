@@ -9,6 +9,7 @@ import {
   Menu as MenuIcon,
   Moon,
   Plus,
+  Send,
   Settings,
   Share2,
   SquarePen,
@@ -39,6 +40,7 @@ function navItems(slug, can) {
       label: 'Create post',
       icon: SquarePen,
     },
+    can(PERMISSIONS.CONTENT_READ) && { to: `${base}/publishing`, label: 'Publishing', icon: Send },
     { to: `${base}/accounts`, label: 'Social accounts', icon: Share2 },
     can(PERMISSIONS.CONTENT_READ) && {
       to: `${base}/groups`,
@@ -172,7 +174,7 @@ function SidebarContent({ workspace, can, onNavigate }) {
           {workspace && can(PERMISSIONS.CONTENT_CREATE)
             ? 'You can compose, preview and save posts as drafts. '
             : ''}
-          Publishing to Facebook and Instagram isn&rsquo;t available yet.
+          Real publishing to Facebook and Instagram isn&rsquo;t available yet.
         </p>
       </div>
     </div>

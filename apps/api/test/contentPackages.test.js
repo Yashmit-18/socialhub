@@ -324,7 +324,7 @@ describe('roles and account access', () => {
     );
   });
 
-  it('hides accounts a reader cannot use, and stops them changing that draft', async () => {
+  it('hides a draft entirely from a reader who cannot use every one of its accounts', async () => {
     await grant(team.editor, [ids[0]]);
     const { body } = await create(team.owner.token, {
       caption: 'For two pages',
@@ -332,24 +332,28 @@ describe('roles and account access', () => {
     });
     const id = body.contentPackage.id;
 
+    // Not "the draft without page 1": no draft at all, the same answer as an unknown id.
     const read = await as(team.editor.token).get(url(ws, `/${id}`));
-    expect(read.body.contentPackage.targetAccountIds).toEqual([ids[0]]);
+    expect(read.status).toBe(404);
+    expect(JSON.stringify(read.body)).not.toContain('For two pages');
+    expect(JSON.stringify(read.body)).not.toContain(ids[1]);
     const listed = await as(team.editor.token).get(url(ws));
-    expect(listed.body.items[0].targetAccountIds).toEqual([ids[0]]);
+    expect(listed.body.items).toEqual([]);
 
-    // Saving would silently drop the page the editor cannot see, so it is refused.
     const edit = await patch(team.editor.token, id, {
       caption: 'Editor version',
       targetAccountIds: [ids[0]],
       version: 1,
     });
-    expect(edit.status).toBe(403);
-    expect((await as(team.editor.token).delete(url(ws, `/${id}`))).status).toBe(403);
+    expect(edit.status).toBe(404);
+    expect((await as(team.editor.token).delete(url(ws, `/${id}`))).status).toBe(404);
     const stored = await ContentPackage.findById(id);
+    expect(stored.caption).toBe('For two pages');
     expect(stored.targetAccounts.map(String)).toEqual([ids[0], ids[1]]);
 
-    // Once the editor has both accounts, they can work on it.
+    // Once the editor has both accounts, they can see and work on it.
     await grant(team.editor, [ids[0], ids[1]]);
+    expect((await as(team.editor.token).get(url(ws, `/${id}`))).status).toBe(200);
     const ok = await patch(team.editor.token, id, {
       caption: 'Editor version',
       targetAccountIds: [ids[0], ids[1]],

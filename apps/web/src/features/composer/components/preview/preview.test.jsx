@@ -641,13 +641,13 @@ describe('ReadinessPanel', () => {
     ).toBeInTheDocument();
   });
 
-  it('says publishing is not available and never calls anything ready to publish', () => {
+  it('says real publishing is not available and never calls anything ready to publish', () => {
     render(<ReadinessPanel validation={validateComposer(composer(), accounts)} />);
     const panel = screen.getByRole('region', { name: 'Readiness check' });
 
     expect(within(panel).getByRole('status')).toHaveTextContent('2 errors · 0 warnings');
     expect(panel).toHaveTextContent(
-      'These checks show what Facebook and Instagram require. Publishing is not available yet.',
+      'These checks show what Facebook and Instagram require. Real publishing is not available yet: posts can only be simulated, so nothing is sent to Facebook or Instagram.',
     );
     expect(panel).not.toHaveTextContent(/ready to publish/i);
   });

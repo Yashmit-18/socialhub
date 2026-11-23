@@ -1,6 +1,7 @@
 import {
   CircleCheck,
   CircleX,
+  FlaskConical,
   FolderOpen,
   Lock,
   Save,
@@ -88,8 +89,10 @@ function IssueChip({ summary, onShowIssues }) {
  * Sticky bottom bar of the composer: save status + readiness summary on the left, Discard /
  * Drafts / Save draft / Publish on the right.
  *
- * Publish is always disabled: the publishing engine does not exist. Its visible explanation
- * (`publishingMessage`) is linked with aria-describedby. Discard asks for confirmation first.
+ * Publish opens the publishing step when `onPublish` is given and `publishDisabled` is false;
+ * otherwise it is disabled. Its visible explanation (`publishingMessage`: why it is disabled,
+ * or that publishing is only simulated) is linked with aria-describedby. Discard asks for
+ * confirmation first.
  * Ctrl+S / ⌘S runs `onSaveDraft` (when `canSave` and not `saving`).
  *
  * Place it as the last element of the page content: it spans the main column padding and
@@ -106,9 +109,14 @@ export function ComposerActionBar({
   discardDisabled = false,
   onOpenDrafts,
   publishingMessage = DEFAULT_PUBLISHING_MESSAGE,
+  onPublish,
+  publishDisabled = false,
+  publishSimulated = false,
   onShowIssues,
   className,
 }) {
+  const publishEnabled = Boolean(onPublish) && !publishDisabled;
+  const NoteIcon = publishEnabled && publishSimulated ? FlaskConical : Lock;
   const noteId = useId();
   const [confirming, setConfirming] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -192,7 +200,7 @@ export function ComposerActionBar({
             <div className="ml-auto flex items-center gap-2 sm:ml-0">
               {onSaveDraft && (
                 <Button
-                  variant="primary"
+                  variant={publishEnabled ? 'secondary' : 'primary'}
                   loading={saving}
                   disabled={!canSave}
                   onClick={() => onSaveDraft()}
@@ -208,9 +216,10 @@ export function ComposerActionBar({
                 </Button>
               )}
               <Button
-                variant="secondary"
-                disabled
-                aria-describedby={noteId}
+                variant={publishEnabled ? 'primary' : 'secondary'}
+                disabled={!publishEnabled}
+                onClick={publishEnabled ? () => onPublish() : undefined}
+                aria-describedby={publishingMessage ? noteId : undefined}
                 className="max-sm:h-9 max-sm:px-3"
               >
                 <Send className="h-4 w-4" aria-hidden="true" />
@@ -218,10 +227,15 @@ export function ComposerActionBar({
               </Button>
             </div>
           </div>
-          <p id={noteId} className="flex items-center justify-end gap-1.5 text-xs text-muted">
-            <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
-            {publishingMessage}
-          </p>
+          {publishingMessage && (
+            <p
+              id={noteId}
+              className="flex items-center justify-end gap-1.5 text-right text-xs text-muted"
+            >
+              <NoteIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {publishingMessage}
+            </p>
+          )}
         </div>
       </div>
 

@@ -778,7 +778,9 @@ describe('FirstCommentField', () => {
     expect(screen.getByText(PLATFORM_RULES[IG].firstComment.note)).toBeInTheDocument();
 
     rerenderWith(firstComment([]));
-    expect(screen.getByText(/Publishing is not available yet/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/First comments are saved with the draft but not sent yet/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(PLATFORM_RULES[IG].firstComment.note)).not.toBeInTheDocument();
   });
 
