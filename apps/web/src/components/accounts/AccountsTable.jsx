@@ -130,6 +130,17 @@ const COLUMNS = {
   },
 };
 
+/*
+ * On phones the table scrolls sideways; the actions column stays pinned to the right edge so
+ * the row menu is always reachable. From sm up it is an ordinary column again.
+ */
+const PINNED_ACTIONS =
+  'sticky right-0 pl-2 shadow-[-10px_0_10px_-10px_rgba(15,23,42,0.35)] sm:static sm:bg-transparent sm:pl-0 sm:shadow-none dark:sm:bg-transparent';
+
+/** The card's dark background (slate-900 at 70% over the slate-950 page), made opaque. */
+const PINNED_DARK_BG =
+  'dark:bg-[color-mix(in_oklab,var(--color-slate-900)_70%,var(--color-slate-950))]';
+
 const HIDE_BELOW = {
   sm: 'hidden sm:table-cell',
   md: 'hidden md:table-cell',
@@ -366,7 +377,14 @@ export function AccountsTable({
               </th>
             ))}
             {rowActions && (
-              <th scope="col" className="w-12 py-2.5 pr-5 sm:pr-6">
+              <th
+                scope="col"
+                className={cn(
+                  'w-12 py-2.5 pr-5 sm:pr-6',
+                  PINNED_ACTIONS,
+                  `bg-slate-50 ${PINNED_DARK_BG}`,
+                )}
+              >
                 <span className="sr-only">Actions</span>
               </th>
             )}
@@ -440,7 +458,17 @@ export function AccountsTable({
                       </td>
                     ))}
                     {rowActions && (
-                      <td className="py-3 pr-5 text-right sm:pr-6">{rowActions(account)}</td>
+                      <td
+                        className={cn(
+                          'py-3 pr-5 text-right sm:pr-6',
+                          PINNED_ACTIONS,
+                          isSelected
+                            ? `bg-[color-mix(in_oklab,var(--color-brand-50)_50%,white)] ${PINNED_DARK_BG}`
+                            : `bg-white ${PINNED_DARK_BG}`,
+                        )}
+                      >
+                        {rowActions(account)}
+                      </td>
                     )}
                   </tr>
                 );
