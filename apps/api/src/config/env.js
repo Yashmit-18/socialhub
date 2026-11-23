@@ -98,7 +98,10 @@ const envSchema = z.object({
   STORAGE_S3_FORCE_PATH_STYLE: booleanString.optional(),
   /** Public HTTPS base URL of the bucket or its CDN; Meta fetches media from it. */
   STORAGE_PUBLIC_BASE_URL: z.string().url().optional(),
-  /** Directory for STORAGE_DRIVER=local, relative to apps/api. */
+  /**
+   * Directory for STORAGE_DRIVER=local: an absolute path (e.g. "F:/Social Hub Data") or a
+   * path relative to apps/api. Created at start if it does not exist.
+   */
   STORAGE_LOCAL_DIR: z.string().min(1).default('./storage-data'),
   STORAGE_UPLOAD_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
 

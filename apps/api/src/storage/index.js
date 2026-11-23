@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ERROR_CODES } from '@socialhub/shared';
@@ -28,8 +29,22 @@ export function buildStorage(settings = config.storage) {
       'STORAGE_DRIVER=local in production: media is kept on this server only, is lost if its disk is, and Instagram can fetch it only if this API is public over HTTPS. Use STORAGE_DRIVER=s3.',
     );
   }
+  // Absolute paths (another drive, spaces in the name) are used as they are; relative ones
+  // are resolved against apps/api.
+  const directory = path.resolve(apiDir, settings.local.directory);
+  try {
+    // Unverified uploads and verified files live in separate folders.
+    for (const area of ['uploads', 'workspaces']) {
+      mkdirSync(path.join(directory, area), { recursive: true });
+    }
+  } catch (err) {
+    throw new Error(
+      `STORAGE_LOCAL_DIR "${directory}" cannot be created or written to: ${err.message}`,
+      { cause: err },
+    );
+  }
   return createLocalStorage({
-    directory: path.resolve(apiDir, settings.local.directory),
+    directory,
     baseUrl: `${config.publicApiUrl}/api/v1`,
     // Derived, so upload links can't be forged with any other secret this server holds.
     secret: createHmac('sha256', config.auth.accessSecret).update('storage-upload').digest(),
