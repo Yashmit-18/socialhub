@@ -1,14 +1,15 @@
-import { PUBLISHING_MODES } from '@socialhub/shared';
+import { PUBLISHING_MODES, effectivePublishingMode } from '@socialhub/shared';
 import { config } from '../../config/env.js';
 
 /**
  * Publishing settings (config.publishing), read through here so tests can change them.
  *
- * REAL PUBLISHING IS NOT ENABLED IN THIS BUILD. The configuration only accepts `disabled`
- * and `simulated`, so `mode` can never be LIVE on a running server. The live adapters exist
- * and are tested against a simulated Meta, with LIVE switched on through the test-only
- * override below. Enabling real publishing later is a deliberate change to config/env.js,
- * after the adapters have been verified against a real Meta app.
+ * Real publishing takes TWO deliberate switches, and simulation is the default at both:
+ *   1. the server operator sets PUBLISHING_MODE=live (`mode` LIVE: real publishing available);
+ *   2. an owner or admin of a workspace switches THAT workspace to live, confirming with their
+ *      password (Workspace.publishingMode, PUT /workspaces/:id/publishing/mode).
+ * A job keeps the mode it was created in. A LIVE job is checked again just before it is sent
+ * and is refused, never downgraded or silently simulated, if either switch was turned off.
  */
 let override;
 
@@ -23,3 +24,11 @@ export function setPublishingSettingsForTests(partial) {
 }
 
 export const isPublishingEnabled = () => publishingSettings().mode !== PUBLISHING_MODES.DISABLED;
+
+/** Whether this server lets workspaces switch to real publishing. */
+export const isLivePublishingAvailable = () => publishingSettings().mode === PUBLISHING_MODES.LIVE;
+
+/** The mode a new job of `workspace` gets right now: DISABLED, SIMULATED or LIVE. */
+export function workspacePublishingMode(workspace) {
+  return effectivePublishingMode(publishingSettings().mode, workspace?.publishingMode);
+}

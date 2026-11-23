@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config/env.js';
 import { setMetaTransportForTests } from '../src/integrations/meta/http.js';
 import { setMetaSettingsForTests } from '../src/integrations/meta/settings.js';
-import { PublishDestination, PublishJob, SocialConnection } from '../src/models/index.js';
+import {
+  PublishDestination,
+  PublishJob,
+  SocialConnection,
+  Workspace,
+} from '../src/models/index.js';
 import { adapterFor } from '../src/modules/publishing/adapters/index.js';
 import { retryDelayMs } from '../src/modules/publishing/backoff.js';
 import { sanitizeProviderText } from '../src/modules/publishing/publishError.js';
@@ -20,6 +25,7 @@ import {
 } from '../src/queue/publishQueue.js';
 import { getStorage, setStorageForTests } from '../src/storage/index.js';
 import { as, seedSocialAccounts, seedTeam } from './helpers.js';
+import { jpegBytes, mp4Bytes, pngBytes } from './mediaFixtures.js';
 import {
   createDraft,
   createTestQueue,
@@ -30,8 +36,9 @@ import {
 
 /**
  * The REAL Facebook and Instagram adapters, driven against a SIMULATED Meta (a fetch
- * stand-in defined below). LIVE mode cannot be configured on a running server; these tests
- * switch it on through the test-only override.
+ * stand-in defined below). These tests switch the server to LIVE through the test-only
+ * override and the test workspace to LIVE directly in the database (the API route for that
+ * is tested in publishing.mode.test.js).
  *
  * They prove how the adapters build requests and react to answers. They do NOT prove that
  * Meta accepts those requests: nothing here has run against the real Graph API.
@@ -70,8 +77,15 @@ function createFakeMeta() {
       );
       const answer = key ? fake.routes[key](call) : { id: String((fake.counter += 1)) };
       if (answer instanceof Error) throw answer;
-      const { status = 200, ...body } = answer;
-      return new Response(JSON.stringify(body), { status });
+      // `{ json, status }` answers with exactly that body (for bodies with a "status" field).
+      if (answer.json) {
+        return new Response(JSON.stringify(answer.json), {
+          status: answer.status ?? 200,
+          headers: answer.headers,
+        });
+      }
+      const { status = 200, headers, ...body } = answer;
+      return new Response(JSON.stringify(body), { status, headers });
     },
     posts: (suffix) => fake.calls.filter((c) => c.method === 'POST' && c.path.endsWith(suffix)),
   };
@@ -106,7 +120,12 @@ beforeEach(async () => {
     retryBaseMs: 30_000,
     retryMaxMs: 900_000,
   });
+  await Workspace.updateOne({ _id: ws }, { $set: { publishingMode: 'LIVE' } });
   meta = createFakeMeta();
+  // Instagram's 24-hour limit, checked before every new container: plenty left by default.
+  meta.routes['GET /fb-user-1-ig-0/content_publishing_limit'] = () => ({
+    data: [{ quota_usage: 2, config: { quota_total: 50, quota_duration: 86400 } }],
+  });
   setMetaTransportForTests(meta.transport);
 });
 
@@ -118,15 +137,16 @@ afterEach(() => {
   setStorageForTests(undefined);
 });
 
-describe('real publishing is disabled on a running server', () => {
-  it('has no configuration value that turns LIVE mode on', () => {
+describe('real publishing is never on by default', () => {
+  it('only PUBLISHING_MODE=live makes it available; nothing else does', () => {
     const base = {
       JWT_ACCESS_SECRET: 'x'.repeat(40),
       TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
     };
     expect(loadConfig(base).publishing.mode).toBe('DISABLED');
     expect(loadConfig({ ...base, PUBLISHING_MODE: 'simulated' }).publishing.mode).toBe('SIMULATED');
-    for (const value of ['live', 'LIVE', 'real', 'production', 'enabled', 'true']) {
+    expect(loadConfig({ ...base, PUBLISHING_MODE: 'live' }).publishing.mode).toBe('LIVE');
+    for (const value of ['LIVE', 'real', 'production', 'enabled', 'true', 'on']) {
       expect(() => loadConfig({ ...base, PUBLISHING_MODE: value })).toThrow(/PUBLISHING_MODE/);
     }
     expect(() =>
@@ -182,7 +202,9 @@ describe('local media can never be sent to real publishing', () => {
     const draft = await createDraft(team.owner.token, ws, { accounts: pages, media: 'image' });
     const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
     expect(res.status).toBe(422);
-    expect(res.body.error.details.fields.content).toMatch(/stored on this server only/);
+    expect(res.body.error.details.fields.content).toMatch(
+      /stored where Facebook and Instagram cannot fetch them/,
+    );
     expect(await PublishJob.countDocuments()).toBe(0);
     expect(meta.calls).toHaveLength(0);
   });
@@ -287,13 +309,42 @@ describe('Facebook Page adapter (simulated Meta)', () => {
     expect(many[2].form['attached_media[1]']).toBeDefined();
   });
 
-  it('publishes a video through /videos', async () => {
+  it('publishes a video through /videos, and only once Facebook says it is processed', async () => {
+    let checks = 0;
+    meta.routes['GET /101'] = (call) => {
+      checks += 1;
+      expect(call.query.fields).toBe('status,permalink_url');
+      return checks < 2
+        ? {
+            json: {
+              status: { video_status: 'processing', processing_phase: { status: 'in_progress' } },
+            },
+          }
+        : {
+            json: {
+              status: {
+                video_status: 'ready',
+                processing_phase: { status: 'complete' },
+                publishing_phase: { status: 'complete', publish_status: 'published' },
+              },
+              permalink_url: '/page/videos/101/',
+            },
+          };
+    };
     const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]], media: 'video' });
     usePublicStorage();
-    await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
     expect(await queue.deliver()).toEqual(['published']);
     expect(meta.calls[0].path).toBe('/fb-user-1-page-0/videos');
     expect(meta.calls[0].form.file_url).toMatch(/\.mp4$/);
+    expect(checks).toBe(2);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination).toMatchObject({
+      state: 'PUBLISHED',
+      externalPostId: '101',
+      externalUrl: 'https://www.facebook.com/page/videos/101/',
+    });
+    expect(destination.providerState).toBeUndefined();
   });
 
   it('maps Meta errors: expired token, permission, rejection, rate limit, outage', async () => {
@@ -456,6 +507,320 @@ describe('Instagram adapter (simulated Meta)', () => {
     const [destination] = await stored(res.body.publishJob.id);
     expect(destination.error.code).toBe('PLATFORM_REJECTED');
     expect(meta.posts('/media_publish')).toHaveLength(0);
+  });
+});
+
+describe('real publishing needs both switches, and never falls back silently', () => {
+  it('a workspace that did not switch to live gets simulated jobs on a LIVE server; Meta is never called', async () => {
+    await Workspace.updateOne({ _id: ws }, { $set: { publishingMode: 'SIMULATED' } });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(res.body.publishJob).toMatchObject({ mode: 'SIMULATED', simulated: true });
+    expect(await queue.deliver()).toEqual(['published']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.simulated).toBe(true);
+    expect(destination.externalPostId).toBeUndefined();
+    expect(meta.calls).toHaveLength(0);
+  });
+
+  it('a LIVE job is refused (not simulated) when the workspace switches back before it is sent', async () => {
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(res.body.publishJob.mode).toBe('LIVE');
+    await Workspace.updateOne({ _id: ws }, { $set: { publishingMode: 'SIMULATED' } });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error).toMatchObject({ code: 'LIVE_PUBLISHING_DISABLED', retryable: false });
+    expect(destination.error.message).toMatch(/switched off for this workspace/);
+    expect(destination.simulated).toBe(false);
+    expect(meta.calls).toHaveLength(0);
+    const retry = await as(team.owner.token)
+      .post(publishUrl(ws, `/${res.body.publishJob.id}/destinations/${destination._id}/retry`))
+      .send({});
+    expect(retry.status).toBe(409);
+    expect(retry.body.error.details.reason).toBe('MODE_CHANGED');
+  });
+
+  it('a LIVE job is refused when the server stops offering real publishing', async () => {
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    setPublishingSettingsForTests({ mode: 'SIMULATED', maxAttempts: 3 });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error.code).toBe('LIVE_PUBLISHING_DISABLED');
+    expect(destination.error.message).toMatch(/switched off on this server/);
+    expect(meta.calls).toHaveLength(0);
+  });
+
+  it('a simulated job stays simulated after the workspace switches to live', async () => {
+    await Workspace.updateOne({ _id: ws }, { $set: { publishingMode: 'SIMULATED' } });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    await Workspace.updateOne({ _id: ws }, { $set: { publishingMode: 'LIVE' } });
+    expect(await queue.deliver()).toEqual(['published']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.simulated).toBe(true);
+    expect(meta.calls).toHaveLength(0);
+  });
+});
+
+describe('files are checked against each platform before anything is sent', () => {
+  it('refuses a PNG for Instagram (JPEG only) but accepts it for a Facebook Page', async () => {
+    usePublicStorage();
+    const png = { bytes: pngBytes(), fileName: 'art.png', mimeType: 'image/png' };
+    const toInstagram = await createDraft(team.owner.token, ws, {
+      accounts: instagram,
+      media: png,
+    });
+    const refused = await publish(team.owner.token, ws, { contentPackageId: toInstagram.id });
+    expect(refused.status).toBe(422);
+    expect(refused.body.error.details.fields.content).toMatch(/PNG; Instagram accepts JPEG images/);
+
+    meta.routes['GET /*'] = () => ({ status_code: 'FINISHED' });
+    const toPage = await createDraft(team.owner.token, ws, { accounts: [pages[0]], media: png });
+    expect((await publish(team.owner.token, ws, { contentPackageId: toPage.id })).status).toBe(201);
+    expect(await queue.deliver()).toEqual(['published']);
+    expect(meta.posts('/photos')).toHaveLength(1);
+  });
+
+  it('refuses an Instagram image outside the 4:5 to 1.91:1 aspect ratio', async () => {
+    usePublicStorage();
+    const tall = { bytes: jpegBytes(1080, 1920), fileName: 'tall.jpg', mimeType: 'image/jpeg' };
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: tall });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(res.status).toBe(422);
+    expect(res.body.error.details.fields.content).toMatch(/1080×1920.*aspect ratio/);
+    expect(meta.calls).toHaveLength(0);
+  });
+
+  it('refuses a reel shorter than 3 seconds', async () => {
+    usePublicStorage();
+    const short = {
+      bytes: mp4Bytes({ durationSec: 2 }),
+      fileName: 'short.mp4',
+      mimeType: 'video/mp4',
+      kind: 'VIDEO',
+    };
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: short });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(res.status).toBe(422);
+    expect(res.body.error.details.fields.content).toMatch(/shorter than 3 seconds/);
+  });
+
+  it('local storage behind a public HTTPS address counts as public; localhost never does', async () => {
+    const { isPublicHttpsUrl } = await import('../src/storage/localStorage.js');
+    expect(isPublicHttpsUrl('https://example-tunnel.trycloudflare.com/api/v1')).toBe(true);
+    expect(isPublicHttpsUrl('https://social.example.com/api/v1')).toBe(true);
+    for (const url of [
+      'http://example.com/api/v1',
+      'https://localhost:4000/api/v1',
+      'https://127.0.0.1/api/v1',
+      'https://192.168.1.20/api/v1',
+      'https://10.0.0.5/api/v1',
+      'https://172.20.0.1/api/v1',
+      'https://my-pc.local/api/v1',
+      'https://[::1]/api/v1',
+      'not a url',
+    ]) {
+      expect(isPublicHttpsUrl(url)).toBe(false);
+    }
+  });
+});
+
+describe('Facebook video: published only when Facebook confirms it', () => {
+  const page = '/fb-user-1-page-0';
+
+  it('keeps checking the same uploaded video on the next attempt instead of uploading it again', async () => {
+    let ready = false;
+    meta.routes['GET /101'] = () => ({
+      json: {
+        status: ready
+          ? { video_status: 'ready', publishing_phase: { status: 'complete' } }
+          : { video_status: 'processing', processing_phase: { status: 'in_progress' } },
+      },
+    });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]], media: 'video' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['retry']);
+    let [destination] = await stored(res.body.publishJob.id);
+    expect(destination.providerState).toEqual({ videoId: '101' });
+    expect(destination.error.message).toMatch(/still processing the video \(id 101\)/);
+    expect(destination.externalPostId).toBeUndefined();
+
+    ready = true;
+    expect(await queue.deliver({ now: destination.nextAttemptAt })).toEqual(['published']);
+    expect(meta.posts('/videos')).toHaveLength(1);
+    [destination] = await stored(res.body.publishJob.id);
+    expect(destination).toMatchObject({
+      state: 'PUBLISHED',
+      externalPostId: '101',
+      externalUrl: 'https://www.facebook.com/101',
+    });
+    expect(meta.calls.filter((c) => c.path.startsWith(page))).toHaveLength(1);
+  });
+
+  it('fails without a post when Facebook cannot process the video', async () => {
+    meta.routes['GET /101'] = () => ({ json: { status: { video_status: 'error' } } });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]], media: 'video' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error).toMatchObject({ code: 'PLATFORM_REJECTED', retryable: false });
+    expect(destination.providerState).toBeUndefined();
+    expect(destination.externalPostId).toBeUndefined();
+  });
+
+  it('marks the outcome unknown (never published, never re-uploaded) when no status is reported', async () => {
+    meta.routes['GET /101'] = () => ({ id: '101' });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]], media: 'video' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error).toMatchObject({ code: 'OUTCOME_UNKNOWN', retryable: false });
+    expect(destination.error.message).toMatch(/id 101/);
+    expect(destination.externalPostId).toBeUndefined();
+    // A confirmed manual retry checks the same video again; it does not upload a second one.
+    meta.routes['GET /101'] = () => ({ json: { status: { video_status: 'ready' } } });
+    const retry = await as(team.owner.token)
+      .post(publishUrl(ws, `/${res.body.publishJob.id}/destinations/${destination._id}/retry`))
+      .send({ acknowledgeDuplicateRisk: true });
+    expect(retry.status).toBe(200);
+    expect(await queue.deliver()).toEqual(['published']);
+    expect(meta.posts('/videos')).toHaveLength(1);
+  });
+});
+
+describe('duplicate prevention and confirmation', () => {
+  it('never reports a post as published when Meta answers without an id', async () => {
+    meta.routes['POST /fb-user-1-page-0/feed'] = () => ({ success: true });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.state).toBe('FAILED');
+    expect(destination.error).toMatchObject({ code: 'OUTCOME_UNKNOWN', retryable: false });
+  });
+
+  it('treats a server error on the publishing call as "maybe published" unless Meta marks it transient', async () => {
+    meta.routes['POST /fb-user-1-page-0/feed'] = () => ({
+      status: 500,
+      error: { code: 1, message: 'An unknown error occurred' },
+    });
+    const first = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const unknown = await publish(team.owner.token, ws, { contentPackageId: first.id });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [maybe] = await stored(unknown.body.publishJob.id);
+    expect(maybe.error).toMatchObject({ code: 'OUTCOME_UNKNOWN', retryable: false });
+
+    meta.routes['POST /fb-user-1-page-1/feed'] = () => ({
+      status: 500,
+      error: { code: 1, message: 'Please retry', is_transient: true },
+    });
+    const second = await createDraft(team.owner.token, ws, { accounts: [pages[1]] });
+    const transient = await publish(team.owner.token, ws, { contentPackageId: second.id });
+    expect(await queue.deliver()).toEqual(['retry']);
+    const [later] = await stored(transient.body.publishJob.id);
+    expect(later.error.code).toBe('PLATFORM_UNAVAILABLE');
+  });
+
+  it("waits as long as Meta's usage header says after a rate limit", async () => {
+    meta.routes['POST /fb-user-1-page-0/feed'] = () => ({
+      status: 400,
+      headers: {
+        'x-business-use-case-usage': JSON.stringify({
+          'fb-user-1-page-0': [
+            { type: 'pages', call_count: 100, estimated_time_to_regain_access: 45 },
+          ],
+        }),
+      },
+      error: { code: 80001, message: 'There have been too many calls to this Page' },
+    });
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    const before = Date.now();
+    expect(await queue.deliver()).toEqual(['retry']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error.code).toBe('RATE_LIMITED');
+    expect(destination.nextAttemptAt.getTime() - before).toBeGreaterThanOrEqual(45 * 60_000 - 5000);
+  });
+});
+
+describe('Instagram: limits, reels and partial results', () => {
+  const ig = '/fb-user-1-ig-0';
+
+  it('does not create anything when the 24-hour publishing limit is used up', async () => {
+    meta.routes[`GET ${ig}/content_publishing_limit`] = () => ({
+      data: [{ quota_usage: 50, config: { quota_total: 50, quota_duration: 86400 } }],
+    });
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'image' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['retry']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error.code).toBe('RATE_LIMITED');
+    expect(destination.error.message).toMatch(/50 of its 50 posts/);
+    expect(meta.posts('/media')).toHaveLength(0);
+    expect(destination.nextAttemptAt.getTime() - Date.now()).toBeGreaterThan(50 * 60_000);
+  });
+
+  it('treats the "publishing limit reached" error as a rate limit, not a rejection', async () => {
+    meta.routes['GET /*'] = () => ({ status_code: 'FINISHED' });
+    meta.routes[`POST ${ig}/media_publish`] = () => ({
+      status: 400,
+      error: { code: 9, error_subcode: 2207042, message: 'Reached publishing limit' },
+    });
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'image' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['retry']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error.code).toBe('RATE_LIMITED');
+    expect(destination.providerState).toEqual({ containerId: '101' });
+  });
+
+  it('publishes a single video as a reel shown in the feed too', async () => {
+    meta.routes['GET /*'] = () => ({ status_code: 'FINISHED' });
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'video' });
+    usePublicStorage();
+    await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['published']);
+    expect(meta.posts('/media')[0].form).toMatchObject({
+      media_type: 'REELS',
+      share_to_feed: 'true',
+    });
+  });
+
+  it('records what Instagram could not apply as a warning on a published post', async () => {
+    meta.routes['GET /*'] = () => ({ status_code: 'FINISHED' });
+    meta.routes[`POST ${ig}/media_publish`] = () => ({
+      id: '9001',
+      config_issue: ['CAPTION_NOT_ATTACHED'],
+    });
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'image' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['published']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination).toMatchObject({ state: 'PUBLISHED', externalPostId: '9001' });
+    expect(destination.warnings).toContain('CAPTION_NOT_ATTACHED');
+  });
+
+  it('refuses an expired Instagram Login token without calling Meta', async () => {
+    await SocialConnection.updateMany(
+      {},
+      { $set: { provider: 'INSTAGRAM_LOGIN', tokenExpiresAt: new Date(Date.now() - 60_000) } },
+    );
+    setMetaSettingsForTests({ instagram: { appId: '1', appSecret: 'ig-secret-0123456789' } });
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'image' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error.code).toBe('ACCOUNT_NEEDS_RECONNECT');
+    expect(meta.calls).toHaveLength(0);
   });
 });
 

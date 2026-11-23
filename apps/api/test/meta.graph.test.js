@@ -312,3 +312,48 @@ describe('log redaction', () => {
     expect(redactUrl('/api/v1/workspaces?limit=5')).toBe('/api/v1/workspaces?limit=5');
   });
 });
+
+describe('Meta usage headers', () => {
+  it('reads how long Meta asks callers to wait, and keeps errors without a hint as they were', async () => {
+    const { parseMetaError, retryAfterFromUsageHeaders } =
+      await import('../src/integrations/meta/http.js');
+    const headers = (entries) => new Headers(entries);
+    expect(
+      retryAfterFromUsageHeaders(
+        headers({
+          'x-business-use-case-usage': JSON.stringify({
+            123: [{ type: 'pages', call_count: 98, estimated_time_to_regain_access: 12 }],
+            456: [{ type: 'pages', estimated_time_to_regain_access: 3 }],
+          }),
+        }),
+      ),
+    ).toBe(12 * 60_000);
+    expect(retryAfterFromUsageHeaders(headers({ 'x-app-usage': '{"call_count":100}' }))).toBe(
+      undefined,
+    );
+    expect(retryAfterFromUsageHeaders(headers({ 'x-business-use-case-usage': 'not json' }))).toBe(
+      undefined,
+    );
+    expect(retryAfterFromUsageHeaders(undefined)).toBe(undefined);
+    // Capped at a day.
+    expect(
+      retryAfterFromUsageHeaders(
+        headers({
+          'x-business-use-case-usage': '{"1":[{"estimated_time_to_regain_access":99999}]}',
+        }),
+      ),
+    ).toBe(24 * 60 * 60_000);
+
+    const err = parseMetaError(
+      400,
+      { error: { code: 80001, message: 'Too many calls', is_transient: false } },
+      headers({ 'x-business-use-case-usage': '{"1":[{"estimated_time_to_regain_access":7}]}' }),
+    );
+    expect(err).toMatchObject({
+      kind: 'RATE_LIMITED',
+      retryAfterMs: 7 * 60_000,
+      isTransient: false,
+    });
+    expect(parseMetaError(500, { error: { code: 1, is_transient: true } }).isTransient).toBe(true);
+  });
+});

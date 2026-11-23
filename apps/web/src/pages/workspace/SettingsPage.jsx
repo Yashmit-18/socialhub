@@ -16,6 +16,7 @@ import { Card, CardBody, CardFooter, CardHeader } from '../../components/ui/Card
 import { FormError, Input, PasswordInput, Select } from '../../components/ui/Field.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
+import { PublishingModeSettings } from '../../features/publishing/PublishingModeSettings.jsx';
 import { useApiForm } from '../../hooks/useApiForm.js';
 import { api } from '../../lib/api.js';
 import { keys, useMembers } from '../../lib/queries.js';
@@ -267,6 +268,7 @@ export default function SettingsPage() {
       />
       <div className="space-y-6">
         <GeneralSettings />
+        <PublishingModeSettings />
         {role === ROLES.OWNER && (
           <Card className="border-rose-200/80 dark:border-rose-500/20">
             <CardHeader

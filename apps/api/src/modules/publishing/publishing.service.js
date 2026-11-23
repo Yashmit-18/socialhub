@@ -15,14 +15,18 @@ import {
   PUBLISH_JOB_STATUS,
   QUEUE_STATUS,
   UNCERTAIN_PUBLISH_ERROR_CODES,
+  WORKSPACE_PUBLISHING_MODES,
   deriveJobStatus,
   emptyDestinationCounts,
   hasPermission,
+  mediaIssues,
   publishIssues,
 } from '@socialhub/shared';
 import { logger } from '../../config/logger.js';
 import { sha256 } from '../../lib/crypto.js';
 import { runInTransaction } from '../../db/mongoose.js';
+import { facebookSettings, instagramSettings } from '../../integrations/meta/settings.js';
+import { assertPassword } from '../auth/auth.service.js';
 import {
   AppError,
   conflict,
@@ -36,6 +40,7 @@ import {
   PublishDestination,
   PublishJob,
   SocialAccount,
+  Workspace,
 } from '../../models/index.js';
 import { getPublishQueue, publishQueueStatus } from '../../queue/publishQueue.js';
 import { getStorage } from '../../storage/index.js';
@@ -48,7 +53,11 @@ import {
 } from '../contentPackages/contentAccess.js';
 import { accessibleAccountFilter } from '../socialAccounts/socialAccount.service.js';
 import { enqueueDestination, syncJob } from './publishing.processor.js';
-import { publishingSettings } from './publishing.settings.js';
+import {
+  isLivePublishingAvailable,
+  publishingSettings,
+  workspacePublishingMode,
+} from './publishing.settings.js';
 
 /**
  * Publishing jobs (docs/PUBLISHING_API.md).
@@ -94,6 +103,23 @@ function assertCanQueue() {
   if (publishingSettings().mode === PUBLISHING_MODES.DISABLED) throw disabledError();
   const status = publishQueueStatus();
   if (status !== QUEUE_STATUS.READY) throw queueError(status);
+}
+
+/**
+ * A LIVE job may only be retried or rescheduled while real publishing is still on for its
+ * workspace. It is refused, never turned into a simulation. A SIMULATED job stays simulated
+ * whatever the workspace chose since.
+ */
+function assertJobModeUsable(workspace, job, verb) {
+  if (
+    job.mode === PUBLISHING_MODES.LIVE &&
+    workspacePublishingMode(workspace) !== PUBLISHING_MODES.LIVE
+  ) {
+    throw conflict(
+      `Real publishing has been switched off for this workspace, so this post cannot be ${verb}. Nothing was sent.`,
+      { reason: 'MODE_CHANGED' },
+    );
+  }
 }
 
 const idsOf = (list) => list.map(String);
@@ -248,7 +274,7 @@ async function presentOne(workspace, membership, jobId) {
  * or the storage driver. Those are for the operator, on /api/v1/health/details. A workspace's
  * own figures are on GET /publish-jobs/summary, limited to the jobs the member may see.
  */
-export async function getStatus() {
+export async function getStatus(workspace) {
   const settings = publishingSettings();
   const queue = getPublishQueue();
   const queueStatus = publishQueueStatus();
@@ -256,7 +282,9 @@ export async function getStatus() {
   if (queue && queueStatus === QUEUE_STATUS.READY) {
     workerCount = await queue.workerCount().catch(() => null);
   }
-  const disabled = settings.mode === PUBLISHING_MODES.DISABLED;
+  // The mode this workspace's new posts get: what every screen shows and labels by.
+  const mode = workspacePublishingMode(workspace);
+  const disabled = mode === PUBLISHING_MODES.DISABLED;
   const reason = disabled
     ? PUBLISHING_API_ERRORS.PUBLISHING_DISABLED
     : queueStatus !== QUEUE_STATUS.READY
@@ -264,7 +292,10 @@ export async function getStatus() {
       : null;
   const storage = getStorage();
   return {
-    mode: settings.mode,
+    mode,
+    // The workspace's own choice and whether the server offers real publishing at all.
+    workspaceMode: workspace?.publishingMode ?? WORKSPACE_PUBLISHING_MODES.SIMULATED,
+    liveAvailable: settings.mode === PUBLISHING_MODES.LIVE,
     canPublish: reason === null,
     reason,
     message: disabled
@@ -339,6 +370,9 @@ export async function createJob(
 
   assertCanQueue();
   const settings = publishingSettings();
+  // Fixed for the job's whole life: LIVE only if the server offers it and this workspace chose it.
+  const mode = workspacePublishingMode(workspace);
+  const live = mode === PUBLISHING_MODES.LIVE;
 
   const pkg = mongoose.isValidObjectId(input.contentPackageId)
     ? await ContentPackage.findOne({
@@ -399,7 +433,7 @@ export async function createJob(
         _id: { $in: pkg.media.map((m) => m.media) },
         workspace: workspace._id,
         status: MEDIA_STATUS.READY,
-      }).select('kind storageKey storageDriver')
+      }).select('kind storageKey storageDriver mimeType sizeBytes width height durationSec')
     : [];
   const assetById = new Map(assets.map((asset) => [String(asset._id), asset]));
   const media = pkg.media.map((entry) => ({
@@ -424,8 +458,16 @@ export async function createJob(
     );
     if (issues.length) fields.content = [...new Set(issues)].join(' ');
   }
-  // Real publishing: Meta must be able to download every file over public HTTPS.
-  if (!fields.content && settings.mode === PUBLISHING_MODES.LIVE && media.length) {
+  // Real publishing: the files must meet each platform's documented requirements...
+  if (!fields.content && live && media.length) {
+    const files = pkg.media.map((entry) => assetById.get(String(entry.media)));
+    const issues = [...new Set(accounts.map((a) => a.platform))].flatMap((platform) =>
+      mediaIssues(files, platform),
+    );
+    if (issues.length) fields.content = [...new Set(issues)].join(' ');
+  }
+  // ...and Meta must be able to download every one of them over public HTTPS.
+  if (!fields.content && live && media.length) {
     const storage = getStorage();
     const reachable =
       storage?.publicUrls &&
@@ -436,8 +478,12 @@ export async function createJob(
       );
     if (!reachable) {
       fields.content =
-        'The files of this post are stored on this server only, so Facebook and Instagram cannot fetch them. Public HTTPS media storage is needed to publish.';
+        'The files of this post are stored where Facebook and Instagram cannot fetch them. Real publishing needs media storage that is reachable from the internet over HTTPS.';
     }
+  }
+  if (live && !facebookSettings() && !instagramSettings()) {
+    fields.socialAccountIds =
+      'Real publishing needs the Meta app to be configured on this server (META_APP_ID and META_APP_SECRET).';
   }
 
   let scheduledAt = null;
@@ -491,7 +537,7 @@ export async function createJob(
     accountUsername: account.username,
     state,
     active: true,
-    simulated: settings.mode === PUBLISHING_MODES.SIMULATED,
+    simulated: mode === PUBLISHING_MODES.SIMULATED,
     maxAttempts: settings.maxAttempts,
     queueSeq: 1,
     scheduledAt: scheduledAt ?? undefined,
@@ -514,7 +560,7 @@ export async function createJob(
             content,
             // Who the job is hidden from follows the draft it came from (contentAccess.js).
             draftTargetAccounts: pkg.targetAccounts,
-            mode: settings.mode,
+            mode,
             status: deriveJobStatus(counts),
             counts,
             destinationCount: accounts.length,
@@ -534,7 +580,7 @@ export async function createJob(
         target: { type: 'publish_job', id: jobId },
         metadata: {
           accountCount: accounts.length,
-          simulated: settings.mode === PUBLISHING_MODES.SIMULATED,
+          simulated: mode === PUBLISHING_MODES.SIMULATED,
           scheduled: Boolean(scheduledAt),
         },
         context,
@@ -752,11 +798,7 @@ export async function retryDestination(
     );
   }
   assertCanQueue();
-  if (publishingSettings().mode !== job.mode) {
-    throw conflict('This job was created in a different publishing mode and cannot be retried.', {
-      reason: 'MODE_CHANGED',
-    });
-  }
+  assertJobModeUsable(workspace, job, 'retried');
 
   let retried;
   try {
@@ -836,11 +878,7 @@ export async function rescheduleJob(
   });
   if (waiting.length === 0) throw notReschedulable();
   assertCanQueue();
-  if (publishingSettings().mode !== job.mode) {
-    throw conflict('This job was created in a different publishing mode and cannot be changed.', {
-      reason: 'MODE_CHANGED',
-    });
-  }
+  assertJobModeUsable(workspace, job, 'rescheduled');
 
   const previous = job.scheduledAt ?? null;
   let moved = 0;
@@ -876,4 +914,67 @@ export async function rescheduleJob(
     context,
   }).catch((err) => logger.warn({ err }, 'Could not record a publishing activity entry'));
   return getJob(workspace, membership, job._id);
+}
+
+/* ------------------------------------------------------------------ workspace mode */
+
+/**
+ * Switches a workspace between simulated and real publishing (owners and admins only; the
+ * route checks workspace:update). Turning real publishing ON needs: the server offering it
+ * (PUBLISHING_MODE=live), the Meta app configured, the person's password, and an explicit
+ * acknowledgement (validated by updatePublishingModeSchema). Turning it OFF is always
+ * allowed and needs no password: it can only make publishing safer.
+ *
+ * Jobs already created keep their mode. LIVE jobs still waiting are refused at send time
+ * once real publishing is off (publishing.processor.js), never sent as simulations.
+ */
+export async function setPublishingMode(
+  workspace,
+  actor,
+  input,
+  context,
+  { now = new Date() } = {},
+) {
+  const previous = workspace.publishingMode ?? WORKSPACE_PUBLISHING_MODES.SIMULATED;
+  if (input.mode === WORKSPACE_PUBLISHING_MODES.LIVE) {
+    if (!isLivePublishingAvailable()) {
+      throw conflict(
+        'Real publishing is not available on this server. The server operator must set PUBLISHING_MODE=live first.',
+        { reason: 'LIVE_NOT_AVAILABLE' },
+      );
+    }
+    if (!facebookSettings() && !instagramSettings()) {
+      throw conflict(
+        'Real publishing needs the Meta app to be configured on this server (META_APP_ID and META_APP_SECRET).',
+        { reason: 'META_NOT_CONFIGURED' },
+      );
+    }
+    await assertPassword(actor._id, input.password);
+  }
+  if (previous !== input.mode) {
+    await Workspace.updateOne(
+      { _id: workspace._id },
+      {
+        $set: {
+          publishingMode: input.mode,
+          publishingModeChangedAt: now,
+          publishingModeChangedBy: actor._id,
+        },
+      },
+    );
+    workspace.publishingMode = input.mode;
+    await recordActivity({
+      workspace,
+      actor,
+      action: PUBLISH_ACTIVITY_ACTIONS.MODE_CHANGED,
+      target: { type: 'workspace', id: workspace._id, label: workspace.name },
+      metadata: { from: previous, to: input.mode },
+      context,
+    });
+    logger.info(
+      { workspaceId: String(workspace._id), from: previous, to: input.mode },
+      'Workspace publishing mode changed',
+    );
+  }
+  return getStatus(workspace);
 }

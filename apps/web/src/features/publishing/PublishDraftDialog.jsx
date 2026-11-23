@@ -136,7 +136,7 @@ export function PublishDraftDialog({ workspaceId, onClose, simulatedMode, worksp
       description={
         simulatedMode
           ? 'Simulation mode: nothing will be sent to Facebook or Instagram.'
-          : 'Choose a saved draft. It will be sent to the accounts selected in the draft.'
+          : 'Real publishing: the draft you choose will be published to the real Facebook Pages and Instagram accounts selected in it.'
       }
       footer={
         <>

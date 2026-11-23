@@ -15,8 +15,10 @@ import {
   SOCIAL_PROVIDERS,
   composeCaption,
   deriveJobStatus,
+  effectivePublishingMode,
   emptyDestinationCounts,
   hasPermission,
+  mediaIssues,
   publishIssues,
 } from '@socialhub/shared';
 import { logger } from '../../config/logger.js';
@@ -419,13 +421,26 @@ async function assertStillAuthorized(destination, job) {
 /** Everything a destination needs, checked at the moment of publishing. Throws PublishError. */
 async function prepare(destination, job) {
   const settings = publishingSettings();
-  if (settings.mode !== job.mode) {
-    throw fail(
-      E.LIVE_PUBLISHING_DISABLED,
-      job.mode === PUBLISHING_MODES.LIVE
-        ? 'Publishing to Facebook and Instagram is not switched on for this server.'
-        : 'Simulation mode is no longer switched on for this server.',
-    );
+  if (settings.mode === PUBLISHING_MODES.DISABLED) {
+    throw fail(E.LIVE_PUBLISHING_DISABLED, 'Publishing is switched off on this server.');
+  }
+  // A LIVE job is sent for real only while BOTH switches are still on: the server's and the
+  // workspace's. Otherwise it is refused (nothing sent), never quietly simulated instead.
+  // A SIMULATED job always stays a simulation.
+  if (job.mode === PUBLISHING_MODES.LIVE) {
+    const workspace = await Workspace.findById(destination.workspace).select('publishingMode');
+    // A deleted workspace is reported by assertStillAuthorized below.
+    if (
+      workspace &&
+      effectivePublishingMode(settings.mode, workspace.publishingMode) !== PUBLISHING_MODES.LIVE
+    ) {
+      throw fail(
+        E.LIVE_PUBLISHING_DISABLED,
+        settings.mode === PUBLISHING_MODES.LIVE
+          ? 'Real publishing was switched off for this workspace, so this post was not sent.'
+          : 'Real publishing was switched off on this server, so this post was not sent.',
+      );
+    }
   }
   const adapter = adapterFor(job.mode, destination.platform);
   if (!adapter) throw fail(E.LIVE_PUBLISHING_DISABLED, 'This platform cannot be published to.');
@@ -442,7 +457,7 @@ async function prepare(destination, job) {
   const connection = await SocialConnection.findOne({
     _id: account.connection,
     workspace: destination.workspace,
-  }).select('provider status');
+  }).select('provider status tokenExpiresAt');
   if (
     account.connectionStatus !== CONNECTION_STATUS.ACTIVE ||
     (connection && connection.status !== CONNECTION_STATUS.ACTIVE)
@@ -480,6 +495,10 @@ async function prepare(destination, job) {
     return {
       kind: asset.kind,
       mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      width: asset.width,
+      height: asset.height,
+      durationSec: asset.durationSec,
       altText: entry.altText,
       url: storage.publicUrl(asset.storageKey),
     };
@@ -493,6 +512,21 @@ async function prepare(destination, job) {
     if (!configured) {
       throw fail(E.LIVE_PUBLISHING_DISABLED, 'The Meta app is not configured on this server.');
     }
+    // Instagram Login tokens expire (about 60 days). Page tokens obtained through Facebook
+    // Login do not, so for those Meta's answer decides (an expired grant fails as reconnect).
+    if (
+      provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN &&
+      connection?.tokenExpiresAt &&
+      connection.tokenExpiresAt.getTime() <= Date.now()
+    ) {
+      throw fail(
+        E.ACCOUNT_NEEDS_RECONNECT,
+        'The Instagram login for this account has expired. Reconnect the account, then retry.',
+      );
+    }
+    // The files must still meet the platform's requirements (checked at creation too).
+    const fileIssues = mediaIssues(media, destination.platform);
+    if (fileIssues.length) throw fail(E.CONTENT_NOT_PUBLISHABLE, fileIssues.join(' '));
     // Meta downloads media itself, so files on this computer or behind http cannot be sent.
     if (media.length && (!storage.publicUrls || media.some((m) => !m.url.startsWith('https://')))) {
       throw fail(
@@ -595,10 +629,11 @@ export async function processDestination(
     }
     const result = await adapter.publish(context);
     // From here on the platform has the post: whatever fails next, it is never sent again
-    // automatically.
-    sent = { result, warnings, simulated: adapter.simulated };
+    // automatically. The adapter may add warnings of its own (parts Meta could not apply).
+    const allWarnings = [...new Set([...warnings, ...(result?.warnings ?? [])])];
+    sent = { result, warnings: allWarnings, simulated: adapter.simulated };
     const done = new Date(Math.max(Date.now(), now.getTime()));
-    outcome = (await finishPublished(destination, result, warnings, adapter.simulated, done))
+    outcome = (await finishPublished(destination, result, allWarnings, adapter.simulated, done))
       ? 'published'
       : 'skipped';
   } catch (caught) {

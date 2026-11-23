@@ -160,6 +160,10 @@ const WARNING_TEXT = {
   [PUBLISH_WARNINGS.HASHTAGS_NOT_SENT]:
     'The hashtags were not sent, because they were set to go in the first comment.',
   [PUBLISH_WARNINGS.ALT_TEXT_NOT_SENT]: 'The image descriptions (alt text) were not sent.',
+  [PUBLISH_WARNINGS.CAPTION_NOT_ATTACHED]:
+    'Instagram published the post but reported that the caption could not be attached.',
+  [PUBLISH_WARNINGS.PLATFORM_PARTIAL]:
+    'Instagram published the post but reported that part of it could not be applied.',
 };
 
 export function warningText(code) {
@@ -229,7 +233,20 @@ export function statusNotices(status) {
       key: 'simulated',
       tone: 'info',
       title: 'Simulation mode.',
-      text: 'Posts go through the whole process, but nothing is sent to Facebook or Instagram.',
+      text:
+        status.workspaceMode === 'LIVE' && status.liveAvailable === false
+          ? 'Real publishing is switched on for this workspace, but this server does not offer it right now, so posts are simulated: nothing is sent to Facebook or Instagram.'
+          : 'Posts go through the whole process, but nothing is sent to Facebook or Instagram.',
+    });
+  }
+  if (status.mode === 'LIVE') {
+    // A standing state, not an event: an info notice (role "status"), so screen readers are
+    // not interrupted on every visit. Queue and worker problems stay alerts.
+    notices.push({
+      key: 'live',
+      tone: 'info',
+      title: 'Real publishing is on.',
+      text: 'Posts are published to the real Facebook Pages and Instagram accounts. An owner or admin can switch back to simulation in Settings.',
     });
   }
 

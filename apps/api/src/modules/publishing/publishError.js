@@ -37,12 +37,19 @@ export function sanitizeProviderText(text) {
 }
 
 const RATE_LIMIT_WAIT_MS = 10 * 60 * 1000;
+/** Instagram's 24-hour publishing limit (error subcode 2207042): wait an hour, then check again. */
+const PUBLISHING_LIMIT_WAIT_MS = 60 * 60 * 1000;
+const IG_PUBLISHING_LIMIT_SUBCODE = 2207042;
 
 /**
  * Turns a failed Meta call into a PublishError.
  *
- * `committing` marks the call that actually creates the post. If such a call gets no answer
- * at all, the post may or may not exist, so it is never retried automatically.
+ * `committing` marks the call that actually creates the post. If such a call fails in a way
+ * that does not prove the post was NOT created (no answer, an unreadable answer, a server
+ * error without Meta's "transient, retry" marker, or Meta's "unknown error" code 1), the post
+ * may or may not exist, so it is never retried automatically: a person checks the account
+ * and confirms the retry. Only an explicit refusal (`is_transient`, code 2 "service
+ * temporarily unavailable", a rate limit, a validation error) is safe to retry.
  */
 export function fromMetaError(err, { platformName, committing = false }) {
   if (err instanceof PublishError) return err;
@@ -53,6 +60,13 @@ export function fromMetaError(err, { platformName, committing = false }) {
     });
   }
   const detail = sanitizeProviderText(err.message);
+  if (err.subcode === IG_PUBLISHING_LIMIT_SUBCODE) {
+    return new PublishError(
+      E.RATE_LIMITED,
+      `${platformName} says this account reached its limit of posts published through apps in 24 hours. It will be tried again later.`,
+      { retryable: true, retryAfterMs: PUBLISHING_LIMIT_WAIT_MS, cause: err },
+    );
+  }
   switch (err.kind) {
     case META_ERROR_KINDS.TOKEN_EXPIRED:
     case META_ERROR_KINDS.TOKEN_REVOKED:
@@ -71,13 +85,25 @@ export function fromMetaError(err, { platformName, committing = false }) {
       return new PublishError(
         E.RATE_LIMITED,
         `${platformName} is limiting how often this account can post. It will be tried again later.`,
-        { retryable: true, retryAfterMs: RATE_LIMIT_WAIT_MS, cause: err },
+        {
+          retryable: true,
+          // Meta's own estimate when it gives one, but never sooner than 10 minutes.
+          retryAfterMs: Math.max(RATE_LIMIT_WAIT_MS, err.retryAfterMs ?? 0),
+          cause: err,
+        },
       );
     case META_ERROR_KINDS.TRANSIENT:
       if (committing && err.httpStatus === undefined) {
         return new PublishError(
           E.OUTCOME_UNKNOWN,
           `${platformName} did not answer after the post was sent. It may or may not have been published. Check the account before retrying.`,
+          { cause: err },
+        );
+      }
+      if (committing && !err.isTransient && err.code !== 2) {
+        return new PublishError(
+          E.OUTCOME_UNKNOWN,
+          `${platformName} reported an error after the post was sent, without confirming whether it was created. It may or may not have been published. Check the account before retrying.`,
           { cause: err },
         );
       }

@@ -260,6 +260,8 @@ describe('queue and mode availability', () => {
     expect(status.status).toBe(200);
     expect(status.body).toEqual({
       mode: 'SIMULATED',
+      workspaceMode: 'SIMULATED',
+      liveAvailable: false,
       canPublish: true,
       reason: null,
       message: null,

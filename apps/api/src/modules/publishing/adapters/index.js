@@ -7,9 +7,10 @@ import { simulatedAdapter } from './simulated.js';
  * Publishing adapters. Every adapter offers
  *
  *   publish({ account, connection, accessToken, caption, media, providerState,
- *             saveProviderState }) → { externalPostId, externalUrl }
+ *             saveProviderState }) → { externalPostId, externalUrl, warnings? }
  *
- * and throws a PublishError on failure. `simulated` adapters contact nobody.
+ * and throws a PublishError on failure. `simulated` adapters contact nobody. A real adapter
+ * returns only once Meta has confirmed the post and given its id.
  *
  * A job's own mode decides the adapter: a SIMULATED job can only ever get the simulated
  * adapter, whatever the server is set to later.

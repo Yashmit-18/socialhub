@@ -32,7 +32,18 @@ const BUSINESS_USE_CASE_CODES = new Set([
 const EXPIRED_SUBCODES = new Set([463]);
 
 export class MetaApiError extends Error {
-  constructor({ message, kind, httpStatus, code, subcode, type, fbtraceId, cause }) {
+  constructor({
+    message,
+    kind,
+    httpStatus,
+    code,
+    subcode,
+    type,
+    fbtraceId,
+    isTransient = false,
+    retryAfterMs,
+    cause,
+  }) {
     super(message, cause ? { cause } : undefined);
     this.name = 'MetaApiError';
     this.kind = kind;
@@ -41,6 +52,10 @@ export class MetaApiError extends Error {
     this.subcode = subcode;
     this.type = type;
     this.fbtraceId = fbtraceId;
+    /** Meta marked the error `is_transient`: the request was not carried out, retry later. */
+    this.isTransient = isTransient;
+    /** How long Meta says to wait before calling again (from its usage headers), if known. */
+    this.retryAfterMs = retryAfterMs;
   }
 
   get isTokenError() {
@@ -79,8 +94,37 @@ export function classifyMetaError({ httpStatus, code, subcode, isTransient }) {
   return META_ERROR_KINDS.INVALID_REQUEST;
 }
 
+/**
+ * Milliseconds Meta asks callers to wait, from the `estimated_time_to_regain_access` (minutes)
+ * in its Business Use Case usage header (`{ "<id>": [{ ..., "estimated_time_to_regain_access": 5 }] }`)
+ * or the older `x-app-usage`/`x-page-usage` shape. Undefined when absent or unreadable.
+ */
+export function retryAfterFromUsageHeaders(headers) {
+  let minutes = 0;
+  for (const name of [
+    'x-business-use-case-usage',
+    'x-app-usage',
+    'x-page-usage',
+    'x-ad-account-usage',
+  ]) {
+    const raw = headers?.get?.(name);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      const entries = Array.isArray(parsed) ? parsed : Object.values(parsed).flat();
+      for (const entry of [parsed, ...entries]) {
+        const value = Number(entry?.estimated_time_to_regain_access);
+        if (Number.isFinite(value) && value > minutes) minutes = value;
+      }
+    } catch {
+      // An unreadable header only means no hint.
+    }
+  }
+  return minutes > 0 ? Math.min(minutes, 24 * 60) * 60_000 : undefined;
+}
+
 /** Normalises both Graph errors ({error:{...}}) and Instagram token-endpoint errors ({error_type,...}). */
-export function parseMetaError(httpStatus, body) {
+export function parseMetaError(httpStatus, body, headers) {
   const graph = body?.error && typeof body.error === 'object' ? body.error : null;
   const code = Number(graph?.code ?? body?.code ?? NaN);
   const subcode = Number(graph?.error_subcode ?? NaN);
@@ -96,9 +140,12 @@ export function parseMetaError(httpStatus, body) {
       body?.error_description ??
       `Meta request failed with HTTP ${httpStatus}`,
   };
+  const isTransient = graph?.is_transient === true;
   return new MetaApiError({
     ...details,
-    kind: classifyMetaError({ ...details, isTransient: graph?.is_transient === true }),
+    isTransient,
+    retryAfterMs: retryAfterFromUsageHeaders(headers),
+    kind: classifyMetaError({ ...details, isTransient }),
   });
 }
 
@@ -181,7 +228,8 @@ async function metaRequestOnce(url, { method = 'GET', query, form, accessToken, 
     body = null;
   }
 
-  if (!res.ok || body?.error || body?.error_type) throw parseMetaError(res.status, body);
+  if (!res.ok || body?.error || body?.error_type)
+    throw parseMetaError(res.status, body, res.headers);
   if (body === null) {
     throw new MetaApiError({
       message: 'Meta returned an unreadable response',

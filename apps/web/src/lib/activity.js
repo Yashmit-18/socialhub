@@ -91,6 +91,20 @@ function describePublishing(entry, actor, m) {
       };
     case PUBLISH_ACTIVITY_ACTIONS.DESTINATION_CANCELLED:
       return { icon: Trash2, tone: 'danger', actor, text: `cancelled publishing to ${account}` };
+    case PUBLISH_ACTIVITY_ACTIONS.MODE_CHANGED:
+      return m.to === 'LIVE'
+        ? {
+            icon: AlertTriangle,
+            tone: 'danger',
+            actor,
+            text: 'switched on real publishing to Facebook and Instagram',
+          }
+        : {
+            icon: Settings,
+            tone: 'neutral',
+            actor,
+            text: 'switched publishing back to simulation',
+          };
     case PUBLISH_ACTIVITY_ACTIONS.JOB_FINISHED: {
       const parts = [
         m.published ? `${m.published} ${m.simulated ? 'simulated' : 'published'}` : null,

@@ -211,3 +211,96 @@ describe('content rules', () => {
     expect(publishIssues({ ...base, media: [video] }, 'FACEBOOK_PAGE')).toEqual([]);
   });
 });
+
+describe('live publishing rules', () => {
+  it('a workspace is live only when the server offers it and the workspace chose it', async () => {
+    const { effectivePublishingMode: mode } = await import('../src/index.js');
+    expect(mode('DISABLED', 'LIVE')).toBe('DISABLED');
+    expect(mode(undefined, 'LIVE')).toBe('DISABLED');
+    expect(mode('SIMULATED', 'LIVE')).toBe('SIMULATED');
+    expect(mode('LIVE', 'SIMULATED')).toBe('SIMULATED');
+    expect(mode('LIVE', undefined)).toBe('SIMULATED');
+    expect(mode('LIVE', 'live')).toBe('SIMULATED');
+    expect(mode('LIVE', 'LIVE')).toBe('LIVE');
+  });
+
+  it('checks files against the documented Facebook and Instagram requirements', async () => {
+    const { mediaIssues } = await import('../src/index.js');
+    const jpeg = {
+      kind: 'IMAGE',
+      mimeType: 'image/jpeg',
+      sizeBytes: 500_000,
+      width: 1080,
+      height: 1350,
+    };
+    const reel = { kind: 'VIDEO', mimeType: 'video/mp4', sizeBytes: 20_000_000, durationSec: 30 };
+    expect(mediaIssues([jpeg, reel], 'INSTAGRAM_ACCOUNT')).toEqual([]);
+    expect(mediaIssues([jpeg, reel], 'FACEBOOK_PAGE')).toEqual([]);
+
+    const png = { ...jpeg, mimeType: 'image/png' };
+    expect(mediaIssues([png], 'FACEBOOK_PAGE')).toEqual([]);
+    expect(mediaIssues([png], 'INSTAGRAM_ACCOUNT')).toEqual([
+      'The file is PNG; Instagram accepts JPEG images.',
+    ]);
+    expect(mediaIssues([{ ...jpeg, sizeBytes: 9 * 1024 * 1024 }], 'INSTAGRAM_ACCOUNT')[0]).toMatch(
+      /8 MB limit/,
+    );
+    expect(mediaIssues([{ ...jpeg, sizeBytes: 11 * 1024 * 1024 }], 'FACEBOOK_PAGE')[0]).toMatch(
+      /10 MB limit/,
+    );
+    // 4:5 and 1.91:1 are allowed; 9:16 and 2:1 are not. Unknown sizes are not held against a file.
+    expect(mediaIssues([{ ...jpeg, width: 1080, height: 566 }], 'INSTAGRAM_ACCOUNT')).toEqual([]);
+    expect(mediaIssues([{ ...jpeg, width: 1080, height: 1920 }], 'INSTAGRAM_ACCOUNT')[0]).toMatch(
+      /aspect ratio/,
+    );
+    expect(mediaIssues([{ ...jpeg, width: 2000, height: 1000 }], 'INSTAGRAM_ACCOUNT')).toHaveLength(
+      1,
+    );
+    expect(mediaIssues([{ ...jpeg, width: undefined }], 'INSTAGRAM_ACCOUNT')).toEqual([]);
+    expect(mediaIssues([{ ...jpeg, width: 1080, height: 1920 }], 'FACEBOOK_PAGE')).toEqual([]);
+
+    expect(mediaIssues([{ ...reel, durationSec: 2 }], 'INSTAGRAM_ACCOUNT')[0]).toMatch(
+      /shorter than 3/,
+    );
+    expect(mediaIssues([{ ...reel, durationSec: 16 * 60 }], 'INSTAGRAM_ACCOUNT')[0]).toMatch(
+      /longer than 15 minutes/,
+    );
+    expect(
+      mediaIssues([{ ...reel, sizeBytes: 301 * 1024 * 1024 }], 'INSTAGRAM_ACCOUNT')[0],
+    ).toMatch(/300 MB/);
+    expect(mediaIssues([{ ...reel, mimeType: 'video/webm' }], 'FACEBOOK_PAGE')[0]).toMatch(
+      /MP4 and MOV/,
+    );
+    expect(mediaIssues([jpeg, png], 'INSTAGRAM_ACCOUNT')[0]).toMatch(/^File 2 \(image\)/);
+  });
+
+  it('limits Instagram captions to 20 @mentions, and does not count email addresses', async () => {
+    const { mentionsInText, publishIssues } = await import('../src/index.js');
+    expect(mentionsInText('Thanks @ada and @bob.smith, mail me at x@example.com')).toEqual([
+      'ada',
+      'bob.smith',
+    ]);
+    const media = [{ kind: 'IMAGE' }];
+    const many = Array.from({ length: 21 }, (_, i) => `@user${i}`).join(' ');
+    expect(publishIssues({ caption: many, media }, 'INSTAGRAM_ACCOUNT')).toEqual([
+      'Instagram allows at most 20 @mentions in a caption.',
+    ]);
+    expect(publishIssues({ caption: many, media }, 'FACEBOOK_PAGE')).toEqual([]);
+  });
+
+  it('switching to live needs a password and an acknowledgement; switching back needs neither', async () => {
+    const { updatePublishingModeSchema: schema } = await import('../src/index.js');
+    expect(schema.safeParse({ mode: 'SIMULATED' }).success).toBe(true);
+    const missing = schema.safeParse({ mode: 'LIVE' });
+    expect(missing.success).toBe(false);
+    expect(missing.error.issues.map((i) => i.path[0]).sort()).toEqual([
+      'acknowledgeRealPublishing',
+      'password',
+    ]);
+    expect(
+      schema.safeParse({ mode: 'LIVE', password: 'pw', acknowledgeRealPublishing: true }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ mode: 'DISABLED' }).success).toBe(false);
+    expect(schema.safeParse({ mode: 'SIMULATED', extra: 1 }).success).toBe(false);
+  });
+});

@@ -88,7 +88,7 @@ export function ComposerPublishDialog({
   const resolved = when === 'schedule' ? resolveSchedule(schedule, new Date(now)) : null;
   const notReady = accounts.filter((account) => !account.publishable);
   const serverBlocks = !status.data?.canPublish;
-  // Real publishing (never on in this build) needs files Meta can download over HTTPS.
+  // Real publishing needs files Meta can download over HTTPS.
   const needsPublicMedia =
     mode === PUBLISHING_MODES.LIVE && mediaCount > 0 && status.data?.storage?.publicUrls === false;
   const blocking = [
@@ -103,7 +103,7 @@ export function ComposerPublishDialog({
     ...blockers,
     ...(needsPublicMedia
       ? [
-          'The files are stored on this server only, so Facebook and Instagram cannot fetch them. Public HTTPS media storage is needed to publish.',
+          'The files are stored where Facebook and Instagram cannot fetch them. Real publishing needs media storage that is reachable from the internet over HTTPS.',
         ]
       : []),
   ];

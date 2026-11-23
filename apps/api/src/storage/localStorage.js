@@ -13,8 +13,10 @@ import { randomToken, safeEqual } from '../lib/crypto.js';
  *
  * It follows the same direct-upload flow as S3: the browser PUTs the bytes to a short-lived
  * signed URL that is bound to one key, type and size. It is NOT meant for production:
- * its URLs are only as public as this API is, so Instagram can fetch them only when the API
- * itself is reachable from the internet over HTTPS (`publicUrls` is false).
+ * its URLs are only as public as this API is, so Meta can fetch them only when the API itself
+ * is reachable from the internet over HTTPS (for example through a tunnel). `publicUrls` says
+ * whether API_PUBLIC_URL looks like that (isPublicHttpsUrl); it cannot prove the address is
+ * actually reachable, and Meta reports a failed download as an error on the post.
  */
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)*$/;
@@ -27,6 +29,38 @@ const TYPES = {
 };
 
 const storageError = (status, code, message) => new AppError(status, code, message);
+
+/**
+ * Whether files served under `baseUrl` can be downloaded by Meta: HTTPS on a host that is not
+ * this machine or a private network (for example a tunnel or a real domain pointing at this
+ * API). Meta fetches media itself, so `http://localhost:4000` can never work.
+ */
+export function isPublicHttpsUrl(baseUrl) {
+  let url;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:') return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    host === 'localhost' ||
+    /\.(localhost|local|internal|lan|home\.arpa)$/.test(host) ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    /^(fc|fd|fe80)[0-9a-f]*:/.test(host)
+  ) {
+    return false;
+  }
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+  if (ipv4) {
+    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+    if (a === 10 || a === 127 || (a === 169 && b === 254) || (a === 192 && b === 168)) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+  }
+  return true;
+}
 
 export function createLocalStorage({ directory, baseUrl, secret }) {
   const root = path.resolve(directory);
@@ -51,7 +85,8 @@ export function createLocalStorage({ directory, baseUrl, secret }) {
 
   const storage = {
     name: 'local',
-    publicUrls: false,
+    // Reachable by Meta only when this API itself is public over HTTPS (API_PUBLIC_URL).
+    publicUrls: isPublicHttpsUrl(baseUrl),
     uploadOrigin: null,
 
     createUpload({ key, contentType, sizeBytes, expiresInSeconds, now = new Date() }) {

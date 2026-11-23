@@ -6,6 +6,7 @@ import {
   publishJobQuerySchema,
   rescheduleJobSchema,
   retryDestinationSchema,
+  updatePublishingModeSchema,
 } from '@socialhub/shared';
 import { clientContext } from '../../middleware/requestContext.js';
 import { validate } from '../../middleware/validate.js';
@@ -25,9 +26,26 @@ export function mountPublishingRoutes(scoped) {
   const read = requirePermission(PERMISSIONS.CONTENT_READ);
   const publish = requirePermission(PERMISSIONS.CONTENT_PUBLISH);
 
-  scoped.get('/publishing/status', read, async (_req, res) => {
-    res.json(await publishing.getStatus());
+  scoped.get('/publishing/status', read, async (req, res) => {
+    res.json(await publishing.getStatus(req.workspace));
   });
+
+  // Simulated or real publishing for this workspace: owners and admins only.
+  scoped.put(
+    '/publishing/mode',
+    requirePermission(PERMISSIONS.WORKSPACE_UPDATE),
+    validate({ body: updatePublishingModeSchema }),
+    async (req, res) => {
+      res.json(
+        await publishing.setPublishingMode(
+          req.workspace,
+          req.user,
+          req.valid.body,
+          clientContext(req),
+        ),
+      );
+    },
+  );
 
   scoped.get('/publish-jobs/summary', read, async (req, res) => {
     res.json(await publishing.getSummary(req.workspace, req.membership));

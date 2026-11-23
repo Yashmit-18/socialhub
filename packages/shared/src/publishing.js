@@ -10,15 +10,43 @@ import { z } from 'zod';
 import { SOCIAL_PLATFORMS } from './enums.js';
 import { objectIdSchema } from './schemas.js';
 
-/** How this server publishes. Real publishing is not enabled in this build. */
+/**
+ * Publishing modes.
+ *
+ * As a SERVER setting (`PUBLISHING_MODE`): DISABLED = no jobs at all; SIMULATED = every job is
+ * simulated; LIVE = real publishing is *available*. Even on a LIVE server, each workspace stays
+ * in simulation until an owner or admin switches that workspace to live
+ * (WORKSPACE_PUBLISHING_MODES), so real publishing never starts by itself.
+ *
+ * As a JOB mode: the mode the job was created in, fixed for its whole life. A SIMULATED job
+ * can never reach Meta, whatever changes later.
+ */
 export const PUBLISHING_MODES = Object.freeze({
   /** Publishing is switched off: jobs cannot be created. */
   DISABLED: 'DISABLED',
-  /** Development only: the whole engine runs, but nothing is sent to Meta. */
+  /** The whole engine runs, but nothing is sent to Meta. */
   SIMULATED: 'SIMULATED',
   /** Real Meta Graph API calls. */
   LIVE: 'LIVE',
 });
+
+/** A workspace's own choice. SIMULATED is the default; LIVE takes an owner or admin. */
+export const WORKSPACE_PUBLISHING_MODES = Object.freeze({
+  SIMULATED: 'SIMULATED',
+  LIVE: 'LIVE',
+});
+
+/**
+ * The mode new jobs of a workspace get: real publishing only when the server offers it AND
+ * the workspace chose it. Anything else (including an unknown value) is simulation.
+ */
+export function effectivePublishingMode(serverMode, workspaceMode) {
+  if (serverMode === PUBLISHING_MODES.DISABLED || !serverMode) return PUBLISHING_MODES.DISABLED;
+  if (serverMode === PUBLISHING_MODES.LIVE && workspaceMode === WORKSPACE_PUBLISHING_MODES.LIVE) {
+    return PUBLISHING_MODES.LIVE;
+  }
+  return PUBLISHING_MODES.SIMULATED;
+}
 
 /** State of one destination of a job. */
 export const DESTINATION_STATES = Object.freeze({
@@ -162,6 +190,10 @@ export const PUBLISH_WARNINGS = Object.freeze({
   /** Hashtags were set to go in the first comment, which is not sent. */
   HASHTAGS_NOT_SENT: 'HASHTAGS_NOT_SENT',
   ALT_TEXT_NOT_SENT: 'ALT_TEXT_NOT_SENT',
+  /** Instagram published the post but reported that the caption could not be attached. */
+  CAPTION_NOT_ATTACHED: 'CAPTION_NOT_ATTACHED',
+  /** Instagram published the post but reported another part it could not apply. */
+  PLATFORM_PARTIAL: 'PLATFORM_PARTIAL',
 });
 
 /** State of the Redis-backed queue as the API sees it. */
@@ -191,6 +223,8 @@ export const PUBLISH_ACTIVITY_ACTIONS = Object.freeze({
   DESTINATION_CANCELLED: 'publish_destination.cancelled',
   /** SocialHub stopped a destination because its author may no longer publish it. */
   DESTINATION_BLOCKED: 'publish_destination.blocked',
+  /** An owner or admin switched the workspace between simulated and real publishing. */
+  MODE_CHANGED: 'publishing.mode_changed',
 });
 
 export const PUBLISHING_LIMITS = Object.freeze({
@@ -204,7 +238,37 @@ export const PUBLISHING_LIMITS = Object.freeze({
   /** Documented Instagram limits. */
   INSTAGRAM_CAPTION_MAX: 2200,
   INSTAGRAM_HASHTAGS_MAX: 30,
+  INSTAGRAM_MENTIONS_MAX: 20,
+  // Meta now documents up to 20 carousel items; 10 is kept until 20 is verified live.
   INSTAGRAM_CAROUSEL_MAX: 10,
+});
+
+const MB = 1024 * 1024;
+
+/**
+ * File requirements of real publishing, from Meta's documentation (2026-11):
+ *  - Facebook Page photos (Graph API reference, page/photos): JPEG, BMP, PNG, GIF or TIFF,
+ *    at most 10 MB.
+ *  - Instagram (Content Publishing API, ig-user/media): images JPEG only, at most 8 MB, aspect
+ *    ratio 4:5 to 1.91:1; reels MP4 or MOV, 3 seconds to 15 minutes, at most 300 MB.
+ * Video codecs, frame rates and bitrates cannot be checked here; Meta reports those itself.
+ */
+export const PLATFORM_MEDIA_RULES = Object.freeze({
+  [SOCIAL_PLATFORMS.FACEBOOK_PAGE]: Object.freeze({
+    imageTypes: Object.freeze(['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/tiff']),
+    imageMaxBytes: 10 * MB,
+    videoTypes: Object.freeze(['video/mp4', 'video/quicktime']),
+  }),
+  [SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT]: Object.freeze({
+    imageTypes: Object.freeze(['image/jpeg']),
+    imageMaxBytes: 8 * MB,
+    imageAspectMin: 4 / 5,
+    imageAspectMax: 1.91,
+    videoTypes: Object.freeze(['video/mp4', 'video/quicktime']),
+    videoMaxBytes: 300 * MB,
+    videoMinSec: 3,
+    videoMaxSec: 15 * 60,
+  }),
 });
 
 const L = PUBLISHING_LIMITS;
@@ -263,6 +327,36 @@ export const retryDestinationSchema = z.strictObject({
   acknowledgeDuplicateRisk: z.boolean().default(false),
 });
 
+/**
+ * Switch a workspace between simulated and real publishing. Turning real publishing ON needs
+ * the person's password and an explicit acknowledgement; turning it off needs neither.
+ */
+export const updatePublishingModeSchema = z
+  .strictObject({
+    mode: z.enum(Object.values(WORKSPACE_PUBLISHING_MODES), {
+      error: 'Choose simulated or live publishing',
+    }),
+    password: z.string().max(1024).optional(),
+    acknowledgeRealPublishing: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.mode !== WORKSPACE_PUBLISHING_MODES.LIVE) return;
+    if (!value.password) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['password'],
+        message: 'Enter your password to switch on real publishing',
+      });
+    }
+    if (value.acknowledgeRealPublishing !== true) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['acknowledgeRealPublishing'],
+        message: 'Confirm that posts will be published to the real accounts',
+      });
+    }
+  });
+
 const codePoints = (value) => [...value].length;
 
 // Hashtags written in a text, without "#". Same pattern as the composer
@@ -271,6 +365,12 @@ const codePoints = (value) => [...value].length;
 const HASHTAG_IN_TEXT = /(?<![\p{L}\p{M}\p{N}_/&#=?])#([\p{L}\p{M}\p{N}_]+)/gu;
 export const hashtagsInText = (text) =>
   [...String(text ?? '').matchAll(HASHTAG_IN_TEXT)].map((m) => m[1]);
+
+// Instagram @mentions (usernames: letters, digits, "." and "_", at most 30 characters). An
+// email address is not a mention, so the "@" must not follow a word character.
+const MENTION_IN_TEXT = /(?<![\p{L}\p{M}\p{N}_.@])@([A-Za-z0-9._]{1,30})/gu;
+export const mentionsInText = (text) =>
+  [...String(text ?? '').matchAll(MENTION_IN_TEXT)].map((m) => m[1]);
 
 /**
  * Caption as it is sent to one platform: its own caption or the shared one, then a blank line
@@ -310,6 +410,9 @@ export function publishIssues(content, platform) {
     if (hashtagsInText(caption).length > L.INSTAGRAM_HASHTAGS_MAX) {
       issues.push(`Instagram allows at most ${L.INSTAGRAM_HASHTAGS_MAX} hashtags.`);
     }
+    if (mentionsInText(caption).length > L.INSTAGRAM_MENTIONS_MAX) {
+      issues.push(`Instagram allows at most ${L.INSTAGRAM_MENTIONS_MAX} @mentions in a caption.`);
+    }
   } else {
     if (media.length === 0 && caption.length === 0) {
       issues.push('Facebook posts need text, an image or a video.');
@@ -318,5 +421,72 @@ export function publishIssues(content, platform) {
       issues.push('A Facebook post can have one video, or images, but not both.');
     }
   }
+  return issues;
+}
+
+const KIND_LABEL = { IMAGE: 'image', VIDEO: 'video' };
+const typeName = (mime) =>
+  String(mime ?? 'unknown')
+    .replace(/^(image|video)\//, '')
+    .toUpperCase();
+const megabytes = (bytes) => `${Math.round(bytes / MB)} MB`;
+
+/**
+ * Why the files of a post cannot be sent to a platform for real, as plain sentences (empty =
+ * they can). `media` entries are `{ kind, mimeType, sizeBytes, width, height, durationSec }`
+ * (MediaAsset fields); a missing dimension or duration is not held against the file.
+ * Checked when a LIVE job is created and again just before it is sent.
+ */
+export function mediaIssues(media, platform) {
+  const rules = PLATFORM_MEDIA_RULES[platform];
+  if (!rules) return [];
+  const name = platform === SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT ? 'Instagram' : 'Facebook';
+  const issues = [];
+  (media ?? []).forEach((file, index) => {
+    const which =
+      media.length > 1 ? `File ${index + 1} (${KIND_LABEL[file.kind] ?? 'file'})` : 'The file';
+    if (file.kind === 'IMAGE') {
+      if (!rules.imageTypes.includes(file.mimeType)) {
+        issues.push(
+          `${which} is ${typeName(file.mimeType)}; ${name} accepts ${rules.imageTypes.map(typeName).join(', ')} images.`,
+        );
+      }
+      if (rules.imageMaxBytes && file.sizeBytes > rules.imageMaxBytes) {
+        issues.push(
+          `${which} is larger than ${name}'s ${megabytes(rules.imageMaxBytes)} limit for images.`,
+        );
+      }
+      if (rules.imageAspectMin && file.width > 0 && file.height > 0) {
+        const ratio = file.width / file.height;
+        // A small tolerance for rounding in exported image sizes.
+        if (ratio < rules.imageAspectMin - 0.005 || ratio > rules.imageAspectMax + 0.005) {
+          issues.push(
+            `${which} is ${file.width}×${file.height}; ${name} needs an aspect ratio between 4:5 (portrait) and 1.91:1 (landscape).`,
+          );
+        }
+      }
+    } else if (file.kind === 'VIDEO') {
+      if (!rules.videoTypes.includes(file.mimeType)) {
+        issues.push(`${which} is ${typeName(file.mimeType)}; ${name} accepts MP4 and MOV videos.`);
+      }
+      if (rules.videoMaxBytes && file.sizeBytes > rules.videoMaxBytes) {
+        issues.push(
+          `${which} is larger than ${name}'s ${megabytes(rules.videoMaxBytes)} limit for videos.`,
+        );
+      }
+      if (rules.videoMinSec && file.durationSec > 0 && file.durationSec < rules.videoMinSec) {
+        issues.push(
+          `${which} is shorter than ${rules.videoMinSec} seconds, the minimum for ${name} videos.`,
+        );
+      }
+      if (rules.videoMaxSec && file.durationSec > rules.videoMaxSec) {
+        issues.push(
+          `${which} is longer than ${rules.videoMaxSec / 60} minutes, the maximum for ${name} videos.`,
+        );
+      }
+    } else {
+      issues.push(`${which} is not an image or a video.`);
+    }
+  });
   return issues;
 }

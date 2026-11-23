@@ -124,9 +124,11 @@ const envSchema = z.object({
   /**
    * disabled   jobs cannot be created (default)
    * simulated  development only: the whole engine runs, nothing is sent to Meta
-   * Real publishing is not enabled in this build, so there is no "live" value.
+   * live       real publishing is AVAILABLE: each workspace still publishes in simulation
+   *            until one of its owners or admins switches that workspace to live (with their
+   *            password). Setting this alone never publishes anything for real.
    */
-  PUBLISHING_MODE: z.enum(['disabled', 'simulated']).default('disabled'),
+  PUBLISHING_MODE: z.enum(['disabled', 'simulated', 'live']).default('disabled'),
   /** Run the publish worker inside the API process. Set false when `npm run worker` runs it. */
   PUBLISHING_WORKER_INLINE: booleanString.optional(),
   PUBLISHING_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
@@ -300,7 +302,8 @@ export function loadConfig(source = process.env) {
     },
     healthDetailsToken: env.HEALTH_DETAILS_TOKEN ?? null,
     publishing: {
-      mode: env.PUBLISHING_MODE === 'simulated' ? 'SIMULATED' : 'DISABLED',
+      // The server's ceiling; a workspace's own mode decides within it (publishing.settings.js).
+      mode: { simulated: 'SIMULATED', live: 'LIVE' }[env.PUBLISHING_MODE] ?? 'DISABLED',
       redisUrl: env.REDIS_URL ?? null,
       inlineWorker: env.PUBLISHING_WORKER_INLINE ?? true,
       concurrency: env.PUBLISHING_CONCURRENCY,

@@ -96,19 +96,24 @@ export const publishUrl = (workspaceId, suffix = '') =>
 let keyCounter = 0;
 export const newKey = () => `test-key-${Date.now()}-${(keyCounter += 1)}`.padEnd(24, '0');
 
-/** Saves a draft through the API. `media`: 'image' | 'video' | array of those | none. */
+/**
+ * Saves a draft through the API. `media`: 'image' | 'video' | an uploadMedia options object
+ * (`{ bytes, fileName, mimeType, kind }`) | an array of those | none.
+ */
 export async function createDraft(token, workspaceId, { accounts = [], media = [], ...rest } = {}) {
   const items = [];
   for (const kind of [].concat(media)) {
     const uploaded =
-      kind === 'video'
-        ? await uploadMedia(token, workspaceId, {
-            bytes: mp4Bytes(),
-            fileName: 'clip.mp4',
-            kind: 'VIDEO',
-            mimeType: 'video/mp4',
-          })
-        : await uploadMedia(token, workspaceId, { bytes: jpegBytes() });
+      typeof kind === 'object'
+        ? await uploadMedia(token, workspaceId, kind)
+        : kind === 'video'
+          ? await uploadMedia(token, workspaceId, {
+              bytes: mp4Bytes(),
+              fileName: 'clip.mp4',
+              kind: 'VIDEO',
+              mimeType: 'video/mp4',
+            })
+          : await uploadMedia(token, workspaceId, { bytes: jpegBytes() });
     items.push({ mediaId: uploaded.id ?? uploaded.media?.id });
   }
   const res = await as(token)
