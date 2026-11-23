@@ -7,8 +7,12 @@ This document specifies the backend endpoints that the **Universal Post Composer
 >
 > - **§4 drafts, §5 media upload and §6 account presets are implemented** in `apps/api` and
 >   tested end to end. The composer uses them when its capability flags are on (§2).
-> - **§7 publishing is not built.** The Publish button is always disabled and `submitPost`
->   always throws, whatever the environment says.
+> - **§7 was not built as proposed.** Publishing is the separate publishing API
+>   ([PUBLISHING_API.md](PUBLISHING_API.md), `POST /publish-jobs`). Since 2026-11-21 the
+>   composer's Publish button uses it when team drafts are on; the server decides whether
+>   posts are only simulated (real publishing is not enabled). `submitPost` was removed.
+> - **Draft visibility (2026-11-21):** a draft is returned only to members who may use every
+>   account it targets (owners and admins always). See "Drafts (§4)" in §11.
 > - Media upload needs a storage driver configured on the API (§5.4). Only the local-disk
 >   driver has been run for real. The S3 driver is tested against a simulated provider and
 >   Amazon's documented signing example, not against a live bucket.
@@ -155,8 +159,9 @@ Validation rules for the server:
 }
 ```
 
-`targetAccountIds` should be filtered to the accounts the **reader** can access, so a draft
-never reveals another member's accounts.
+A draft is returned only to readers who may use **every** account in its
+`targetAccountIds` (owners and admins always may). Other drafts are not returned at all, so a
+draft never reveals another member's accounts or unpublished content (see §11, "Drafts").
 
 ### 4.3 Endpoints
 
@@ -318,8 +323,8 @@ The composer only documents the shape here. The engine design is in `docs/ARCHIT
 
 - The server re-validates every destination against §8 and against account health.
 - It returns `422` with per-destination issues rather than queueing jobs that will fail.
-- The frontend's `submitPost` exists, but the `publishing` capability is hard-wired `false`,
-  so it is never called in this release.
+- Not built. The composer publishes through `POST /publish-jobs` instead
+  ([PUBLISHING_API.md](PUBLISHING_API.md)); the frontend's `submitPost` was removed.
 
 ### 7.2 First comment
 
@@ -503,9 +508,15 @@ section and an earlier one disagree, this section is right.
 - **Conflict.** A stale `version` answers `409 CONFLICT` with
   `details: { currentVersion }` and writes nothing. The version check and the write are one
   atomic database operation, so of several simultaneous saves exactly one succeeds.
-- **Who may change a draft.** A member with `content:create` who can use every account the
-  draft still targets. Otherwise `403`. Accounts that were removed from the workspace no
-  longer restrict anyone. Any such member may delete the draft, not only its author.
+- **Who may see a draft.** Owners, admins and members with access to all accounts see every
+  draft. Editors and viewers with selected accounts see a draft only if they may use every
+  account it targets; a draft with no accounts follows `content:read` alone. Hidden drafts
+  are filtered inside the list query and answer `404 Draft not found` (like an unknown id)
+  to read, update, delete and publish. Accounts removed from the workspace no longer
+  restrict anyone. Implemented in `contentPackages/contentAccess.js`; tests in
+  `apps/api/test/draftPrivacy.test.js`.
+- **Who may change a draft.** A member with `content:create` who can see it (above). Viewers
+  get `403`. Any such member may delete the draft, not only its author.
 - **Unavailable accounts.** A `targetAccountIds` entry the caller cannot use is `422` with a
   `targetAccountIds` field message. The composer leaves such accounts out before saving.
 - **Media.** Every `mediaId` must be a `READY` (or `PROCESSING`) asset of the same

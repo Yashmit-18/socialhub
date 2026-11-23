@@ -17,8 +17,8 @@ This document describes the data model and service boundaries.
    - OAuth identities (`SocialConnection`)
    - Publishing destinations (`SocialAccount`)
    - Content packages (`ContentPackage`)
-   - Parent publishing requests (`Post`)
-   - Per-destination publishing jobs (`PublishingJob`)
+   - Publishing requests (`PublishJob`)
+   - Per-destination publishing records (`PublishDestination`)
 2. **Workspace is the tenant boundary.** Every workspace-scoped document carries
    `workspace`, and every query is scoped by it.
 3. **The API is the authority.** The RBAC matrix lives in `packages/shared` and both
@@ -149,9 +149,39 @@ erDiagram
 silently overwrite each other, and no lock or transaction is needed.
 
 **Account access.** Drafts and presets can only reference accounts their author can use
-(`accessibleAccountFilter`). Readers only ever get back the accounts they can use themselves.
-A member cannot change a draft that targets an account they cannot use, because a full save
-would silently drop it.
+(`accessibleAccountFilter`).
+
+**Draft visibility** (`modules/contentPackages/contentAccess.js`, 2026-11-21). A draft holds
+unpublished content, so it is shown only to people who may use every account it is for:
+
+| Role                               | Sees a draft or job when…                                 | Edits / deletes drafts                             | Publishes, schedules, cancels, retries        |
+| ---------------------------------- | --------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------- |
+| Owner                              | always (every draft and job of the workspace)             | yes                                                | yes                                           |
+| Admin                              | always                                                    | yes                                                | yes                                           |
+| Editor with access to all accounts | always                                                    | yes                                                | yes                                           |
+| Editor with selected accounts      | they may use **every** account it targets, or it has none | only what they can see; new targets must be theirs | only what they can see, to their own accounts |
+| Viewer with access to all accounts | always                                                    | no (`403`)                                         | no (`403`)                                    |
+| Viewer with selected accounts      | they may use **every** account it targets, or it has none | no (`403`)                                         | no (`403`)                                    |
+
+- Owners and admins always have every account (`hasFullAccountAccess`), so they see every
+  draft. A member with account access "all accounts" is treated the same way.
+- For anyone else the server computes the workspace accounts they may **not** use and
+  leaves out every draft that targets one of them. A draft that targets even one such
+  account is not shown at all: no caption, no media, no account ids, not even that it
+  exists. Hiding only the forbidden account names while returning the rest was the earlier
+  behaviour and was replaced.
+- Lists filter inside the MongoDB query (`targetAccounts: { $nin: restricted }`), so pages
+  stay full and counts stay true; the page is checked again after the query.
+- Reading, updating and deleting a hidden draft answer `404 Draft not found`, the same as an
+  unknown id or another workspace's draft, so ids cannot be probed.
+- A draft with no accounts follows the content permissions alone (`content:read` to see it,
+  `content:create` to change it).
+- Accounts removed from the workspace no longer restrict anyone.
+- Publishing applies the same rule: a job can only be created from a draft the member can
+  see (`404` otherwise, whichever accounts the request names), and a job is listed, counted
+  and opened only by members who may use every account it was sent to. The web app's
+  hidden buttons are a convenience; every rule above is enforced by the API and covered by
+  `apps/api/test/draftPrivacy.test.js`.
 
 **Media upload flow.**
 
@@ -183,18 +213,33 @@ sequenceDiagram
   private. `workspaces/<workspace>/media/<asset>/…` holds verified files and is the only
   publicly readable prefix. The API's key needs put, get and delete on objects plus list on
   the bucket (so a missing object reads as 404, not 403); the API never lists.
-- **Not yet verified against a real bucket** (no storage configured as of 2026-11-21).
+- **Not yet verified against a real bucket.** The project uses the local driver, with
+  `STORAGE_LOCAL_DIR="F:/Social Hub Data"` (verified live on 2026-11-21). The folder is
+  created at start; `uploads\` holds unverified files and `workspaces\` verified ones, the
+  same layout as the bucket. Local files cannot be fetched by Meta.
 - Nothing is `READY` until the stored object has been verified. Abandoned slots and unused
   files are removed by `scripts/cleanup-media.js`.
 
-### Planned (not implemented yet)
+### Publishing (Phase 5, implemented 2026-11-21)
 
-| Model           | Phase | Shape (summary)                                                                                                                                                                                                                                         |
-| --------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Post`          | 4     | `workspace`, `contentPackage`, `scheduledAt`, per-destination caption overrides, aggregate status derived from jobs                                                                                                                                     |
-| `PublishingJob` | 4     | `post`, `socialAccount`, status (`PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED`, `CANCELLED`, `RETRYING`), `attempts`, `externalPostId`, `lastError {code, message, permanent}`, `publishedAt`. Unique (`post`,`socialAccount`) is the idempotency key. |
+| Model                | Shape (summary)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PublishJob`         | `workspace`, `contentPackage` + `contentVersion`, `content` (frozen copy: captions, hashtags, first comment, ordered media with kind and alt text), `mode` (`SIMULATED` / `LIVE`), `status` and `counts` (derived), `destinationCount`, `idempotencyKey` + `requestHash`, `scheduledAt`, `createdBy`, `startedAt`, `completedAt`, `draftTargetAccounts` (the draft's accounts when the job was made: who the job is hidden from). No credentials.                                                         |
+| `PublishDestination` | `workspace`, `job`, `contentPackage`, `socialAccount`, `platform`, account name snapshot, `state`, `active`, `simulated`, `attemptCount` / `maxAttempts`, `queueSeq`, `scheduledAt`, `nextAttemptAt`, `dueAt`, `queuedAt`, `processingAt`, `completedAt`, claim (`lockToken`, `lockedUntil`), `sendingAt` (hand-over to the platform started), `authorizedBy` (whose permission the send relies on), `externalPostId`, `externalUrl`, `providerState`, sanitized `error`, `warnings`, `attempts` history. |
 
-The status enums already live in `packages/shared/src/enums.js`.
+Indexes:
+
+| Model                | Index                                                           | Purpose                                                   |
+| -------------------- | --------------------------------------------------------------- | --------------------------------------------------------- |
+| `PublishJob`         | `{workspace, _id:-1}`, `{workspace, status, _id:-1}`            | Lists, newest first, optionally by status                 |
+| `PublishJob`         | unique `{workspace, createdBy, idempotencyKey}`                 | The same request creates one job                          |
+| `PublishJob`         | `{contentPackage}`, `{content.media.media, status}`             | History of a draft; "is this file still needed by a job?" |
+| `PublishJob`         | `{workspace, draftTargetAccounts}`                              | Jobs hidden because their draft targeted an account       |
+| `PublishJob`         | `{status, updatedAt}`                                           | Recovery sweep: job status lagging behind destinations    |
+| `PublishDestination` | unique `{job, socialAccount}`                                   | One destination per account per job                       |
+| `PublishDestination` | unique partial `{contentPackage, socialAccount}` where `active` | One post can be on its way to an account only once        |
+| `PublishDestination` | `{workspace, state}`, `{contentPackage, socialAccount, state}`  | Lookups and the "already published" check                 |
+| `PublishDestination` | `{state, lockedUntil}`, `{state, dueAt}`                        | Recovery sweep: stale claims and overdue waiting entries  |
 
 ### Group distribution (Phase 6, implemented 2026-11-23)
 
@@ -212,6 +257,22 @@ and never calls Facebook (Meta removed the Groups API in Graph API v19.0). Detai
 A group's `minDaysBetweenShares` keeps new tasks away until it allows another share. Task
 updates are conditional on the task's `status` and `updatedAt`, so two people finishing the
 same task get one success and one `409`.
+
+### Analytics (Phase 7, implemented 2026-11-23)
+
+Insights are stored per source (`META` or `SIMULATED`), so demo data can never be read as Meta
+data. Metrics are a fixed normalized set; an unreported metric is absent, never 0. Details:
+[ANALYTICS.md](ANALYTICS.md).
+
+| Model              | Shape (summary)                                                                                                                              | Indexes                                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AccountInsight`   | One calendar day (`YYYY-MM-DD`) of metrics for one account from one source, `fetchedAt`, `syncRun`                                           | unique `{socialAccount, source, day}`; `{workspace, source, day}`                                                                               |
+| `PostInsight`      | Lifetime metrics of one SocialHub delivery (`publishDestination`) from one source; `externalPostId` only for `META`                          | unique `{publishDestination, source}`; `{workspace, source, socialAccount}`                                                                     |
+| `AnalyticsSyncRun` | One sync of one account: source, status, `active`, day range (`since`/`until`), attempts, `queueSeq`, `dueAt`, claim, safe `error`, `result` | unique partial `{socialAccount, source}` where `active`; `{workspace, socialAccount, createdAt:-1}`; `{status, lockedUntil}`, `{status, dueAt}` |
+
+`PublishDestination` gained `{workspace, socialAccount, createdAt}` and
+`{workspace, state, completedAt:-1}` for the publishing figures. No token is stored in any of
+these collections.
 
 ## Meta integration (Phase 2)
 
@@ -411,23 +472,100 @@ the only new collection is the `SyncRun` history.
   Reconnect control goes through `useSyncFlow`, which reports the server's per-login
   results and never invents an outcome.
 
-## Publishing engine design (Phase 4)
+## Publishing engine (Phase 5)
 
-- **Queue.** BullMQ on Redis. Each `PublishingJob` gets its own BullMQ job, with
-  `jobId = PublishingJob._id`, so enqueueing twice is a no-op.
-- **Idempotency.**
-  - Before calling Meta, the worker atomically claims the job
-    (`PENDING|RETRYING → PROCESSING`).
-  - A job already `PUBLISHED` with an `externalPostId` is never sent again.
-  - Retrying a failed post only re-enqueues jobs that are not `PUBLISHED`, so successful
-    destinations are never published twice.
-- **Retry policy.**
-  - Transient errors (5xx, rate limits, network) retry with exponential backoff.
-  - Permanent errors are classified `permanent: true` and fail without retry: permission
-    errors, validation errors, revoked or expired tokens.
-  - Token errors also mark the `SocialConnection`/`SocialAccount` as `EXPIRED`/`REVOKED`.
-- **Partial success.** `Post` status is derived from its jobs, so the UI can show exactly
-  which destinations succeeded and which failed.
+Implemented 2026-11-21. Real publishing is disabled; see
+[PUBLISHING_API.md](PUBLISHING_API.md) for states, guarantees and endpoints.
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant A as API
+  participant M as MongoDB
+  participant R as Redis (BullMQ)
+  participant W as Worker
+  participant P as Adapter (simulated / Facebook / Instagram)
+  B->>A: POST publish-jobs (draft, accounts, idempotencyKey)
+  A->>A: mode on? queue READY? account access, readiness, content rules
+  A->>M: PublishJob + one PublishDestination per account (one transaction)
+  A->>R: one entry per destination: { destinationId }
+  A-->>B: 201 job
+  R->>W: { destinationId }
+  W->>M: claim (waiting → PROCESSING, lock token)
+  W->>M: read job content, account, encrypted token
+  W->>P: publish
+  P-->>W: post id, or a PublishError
+  W->>M: PUBLISHED / RETRY_SCHEDULED / FAILED (only with the lock token)
+  W->>M: recalculate job counts and status
+  W->>R: on retry: new delayed entry
+```
+
+- **Where things live.**
+  - `packages/shared/src/publishing.js`: states, legal transitions, `deriveJobStatus`,
+    request schemas, content rules.
+  - `apps/api/src/queue/publishQueue.js`: the only code that talks to Redis.
+  - `apps/api/src/modules/publishing/`: service (API side), processor (worker side),
+    worker starter, adapters, error mapping, backoff.
+- **MongoDB is the source of truth; Redis only delivers.** A queue entry is
+  `{ destinationId }`. Losing Redis data loses nothing: the recovery sweep adds entries for
+  waiting destinations again. BullMQ's own retry is off (`attempts: 1`); retries are decided
+  by the processor and stored on the destination.
+- **Outbox order.** Records are written first, then queued. If Redis drops in between, the
+  job stays recorded and is queued by the sweep. If Redis is down before, nothing is written
+  and the API answers `503 QUEUE_UNAVAILABLE`. There is no in-memory substitute.
+- **Claims.** A worker claims a destination with one atomic update and a private lock token.
+  Only the claimant can finish it. Duplicate deliveries and concurrent workers are harmless.
+- **Uncertain outcomes are never repeated automatically.** A committing call without an
+  answer, or a claim that expired (15 minutes), ends as `OUTCOME_UNKNOWN` / `INTERRUPTED`.
+- **Job status** is recalculated from the destinations after every change, guarded by a
+  sequence number so concurrent recalculations cannot leave a stale value.
+- **Adapters.** A job's own `mode` selects the adapter, and the processor refuses a job
+  whose mode is not the server's current mode. A `SIMULATED` job can only ever reach the
+  simulated adapter, which contacts nobody and returns no post id.
+- **Real publishing is unreachable.** `PUBLISHING_MODE` accepts `disabled` and `simulated`
+  only. `LIVE` exists in code and is exercised in tests through a test-only override.
+  When live, media must be public HTTPS (checked at creation and again at publish time), so
+  local-disk media can never be sent to Meta.
+- **Tokens.** Read with `.select('+accessToken')` in the processor only, decrypted in
+  memory, passed to the adapter, never stored or logged. Provider error text is sanitized
+  before it is stored.
+- **Worker placement.** Inside the API process by default; `npm run worker` runs it alone.
+  Health: queue connection state, queue counts and the number of connected workers, shown
+  on `/health`, `/publishing/status` and the Publishing screen.
+- **Visibility.** Jobs follow the draft visibility rule above: a member with selected
+  accounts sees a job only if they may use every account it targets.
+- **Scheduling.** A scheduled job is a normal job whose destinations wait in `SCHEDULED`
+  with a delayed queue entry. `PATCH /publish-jobs/:id/schedule` moves the destinations
+  still in `SCHEDULED` to a new time: one atomic update per destination guarded by its
+  state and `queueSeq`, then the old queue entry is removed (best effort) and a new delayed
+  entry is added. An old entry that survives finds the destination not yet due and does
+  nothing, and a destination a worker has already claimed is left alone. There is no
+  second scheduler: Redis delayed entries plus the recovery sweep are the only timers.
+- **Time zones.** The API takes one exact instant (ISO 8601 with offset). The web app picks
+  a date and time in an IANA time zone (the workspace's by default, from Settings) and
+  converts it with the platform's `Intl` data, refusing times that do not exist because the
+  clocks change (`features/publishing/schedule.js`).
+- **Composer Publish.** The composer saves the post as a team draft first, then creates the
+  job with the selected accounts (`socialAccountIds`) and, if chosen, `scheduledAt`, with an
+  idempotency key per distinct request. It shows the job's live per-account states
+  afterwards. Publishing therefore needs team drafts on (`VITE_COMPOSER_SERVER_DRAFTS`);
+  whether the server accepts or only simulates posts comes from `/publishing/status`.
+
+## Analytics (Phase 7)
+
+`modules/analytics/` reads publishing figures straight from `PublishJob` /
+`PublishDestination` (always split by publishing mode) and insights from `AccountInsight` /
+`PostInsight` for one source per request. Every read is limited to the member's accessible
+accounts, and a job that touches an account the member may not use is left out, the same rule
+as `contentAccess.js`. Date ranges are calendar days in the workspace time zone
+(`analytics.time.js`).
+
+Insights sync has its own BullMQ queue (`socialhub-analytics`), built with the publishing
+queue's connection code, so a slow sync never delays publishing. The pattern matches the
+publishing engine: MongoDB holds the run (`AnalyticsSyncRun`), Redis holds only its id, a
+worker claims it with a lock token, retries are delayed queue entries, and a recovery sweep
+re-queues lost or interrupted runs. Adapters: `simulated` (demo values, development only) and
+`meta` (Graph API insights, not reachable from any `ANALYTICS_MODE` value yet).
 
 ## Request pipeline (API)
 

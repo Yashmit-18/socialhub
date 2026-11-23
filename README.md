@@ -20,13 +20,23 @@ integrates with the official Meta Graph API.
 >   Meta. Real synchronization needs the same live Meta app as Phase 2. Until Meta
 >   credentials are configured, the app shows a "Meta setup required" state and never
 >   invents accounts or sync results.
-> - **Phase 4 (composer): frontend and backend implemented; publishing not built.** The
+> - **Phase 4 (composer): frontend and backend implemented.** The
 >   composer (`/w/:slug/compose`) can save team drafts, upload media and share account
 >   presets through the API. Those three features are switched on per deployment (see
 >   [Composer backend](#composer-backend)), and media upload needs storage to be configured.
 >   The S3 storage driver has not been run against a real bucket yet.
-> - **Publishing and scheduling are not implemented.** The Publish button stays disabled and
->   nothing is ever sent to Facebook or Instagram.
+> - **Phase 5 (publishing engine): implemented and verified in simulation.** Posts can be
+>   published now or scheduled, from the composer or the Publishing screen
+>   (`/w/:slug/publishing`). The queue was verified on a real Redis (Memurai, 2026-11-23).
+> - **Phase 8 (real Facebook and Instagram publishing): implemented, off by default, not yet
+>   run against real accounts.** It needs two deliberate switches: `PUBLISHING_MODE=live` on
+>   the server and an owner or admin switching the workspace on with their password. Until
+>   then every post is simulated. See [Real publishing](#real-publishing).
+> - **Analytics (Phase 7): implemented; Meta insights not enabled.** The Analytics screen
+>   (`/w/:slug/analytics`) reports SocialHub's own publishing records, with simulated and live
+>   publishing always kept apart. Reading insights from Meta has no switch yet and has only
+>   met a simulated Meta; a development-only demo mode makes insights that are labelled as
+>   demo data everywhere. See [Analytics](#analytics).
 
 - [Architecture and data model](docs/ARCHITECTURE.md)
 - **[Phase 2 real-world verification runbook](docs/PHASE2_VERIFICATION.md)**: what to do with your Meta app and test accounts, and how results are verified
@@ -34,6 +44,7 @@ integrates with the official Meta Graph API.
 - [Social account management](#social-account-management)
 - [Composer backend](#composer-backend): drafts, media storage and account presets
 - [Composer API contract](docs/COMPOSER_API_CONTRACT.md)
+- [Analytics](docs/ANALYTICS.md): formulas, API, insights sync, what Meta insights still need
 - **[Meta setup guide](META_SETUP_GUIDE.md)**: step-by-step Meta Developer Dashboard setup,
   with notes on which facts were checked against Meta's docs
 - [Project history](#project-history)
@@ -43,15 +54,15 @@ integrates with the official Meta Graph API.
 
 ## Tech stack
 
-| Layer   | Technology                                                                                                |
-| ------- | --------------------------------------------------------------------------------------------------------- |
-| Web     | React 19, Vite 8, Tailwind CSS 4, React Router 8, TanStack Query 5, React Hook Form + Zod                 |
-| API     | Node.js ≥ 20.19, Express 5, Mongoose 9 (MongoDB), Zod 4, pino                                             |
-| Auth    | bcrypt passwords, short-lived JWT in memory, rotating httpOnly refresh cookie                             |
-| Meta    | Facebook Login (Graph API, default v27.0) and Instagram API with Instagram Login; official endpoints only |
-| Shared  | `@socialhub/shared`: RBAC matrix, domain enums and validation schemas used by both apps                   |
-| Tests   | Vitest 5, Supertest, mongodb-memory-server (replica set), Testing Library                                 |
-| Planned | Redis + BullMQ publishing engine (Phase 4)                                                                |
+| Layer  | Technology                                                                                                |
+| ------ | --------------------------------------------------------------------------------------------------------- |
+| Web    | React 19, Vite 8, Tailwind CSS 4, React Router 8, TanStack Query 5, React Hook Form + Zod                 |
+| API    | Node.js ≥ 20.19, Express 5, Mongoose 9 (MongoDB), Zod 4, pino                                             |
+| Auth   | bcrypt passwords, short-lived JWT in memory, rotating httpOnly refresh cookie                             |
+| Meta   | Facebook Login (Graph API, default v27.0) and Instagram API with Instagram Login; official endpoints only |
+| Shared | `@socialhub/shared`: RBAC matrix, domain enums and validation schemas used by both apps                   |
+| Tests  | Vitest 5, Supertest, mongodb-memory-server (replica set), Testing Library                                 |
+| Queue  | BullMQ 6 on Redis (ioredis) for the publishing engine. Redis is required to publish; there is no fallback |
 
 ## Repository layout
 
@@ -86,6 +97,9 @@ integrates with the official Meta Graph API.
 
   A standalone MongoDB also works. SocialHub detects it, logs a warning, and falls back to
   non-transactional writes with compensation. Use a replica set in production.
+
+- **Redis 6.2+**, only for publishing. Everything else works without it. See
+  [Publishing engine](#publishing-engine).
 
 ### 2. Install
 
@@ -127,22 +141,26 @@ Open <http://localhost:5173>, create an account and create your first workspace.
 
 ## Scripts (run from the repository root)
 
-| Command                                                         | What it does                                                                                                           |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                                                   | Starts the API (watch mode) and web dev server together                                                                |
-| `npm run dev:api` / `npm run dev:web`                           | Starts one side only                                                                                                   |
-| `npm test`                                                      | Runs all test suites (shared, API, web)                                                                                |
-| `npm run lint`                                                  | ESLint across the monorepo; fails on any warning                                                                       |
-| `npm run build`                                                 | Production build of the web app to `apps/web/dist`                                                                     |
-| `npm run verify`                                                | `lint` + `test` + `build`: the pre-merge gate                                                                          |
-| `npm start`                                                     | Starts the API in production mode                                                                                      |
-| `npm run secrets`                                               | Generates fresh secrets for `.env`                                                                                     |
-| `npm run format` / `format:check`                               | Prettier                                                                                                               |
-| `npm run db:indexes -w @socialhub/api`                          | Builds or reconciles MongoDB indexes; run this on deploy                                                               |
-| `npm run meta:sync -w @socialhub/api`                           | Re-validates every Meta connection and records each run in its sync history; schedule it daily (e.g. cron)             |
-| `npm run meta:verify -w @socialhub/api -- --live --log api.log` | Read-only, evidence-based check of the Phase 2 real-world checklist (never prints tokens)                              |
-| `npm run media:cleanup -w @socialhub/api`                       | Removes abandoned uploads and stored files no draft uses; schedule it (e.g. hourly)                                    |
-| `npm run storage:verify -w @socialhub/api`                      | Checks the configured S3 bucket with real requests: upload, copy, public delivery, link reuse, CORS, listing, deletion |
+| Command                                                         | What it does                                                                                                                                                                                                            |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                                                   | Starts the API (watch mode) and web dev server together                                                                                                                                                                 |
+| `npm run dev:api` / `npm run dev:web`                           | Starts one side only                                                                                                                                                                                                    |
+| `npm test`                                                      | Runs all test suites (shared, API, web)                                                                                                                                                                                 |
+| `npm run lint`                                                  | ESLint across the monorepo; fails on any warning                                                                                                                                                                        |
+| `npm run build`                                                 | Production build of the web app to `apps/web/dist`                                                                                                                                                                      |
+| `npm run verify`                                                | `lint` + `test` + `build`: the pre-merge gate                                                                                                                                                                           |
+| `npm start`                                                     | Starts the API in production mode                                                                                                                                                                                       |
+| `npm run secrets`                                               | Generates fresh secrets for `.env`                                                                                                                                                                                      |
+| `npm run format` / `format:check`                               | Prettier                                                                                                                                                                                                                |
+| `npm run db:indexes -w @socialhub/api`                          | Builds or reconciles MongoDB indexes; run this on deploy                                                                                                                                                                |
+| `npm run meta:sync -w @socialhub/api`                           | Re-validates every Meta connection and records each run in its sync history; schedule it daily (e.g. cron)                                                                                                              |
+| `npm run meta:verify -w @socialhub/api -- --live --log api.log` | Read-only, evidence-based check of the Phase 2 real-world checklist (never prints tokens)                                                                                                                               |
+| `npm run media:cleanup -w @socialhub/api`                       | Removes abandoned uploads and stored files no draft uses; schedule it (e.g. hourly)                                                                                                                                     |
+| `npm run storage:verify -w @socialhub/api`                      | Checks the configured S3 bucket with real requests: upload, copy, public delivery, link reuse, CORS, listing, deletion                                                                                                  |
+| `npm run storage:verify-local -w @socialhub/api`                | Checks `STORAGE_DRIVER=local` against the real configured folder: uploads an image and a video through the real API, looks at the files on disk, restarts the API, deletes, cleans up. Uses a temporary private MongoDB |
+| `npm run queue:verify -w @socialhub/api`                        | Checks the publishing queue against the real Redis in `REDIS_URL` (connection, delivery, delay, removal, no duplicates)                                                                                                 |
+| `npm run worker -w @socialhub/api`                              | Runs the publish worker as its own process (only with `PUBLISHING_WORKER_INLINE=false`)                                                                                                                                 |
+| `npm run analytics:verify -w @socialhub/api`                    | Checks insights sync against the real Redis in `REDIS_URL` with real API and worker processes (Redis database 14, temporary MongoDB, demo insights only: nothing is read from Meta)                                     |
 
 ---
 
@@ -276,7 +294,179 @@ The full walkthrough, including troubleshooting and App Review, is in
 - **Business Verification**;
 - switching the app to **Live** mode.
 
-### Testing against a real Meta app locally
+### Publishing engine
+
+One prepared post is sent to many Facebook Pages and Instagram accounts. Each account is
+tracked on its own, so one failing never hides that the others worked. The full description
+and the API are in [docs/PUBLISHING_API.md](docs/PUBLISHING_API.md).
+
+> **Simulation is the default.** In simulated mode the whole process runs (queue, worker,
+> retries, history) but **nothing is sent to Facebook or Instagram**, and every such post is
+> labelled "Simulated". Real publishing exists (Phase 8) but stays off until both switches
+> below are on; it has not yet been run against real accounts.
+
+### What it does
+
+- **Publishing screen** (`/w/:slug/publishing`): scheduled (soonest first), queue,
+  processing, published, partly published, failed and cancelled posts; the state of every
+  account; details with attempts and plain error messages; retry a failed account; cancel
+  what is still waiting; change the time of a scheduled post; "Publish a draft" for saved
+  team drafts, now or at a chosen time.
+- **Publish from the composer:** the Publish button saves the post as a team draft, then
+  sends it to the selected accounts now or at a scheduled time, and shows each account's
+  status as it changes. It lists what must be fixed first (Meta's rules per platform, files
+  still uploading), says plainly when it is a simulation, and never calls a simulated post
+  published.
+- **Scheduling with time zones:** pick a date and time in the workspace time zone (or any
+  other); the same moment is shown in your own time when it differs. Past times, times less
+  than 2 minutes ahead, times more than 90 days ahead and times skipped by a clock change are
+  refused before anything is sent.
+- **Draft privacy:** owners and admins see every draft and post. Editors and viewers with
+  selected accounts only see drafts and posts whose every account they may use; everything
+  else does not exist for them (enforced by the API, see
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md), "Draft visibility").
+- **One record per account**, with its own state, attempts, error and history.
+- **Retries** with growing waits for temporary problems (30 s, 60 s, 120 s, …, up to 4
+  attempts by default). Problems that will not fix themselves fail at once.
+- **No duplicates**: the same request sent twice creates one job; the same post cannot be on
+  its way to an account twice; a worker must claim an account before publishing to it.
+- **No blind repeats**: if it is unknown whether a post went out, it is not retried
+  automatically. A person decides.
+- **Access rules**: viewers cannot publish; members can only publish to accounts assigned to
+  them; workspaces never see each other's jobs.
+- **Tokens** are read only by the worker at the moment of publishing. They are never in the
+  queue, in job records, in logs or in API answers.
+
+### Turning it on (simulation)
+
+1. Install Redis (below) and set in `apps/api/.env`:
+
+   ```ini
+   REDIS_URL=redis://127.0.0.1:6379
+   PUBLISHING_MODE=simulated
+   ```
+
+2. Check the queue: `npm run queue:verify -w @socialhub/api`, then the whole path:
+   `npm run publishing:verify -w @socialhub/api`.
+3. Start the app. The API runs the publish worker itself.
+4. Publishing works from saved team drafts (composer Publish and "Publish a draft"): set
+   `VITE_COMPOSER_SERVER_DRAFTS=true` in `apps/web/.env` (and `VITE_COMPOSER_MEDIA_UPLOAD=true`
+   to send photos and videos).
+
+Without Redis the app still runs. The Publishing screen then says the queue is not
+available, and creating a job answers `503 QUEUE_UNAVAILABLE`. Nothing is queued in memory
+instead.
+
+### Real publishing
+
+Off by default, and it takes two deliberate steps:
+
+1. The server operator sets `PUBLISHING_MODE=live` in `apps/api/.env` and restarts the API.
+   On its own this publishes nothing: every workspace stays in simulation.
+2. A workspace owner or admin opens **Settings › Publishing mode**, chooses **Switch on real
+   publishing**, ticks the acknowledgement and enters their password. It is recorded in the
+   activity log. **Switch back to simulation** is always available and needs no password.
+
+Posts keep the mode they were created in. Real posts still waiting when real publishing is
+switched off are refused, never quietly simulated.
+
+Before anything is sent, SocialHub checks the account (connected, Page role, permissions,
+token), the text and every file against Meta's documented limits (for example Instagram
+images must be JPEG, at most 8 MB, aspect ratio 4:5 to 1.91:1; reels 3 s to 15 min), that Meta
+can download the files over public HTTPS, and Instagram's 24-hour publishing limit. A post is
+shown as published only when Meta returned its id; a Facebook video only once Facebook says it
+finished processing. Calls, error handling and what is still unverified:
+[PUBLISHING_API.md, section 7](docs/PUBLISHING_API.md#7-real-publishing).
+
+> **Meta approval:** while the Meta app is in Development mode, only people with a role on the
+> app can publish through it. Publishing for other accounts needs App Review for the
+> publishing permissions, Business Verification and the app in Live mode.
+
+### Installing Redis
+
+- **With Docker:** `docker compose up -d redis`.
+- **Windows without Docker** (pick one):
+  - **Memurai Developer** (recommended here; a Redis-compatible Windows service, Redis API
+    7.0, by Janea Systems). Its Developer edition is licensed for development and testing:
+    read the licence before installing. In an **administrator** PowerShell:
+
+    ```powershell
+    winget install --id Memurai.MemuraiDeveloper --exact --source winget
+    Get-Service Memurai*          # should say Running
+    Test-NetConnection 127.0.0.1 -Port 6379   # TcpTestSucceeded : True
+    ```
+
+    Or download the installer from <https://www.memurai.com/get-memurai>. Keep the default
+    port 6379; it runs as a Windows service and starts with Windows. Then set
+    `REDIS_URL=redis://127.0.0.1:6379` in `apps/api/.env` (`.env.example` has the line, empty).
+
+    If the installer fails with error 1603 and its log
+    (`%LOCALAPPDATA%\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir\Memurai*.log`)
+    shows `SFXCA: Failed to create temp directory. Error code 5`, it was not run with
+    administrator rights: run it again from an **Administrator** PowerShell. That happened on
+    this machine on 2026-11-21; the first 2026-11-23 verification used Memurai unpacked from
+    the same installer and run as an ordinary process instead, then removed. Later on
+    2026-11-23 Memurai was installed from an administrator PowerShell and now runs as the
+    `Memurai` Windows service (automatic start, `127.0.0.1:6379`).
+
+  - **WSL:** in an administrator PowerShell run `wsl --install`, restart, then in Ubuntu:
+    `sudo apt update && sudo apt install -y redis-server && sudo service redis-server start`.
+    Windows reaches it at `127.0.0.1:6379`.
+- Check it answers: `npm run queue:verify -w @socialhub/api` must end with "All checks passed".
+
+BullMQ needs Redis 5 or newer and recommends 6.2 or newer.
+
+### What is verified
+
+| Part                                                                                                                               | Status                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Engine logic: jobs, per-account states, retries, backoff, cancellation, idempotency, duplicates, permissions, workspace separation | Automated tests, real MongoDB, simulated adapter, test-only queue                                                                                                                                                                                                                                                            |
+| Facebook and Instagram adapters                                                                                                    | Tests against a **simulated** Meta only. Never run against the real Graph API                                                                                                                                                                                                                                                |
+| Queue code against a real Redis                                                                                                    | **Verified 2026-11-23** on Memurai 4.1.2 (Redis API 7.2.5): `queue:verify` 22/22, `publishing:verify` 47/47 (real API and worker processes, simulated Meta), Redis server restart 9/9, worker across a restart 9/9. Details in [docs/PUBLISHING_API.md](docs/PUBLISHING_API.md#verification-against-a-real-redis-2026-11-23) |
+| Draft and job visibility per role                                                                                                  | API tests through real requests (`draftPrivacy.test.js`): owner, admin, editor, viewer, mixed accounts, direct requests, workspaces                                                                                                                                                                                          |
+| Scheduling (change time, soonest-first list) and composer Publish                                                                  | API tests with the test-only queue; web tests with a mocked API; screens viewed in headless Chrome with mocked data                                                                                                                                                                                                          |
+| API without Redis, and with Redis down                                                                                             | Run for real: clear 503 and status messages, nothing queued                                                                                                                                                                                                                                                                  |
+| Publishing screen                                                                                                                  | Component tests; viewed in headless Chrome with mocked data, and on 2026-11-23 against the real API and queue (all tabs, "Change time", composer Publish, Redis unreachable) at 360, 768, 1024 and 1440 px, light and dark                                                                                                   |
+| Real publishing                                                                                                                    | Disabled. Needs Meta credentials, publishing permissions and public HTTPS media storage                                                                                                                                                                                                                                      |
+
+## Analytics
+
+The **Analytics** screen (`/w/:slug/analytics`, every role) shows two kinds of numbers that
+are never mixed. Details, formulas and the API: [docs/ANALYTICS.md](docs/ANALYTICS.md).
+
+- **Publishing figures** from SocialHub's own records: posts, deliveries per state, success
+  rate, average publishing time, retries, results per day and per account. Simulated and live
+  publishing are always shown separately and never added together.
+- **Insights** (reach, views, engagement, followers and more) from one source at a time:
+  Meta, or demo data. A metric that was not reported shows **Unavailable**, never 0, and each
+  total says how many accounts reported it.
+- Filters: date range (today, 7, 30 or 90 days, or custom, in the workspace time zone),
+  platform, account and insights source. CSV exports of accounts, posts and publishing history.
+  Members restricted to some accounts only see those accounts and the posts that use only them.
+
+### Turning on insights sync
+
+- `ANALYTICS_MODE=disabled` (default): publishing figures work; "Sync insights" explains why it
+  is unavailable and the API answers `503`.
+- `ANALYTICS_MODE=simulated` (development only; refused in production): a sync makes **demo
+  insights**, stored with source `SIMULATED` and labelled as demo data on every screen and
+  export. It needs Redis, like publishing.
+- There is no setting that reads insights from Meta. That first needs new Meta permissions and
+  App Review: see [Meta insights](docs/ANALYTICS.md#6-meta-insights-not-enabled).
+- The analytics worker runs inside the API by default; with `ANALYTICS_WORKER_INLINE=false` it
+  runs in `npm run worker -w @socialhub/api` instead.
+
+### What is verified (analytics)
+
+| Part                                                                                    | Status                                                                                                                               |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Figures, formulas, filters, time zones, paging, access per role and account, workspaces | Automated tests: shared 14, API 27 (real requests, in-memory MongoDB)                                                                |
+| Sync logic: duplicates, retries and backoff, partial results, recovery, no secrets      | API tests with a test-only queue (22)                                                                                                |
+| Sync on a real Redis                                                                    | **Verified 2026-11-23** on Memurai 4.1.2: `analytics:verify` 34/34 (real API and worker processes, simulated Meta)                   |
+| Analytics screen                                                                        | 18 component tests; viewed in headless Chrome against the real API with seeded records at 360, 768, 1024 and 1440 px, light and dark |
+| Meta insights adapter                                                                   | Tests against a **fake** Meta transport only. **Never run against Meta**; switched off                                               |
+
+## Testing against a real Meta app locally
 
 Meta requires HTTPS redirect URIs. The browser-binding cookie also requires the web app
 and the callback to be on the **same origin**. The simplest setup is one HTTPS tunnel
@@ -447,11 +637,56 @@ The composer uses the API only where a flag is set at build time in `apps/web/.e
 Configured in `apps/api/.env` (see `apps/api/.env.example`). No storage secret reaches the
 browser.
 
-| `STORAGE_DRIVER` | Use              | Notes                                                                                          |
-| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------- |
-| _(empty)_        | Uploads disabled | Upload requests answer `503 STORAGE_NOT_CONFIGURED`                                            |
-| `local`          | Development      | Files in `apps/api/storage-data`, served by the API. Instagram cannot fetch them from a laptop |
-| `s3`             | Production       | Any S3-compatible bucket (AWS S3, Cloudflare R2, MinIO)                                        |
+| `STORAGE_DRIVER` | Use              | Notes                                                                                                         |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| _(empty)_        | Uploads disabled | Upload requests answer `503 STORAGE_NOT_CONFIGURED`                                                           |
+| `local`          | Development      | Files in `STORAGE_LOCAL_DIR`, served by the API. Meta cannot fetch them, so they cannot be published for real |
+| `s3`             | Production       | Any S3-compatible bucket (AWS S3, Cloudflare R2, MinIO)                                                       |
+
+**Local storage (`STORAGE_DRIVER=local`).** This is what the project uses now.
+
+```ini
+STORAGE_DRIVER=local
+STORAGE_LOCAL_DIR="F:/Social Hub Data"
+```
+
+- `STORAGE_LOCAL_DIR` is an absolute folder, or a path relative to `apps/api` (default
+  `./storage-data`, which Git ignores). Quote paths with spaces and use forward slashes.
+  Keep it outside the repository.
+- The folder is created when the API starts. If it cannot be created or written to, the API
+  refuses to start and says so.
+- Two folders are used inside it:
+  - `uploads\<workspace>\<file id>\…` for files that have just arrived and are not verified;
+  - `workspaces\<workspace>\media\<file id>\…` for verified files.
+- File names on disk are generated by the server. The name a person uploads is only stored
+  in MongoDB and is never used as a path. Keys that try to leave the folder are refused.
+- **MongoDB keeps the records** (users, workspaces, drafts, media details, presets,
+  publishing jobs, activity). **Only the image and video bytes are on the drive.**
+- Uploading, verification, the copy from `uploads` to `workspaces`, one-time upload links,
+  deletion, clean-up and workspace separation work exactly as with S3.
+- **Meant for development.** Files on this computer are not reachable from the internet, so
+  Facebook and Instagram cannot fetch them. Real publishing refuses posts whose media is
+  stored locally.
+- Back the folder up yourself. Nothing else holds a copy of the files.
+
+Check it at any time, against the real folder:
+
+```bash
+npm run storage:verify-local -w @socialhub/api
+```
+
+**Moving existing files to a new folder.** No files existed in the old location
+(`apps/api/storage-data`) when the folder was changed on 2026-11-21, so nothing had to be
+moved. If you change the folder later:
+
+1. Stop the API.
+2. Copy the whole old folder (both `uploads` and `workspaces`) to the new place, keeping the
+   structure: `robocopy "<old>" "<new>" /E /COPY:DAT /R:2 /W:2`. This copies; it does not
+   delete.
+3. Set `STORAGE_LOCAL_DIR` to the new folder and start the API.
+4. Open a draft with media and check the pictures load. MongoDB needs no change: it stores
+   the path below the folder, not the folder itself.
+5. Only then remove the old folder, by hand.
 
 For `s3`:
 
@@ -517,14 +752,15 @@ npm test
   controlled records and make no Meta calls at all. Web tests mock SocialHub's own API with
   `fetch` and never involve Meta. **No test calls the real Meta API.**
 
-| Suite  | Tests | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| shared | 44    | RBAC matrix and hierarchy rules; validation schemas; composer limits and request schemas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| api    | 513   | Phase 1: auth, sessions, refresh rotation, password flows, workspaces, roles, members, invitations, activity, config, security headers (CSP), CORS, redaction. Phase 2: OAuth state and callback validation, browser binding, cancellation, permission re-check, reauthorization and identity mismatch, Instagram Login, multiple connections, multi-Page pagination, selection, duplicates, encryption and no token leakage, permissions, workspace isolation, expired and revoked tokens, declined permissions, lost Page roles, Instagram refresh, sync, disconnect, remove, deauthorize and data-deletion callbacks, Graph error classification. Phase 3 (simulated Meta and controlled data): multiple logins and Pages per login, independent records, duplicate prevention, listing filters, sorting, pagination, facets and summaries, cross-workspace listing, workspace isolation, role-based visibility, Instagram management, sync outcomes and history, sync lock and races with disconnect, reconnect and removal, transient-failure retry, missing Meta configuration, disconnection and removal, CREATE_CONTENT eligibility, least-privilege team access, invitation grants, hierarchy and optimistic concurrency, health rules. Follower totals (simulated Meta). Phase 4: draft CRUD, version conflicts and simultaneous saves, autosave runs, paging, workspace isolation, roles and account restrictions, media upload slots, file validation, real file-type and dimension checks, storage outages, abandoned-upload clean-up, upload links that cannot overwrite a verified file, account presets and duplicate names, activity entries, S3 request signing (Amazon's documented example) and the S3 driver against a simulated provider |
-| web    | 1,033 | API client, route guards, login, onboarding, permission-gated UI; Phase 2: connect and redirect, reconnect, account selection with duplicates locked, reconnect-required state, OAuth result messages, malformed result URLs; Phase 3: dashboard figures and scopes, needs-attention fixes, filters sent to the API, logins with sync, reconnect, disconnect and remove, login and account detail pages, Pages and Instagram tables with bulk refresh, access and removal, sync results, setup-required state, team access editing (PATCH and PUT), invitation account grants, role-based visibility; follower totals; Phase 4 composer (881 of these): editors, media, account selection and presets, previews, readiness checks, browser drafts, team drafts with autosave and conflicts, uploads, session expiry, request bodies checked against the shared schemas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Suite  | Tests | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shared | 77    | RBAC matrix and hierarchy rules; validation schemas; composer limits and request schemas; publishing states, transitions, job status rules and request schemas; schedule list order, page links and new-time requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| api    | 661   | Phase 1: auth, sessions, refresh rotation, password flows, workspaces, roles, members, invitations, activity, config, security headers (CSP), CORS, redaction. Phase 2: OAuth state and callback validation, browser binding, cancellation, permission re-check, reauthorization and identity mismatch, Instagram Login, multiple connections, multi-Page pagination, selection, duplicates, encryption and no token leakage, permissions, workspace isolation, expired and revoked tokens, declined permissions, lost Page roles, Instagram refresh, sync, disconnect, remove, deauthorize and data-deletion callbacks, Graph error classification. Phase 3 (simulated Meta and controlled data): multiple logins and Pages per login, independent records, duplicate prevention, listing filters, sorting, pagination, facets and summaries, cross-workspace listing, workspace isolation, role-based visibility, Instagram management, sync outcomes and history, sync lock and races with disconnect, reconnect and removal, transient-failure retry, missing Meta configuration, disconnection and removal, CREATE_CONTENT eligibility, least-privilege team access, invitation grants, hierarchy and optimistic concurrency, health rules. Follower totals (simulated Meta). Phase 4: draft CRUD, version conflicts and simultaneous saves, autosave runs, paging, workspace isolation, roles and account restrictions, media upload slots, file validation, real file-type and dimension checks, storage outages, abandoned-upload clean-up, upload links that cannot overwrite a verified file, account presets and duplicate names, activity entries, S3 request signing (Amazon's documented example) and the S3 driver against a simulated provider. Local storage folder: creation, paths with spaces, keys that cannot leave it. Phase 5 publishing: job creation, queue unavailable and not configured, worker runs, several accounts, partial failure, retries and backoff, idempotency and simultaneous requests, duplicate prevention, cancellation, interrupted workers, roles, account access, workspace isolation, no token leakage, media protection, simulated adapter, Facebook and Instagram adapters against a simulated Meta, real publishing disabled, local media refused for real publishing. Draft privacy (owner, admin, editor, viewer, selected and all accounts, mixed drafts, hidden drafts in lists, pages and counts, direct requests, files of hidden drafts, workspace isolation, publishing and job visibility); scheduling (change time, old queue entries, claimed accounts, limits, soonest-first list) |
+| web    | 1,133 | API client, route guards, login, onboarding, permission-gated UI; Phase 2: connect and redirect, reconnect, account selection with duplicates locked, reconnect-required state, OAuth result messages, malformed result URLs; Phase 3: dashboard figures and scopes, needs-attention fixes, filters sent to the API, logins with sync, reconnect, disconnect and remove, login and account detail pages, Pages and Instagram tables with bulk refresh, access and removal, sync results, setup-required state, team access editing (PATCH and PUT), invitation account grants, role-based visibility; follower totals; Phase 4 composer (881 of these): editors, media, account selection and presets, previews, readiness checks, browser drafts, team drafts with autosave and conflicts, uploads, session expiry, request bodies checked against the shared schemas; Phase 5 Publishing screen (32): lists, tabs, simulation labelling, queue and mode banners, per-account states, retry with duplicate warning, cancel, read-only viewers, publishing a draft once per click; public landing page; scheduling (time zones and clock changes, Scheduled tab, change time, scheduling a draft); composer Publish (simulation wording, draft saved first, accounts and time sent, blocking problems, server refusals, same key on retry, unavailable states)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-Counts are from the final Phase 1–4 audit on 2026-11-21. Tests of the S3 storage driver use
-a simulated provider: **no test talks to a real bucket.**
+Counts are from 2026-11-21, after draft privacy, scheduling and composer Publish. Tests of the S3 storage driver use a simulated
+provider: **no test talks to a real bucket.** Publishing tests use a test-only queue and a
+simulated Meta: **no test talks to Redis or to the real Graph API.**
 
 ## Production
 
@@ -558,6 +794,11 @@ All routes are prefixed with `/api/v1`.
 
 - Bodies are JSON and are validated strictly; unknown fields are rejected with `422`.
 - Errors use the shape `{ error: { code, message, requestId, details? } }`.
+- Publishing endpoints (`/workspaces/:id/publishing/status`, `/workspaces/:id/publish-jobs…`)
+  are documented in [docs/PUBLISHING_API.md](docs/PUBLISHING_API.md).
+- Analytics endpoints (`/workspaces/:id/analytics/…`: overview, trends, accounts, posts,
+  top-posts, publishing-performance, sync-status, export, sync) are documented in
+  [docs/ANALYTICS.md](docs/ANALYTICS.md#4-api).
 
 **Auth and users**
 
@@ -631,35 +872,41 @@ All routes are prefixed with `/api/v1`.
 | POST   | `/meta/:provider/data-deletion`                      | Meta (form `signed_request`); returns `{ url, confirmation_code }`                                                                                                                                   |
 | GET    | `/meta/data-deletion/:code`                          | public status of a deletion request                                                                                                                                                                  |
 | GET    | `/workspaces/:id/activity?cursor&limit`              | `activity:read`                                                                                                                                                                                      |
-| GET    | `/health`                                            | public; `503` if the database is down                                                                                                                                                                |
+| GET    | `/health`                                            | public; only `{ status, database }`; `503` if the database is down                                                                                                                                   |
+| GET    | `/health/details`                                    | monitoring only: `Authorization: Bearer <HEALTH_DETAILS_TOKEN>`; version, queues, workers, modes. Without the token configured, or with a wrong one, `404`                                           |
 
 **Composer (Phase 4)**
 
-| Method                | Path                                                   | Permission / notes                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET                   | `/workspaces/:id/content-packages?status&cursor&limit` | `content:read`; drafts, newest first                                                                                                                                  |
-| POST                  | `/workspaces/:id/content-packages`                     | `content:create`; creates a draft (version 1)                                                                                                                         |
-| GET                   | `/workspaces/:id/content-packages/:packageId`          | `content:read`                                                                                                                                                        |
-| PATCH                 | `/workspaces/:id/content-packages/:packageId`          | `content:create`; full save with `version`; `409` when stale                                                                                                          |
-| DELETE                | `/workspaces/:id/content-packages/:packageId`          | `content:create`                                                                                                                                                      |
-| POST                  | `/workspaces/:id/media/uploads`                        | `content:create`; body `{ fileName, mimeType, sizeBytes, kind }`; returns the upload link                                                                             |
-| POST                  | `/workspaces/:id/media/:mediaId/complete`              | `content:create`; verifies the stored file; `409 UPLOAD_INCOMPLETE` if it has not arrived                                                                             |
-| GET                   | `/workspaces/:id/media/:mediaId`                       | `content:read`                                                                                                                                                        |
-| DELETE                | `/workspaces/:id/media/:mediaId`                       | `content:create`; uploader or admin; `409` while a draft uses it                                                                                                      |
-| GET                   | `/workspaces/:id/account-presets`                      | `content:read`                                                                                                                                                        |
-| POST                  | `/workspaces/:id/account-presets`                      | `content:create`; body `{ name, socialAccountIds }`; `409` for a duplicate name                                                                                       |
-| DELETE                | `/workspaces/:id/account-presets/:presetId`            | `content:create`; creator or admin                                                                                                                                    |
-| PUT / GET             | `/storage/uploads/:token`, `/storage/objects/*`        | Only with `STORAGE_DRIVER=local`: upload target and file serving                                                                                                      |
-| GET                   | `/workspaces/:id/group-categories`                     | `content:read`; categories of the group directory with group counts                                                                                                   |
-| POST / PATCH / DELETE | `/workspaces/:id/group-categories[/:categoryId]`       | `groups:manage`; `409` for a duplicate name; deleting leaves its groups without a category                                                                            |
-| GET                   | `/workspaces/:id/facebook-groups`                      | `content:read`; query `q`, `category` (id or `none`), `tag`, `status` (`ACTIVE`, `ARCHIVED`, `ALL`), `sort`, `page`, `limit`; facets for categories, tags and status  |
-| POST                  | `/workspaces/:id/facebook-groups`                      | `groups:manage`; body `{ name, url, categoryId?, tags?, memberCount?, notes?, minDaysBetweenShares? }`; `409` when the group is already listed                        |
-| GET / PATCH / DELETE  | `/workspaces/:id/facebook-groups/:groupId`             | read: `content:read` (with sharing history); change: `groups:manage`; `PATCH {status: "ARCHIVED"}` archives; `DELETE` is `409` once something was shared there        |
-| GET / POST            | `/workspaces/:id/group-shares`                         | read: `content:read` (with progress); create: `groups:manage`, body `{ title, message, link?, groupIds, assigneeId?, dueAt? }`, returns `{ share, created, skipped }` |
-| GET / PATCH / DELETE  | `/workspaces/:id/group-shares/:shareId`                | read: `content:read` (with every task); change: `groups:manage`; `DELETE` is `409` once posted somewhere                                                              |
-| POST                  | `/workspaces/:id/group-shares/:shareId/groups`         | `groups:manage`; adds groups; duplicates and groups whose rules do not allow a share yet are reported in `skipped`                                                    |
-| GET                   | `/workspaces/:id/sharing-tasks`                        | `content:read`; query `status` (`OPEN`, `DONE`, `SKIPPED`, `ALL`), `assignee` (`me`, `unassigned`, `available`, `any`), `shareId`, `groupId`; status `counts`         |
-| PATCH                 | `/workspaces/:id/sharing-tasks/:taskId`                | `sharing_tasks:complete`; body `{ status?, postUrl?, note?, assigneeId? }`; `409` if the task changed meanwhile                                                       |
+| Method | Path                                                   | Permission / notes                                           |
+| ------ | ------------------------------------------------------ | ------------------------------------------------------------ |
+| GET    | `/workspaces/:id/content-packages?status&cursor&limit` | `content:read`; drafts, newest first                         |
+| POST   | `/workspaces/:id/content-packages`                     | `content:create`; creates a draft (version 1)                |
+| GET    | `/workspaces/:id/content-packages/:packageId`          | `content:read`                                               |
+| PATCH  | `/workspaces/:id/content-packages/:packageId`          | `content:create`; full save with `version`; `409` when stale |
+| DELETE | `/workspaces/:id/content-packages/:packageId`          | `content:create`                                             |
+
+Drafts are returned only to members who may use every account they target (owners and
+admins always); others get `404`. Publishing endpoints (`/publish-jobs…`, including
+`PATCH /publish-jobs/:jobId/schedule`) are listed in
+[docs/PUBLISHING_API.md](docs/PUBLISHING_API.md).
+| POST | `/workspaces/:id/media/uploads` | `content:create`; body `{ fileName, mimeType, sizeBytes, kind }`; returns the upload link |
+| POST | `/workspaces/:id/media/:mediaId/complete` | `content:create`; verifies the stored file; `409 UPLOAD_INCOMPLETE` if it has not arrived |
+| GET | `/workspaces/:id/media/:mediaId` | `content:read` |
+| DELETE | `/workspaces/:id/media/:mediaId` | `content:create`; uploader or admin; `409` while a draft uses it |
+| GET | `/workspaces/:id/account-presets` | `content:read` |
+| POST | `/workspaces/:id/account-presets` | `content:create`; body `{ name, socialAccountIds }`; `409` for a duplicate name |
+| DELETE | `/workspaces/:id/account-presets/:presetId` | `content:create`; creator or admin |
+| PUT / GET | `/storage/uploads/:token`, `/storage/objects/*` | Only with `STORAGE_DRIVER=local`: upload target and file serving |
+| GET | `/workspaces/:id/group-categories` | `content:read`; categories of the group directory with group counts |
+| POST / PATCH / DELETE | `/workspaces/:id/group-categories[/:categoryId]` | `groups:manage`; `409` for a duplicate name; deleting leaves its groups without a category |
+| GET | `/workspaces/:id/facebook-groups` | `content:read`; query `q`, `category` (id or `none`), `tag`, `status` (`ACTIVE`, `ARCHIVED`, `ALL`), `sort`, `page`, `limit`; facets for categories, tags and status |
+| POST | `/workspaces/:id/facebook-groups` | `groups:manage`; body `{ name, url, categoryId?, tags?, memberCount?, notes?, minDaysBetweenShares? }`; `409` when the group is already listed |
+| GET / PATCH / DELETE | `/workspaces/:id/facebook-groups/:groupId` | read: `content:read` (with sharing history); change: `groups:manage`; `PATCH {status: "ARCHIVED"}` archives; `DELETE` is `409` once something was shared there |
+| GET / POST | `/workspaces/:id/group-shares` | read: `content:read` (with progress); create: `groups:manage`, body `{ title, message, link?, groupIds, assigneeId?, dueAt? }`, returns `{ share, created, skipped }` |
+| GET / PATCH / DELETE | `/workspaces/:id/group-shares/:shareId` | read: `content:read` (with every task); change: `groups:manage`; `DELETE` is `409` once posted somewhere |
+| POST | `/workspaces/:id/group-shares/:shareId/groups` | `groups:manage`; adds groups; duplicates and groups whose rules do not allow a share yet are reported in `skipped` |
+| GET | `/workspaces/:id/sharing-tasks` | `content:read`; query `status` (`OPEN`, `DONE`, `SKIPPED`, `ALL`), `assignee` (`me`, `unassigned`, `available`, `any`), `shareId`, `groupId`; status `counts` |
+| PATCH | `/workspaces/:id/sharing-tasks/:taskId` | `sharing_tasks:complete`; body `{ status?, postUrl?, note?, assigneeId? }`; `409` if the task changed meanwhile |
 
 Non-members get `404` (not `403`) for workspace routes, so workspace IDs cannot be probed.
 
@@ -671,6 +918,8 @@ Non-members get `404` (not `403`) for workspace routes, so workspace IDs cannot 
 | Create, schedule and publish content _(Phase 4)_        |   ✓   |         ✓         |   ✓    |        |
 | Complete group-sharing tasks _(Phase 6)_                |   ✓   |         ✓         |   ✓    |        |
 | Manage the group directory and group shares _(Phase 6)_ |   ✓   |         ✓         |        |        |
+| View analytics _(Phase 7)_                              |   ✓   |         ✓         |   ✓    |   ✓    |
+| Start an insights sync _(Phase 7)_                      |   ✓   |         ✓         |   ✓    |        |
 | Invite members                                          |   ✓   | ✓ (editor/viewer) |        |        |
 | Change roles, remove members, set account access        |   ✓   | ✓ (editor/viewer) |        |        |
 | Connect, sync, reconnect, disconnect Meta logins        |   ✓   |         ✓         |        |        |
@@ -691,19 +940,140 @@ Hierarchy rules:
 
 ## Project history
 
-| Date       | Phase                                        | Status                                                                                                                             |
-| ---------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-11-19 | 1: Foundation                                | Complete                                                                                                                           |
-| 2026-11-20 | 2: Meta OAuth integration                    | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app                            |
-| 2026-11-20 | 2: Real-world verification preparation       | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                                         |
-| 2026-11-20 | 3: Social account management                 | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified                                |
-| 2026-11-20 | 4 (frontend): Universal Post Composer        | Frontend implemented                                                                                                               |
-| 2026-11-21 | 4 (backend): Composer drafts, media, presets | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                                         |
-| 2026-11-21 | Combined follower totals                     | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                                      |
-| 2026-11-21 | Cross-phase integration audit                | All automated checks pass; no real Meta app or real S3 bucket used                                                                 |
-| 2026-11-21 | Account organisation                         | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls                    |
-| 2026-11-21 | Followers on the Overview; class merging fix | Implemented and tested; follower counts still only read from the simulated Meta                                                    |
-| 2026-11-23 | 6: Facebook Group distribution               | Implemented and tested (directory, categories, tags, shares, manual tasks, duplicate and frequency rules); never contacts Facebook |
+| Date       | Phase                                             | Status                                                                                                                                                    |
+| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-19 | 1: Foundation                                     | Complete                                                                                                                                                  |
+| 2026-11-20 | 2: Meta OAuth integration                         | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app                                                   |
+| 2026-11-20 | 2: Real-world verification preparation            | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                                                                |
+| 2026-11-20 | 3: Social account management                      | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified                                                       |
+| 2026-11-20 | 4 (frontend): Universal Post Composer             | Frontend implemented                                                                                                                                      |
+| 2026-11-21 | 4 (backend): Composer drafts, media, presets      | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                                                                |
+| 2026-11-21 | Combined follower totals                          | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                                                             |
+| 2026-11-21 | Cross-phase integration audit                     | All automated checks pass; no real Meta app or real S3 bucket used                                                                                        |
+| 2026-11-21 | Local media storage on `F:\Social Hub Data`       | Configured and verified with real uploads on the drive (25 live checks)                                                                                   |
+| 2026-11-21 | 5: Publishing engine                              | Implemented and tested in simulation; **not complete**: queue not yet run on a real Redis, real publishing disabled                                       |
+| 2026-11-21 | Public landing page                               | Implemented; checked in headless Chrome at desktop and phone widths; publishing shown as in development                                                   |
+| 2026-11-21 | Account organisation                              | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls                                           |
+| 2026-11-21 | Followers on the Overview; class merging fix      | Implemented and tested; follower counts still only read from the simulated Meta                                                                           |
+| 2026-11-21 | Draft privacy; 5: scheduling and composer Publish | Implemented and tested with mocks and the test-only queue; **Phase 5 not complete**: Redis still not installed                                            |
+| 2026-11-23 | 6: Facebook Group distribution                    | Implemented and tested (directory, categories, tags, shares, manual tasks, duplicate and frequency rules); never contacts Facebook                        |
+| 2026-11-23 | 5: Real Redis verification                        | Verified on Memurai 4.1.2 in simulation (queue 22/22, end to end 47/47, restarts 9/9 and 9/9); 4 problems found and fixed; real publishing still disabled |
+| 2026-11-23 | 7: Analytics & Publishing Intelligence            | Implemented and tested; sync verified on a real Redis with demo data (34/34); **Meta insights not enabled and never run against Meta**                    |
+| 2026-11-23 | Stabilization audit of Phases 5 and 7             | Cross-phase audit; no critical issues; 9 problems fixed with tests; still uncommitted, awaiting approval                                                  |
+| 2026-11-23 | Pre-live security and reliability hardening       | Send-time authorization, job privacy, private queue status, safer recovery and shutdown; tested; still uncommitted, awaiting approval                     |
+| 2026-11-23 | 8: Real Facebook and Instagram publishing         | Behind two switches (server `live`, workspace owner/admin + password); tested with a simulated Meta only; **not yet run on real accounts**                |
+
+### Phase 8: Real Facebook and Instagram publishing (2026-11-23). Implemented, not verified live
+
+Builds on the Phase 5 engine and its unverified adapters.
+
+- **Switches:** `PUBLISHING_MODE=live` makes real publishing available on the server; each
+  workspace stays simulated until an owner or admin switches it on (password and
+  acknowledgement, `PUT /workspaces/:id/publishing/mode`, Settings › Publishing mode,
+  activity entry `publishing.mode_changed`). A job's mode is fixed at creation; a live job is
+  refused at send time if either switch was turned off, and cannot then be retried or
+  rescheduled.
+- **Checks before sending** (at creation and again in the worker): Meta's documented file
+  rules per platform (`mediaIssues`), Instagram's 20-@mention limit, public HTTPS media
+  (local storage counts when `API_PUBLIC_URL` is a public HTTPS address), Meta app
+  configured, expired Instagram Login tokens, and Instagram's 24-hour publishing limit.
+- **Confirmation:** nothing is reported as published without Meta's id. Facebook videos are
+  confirmed through their processing status; the video id is saved so a later attempt checks
+  the same video instead of uploading again.
+- **Duplicates and errors:** server errors on the publishing call (without Meta's
+  `is_transient`) and Meta's "unknown error" now count as "may have been published" and are
+  not retried automatically; rate limits honour Meta's `estimated_time_to_regain_access`;
+  Instagram's publishing-limit error waits an hour; Instagram `config_issue` becomes a
+  warning on the published post.
+- **Tests:** new `publishing.mode.test.js` and 19 new adapter tests against the simulated
+  Meta; shared rule tests; Settings card tests. No test calls the real Graph API.
+- **Still open:** a first real post of each kind with the owner's approval; whether Meta
+  accepts `alt_text` on Instagram images and reports Facebook video `status` as expected;
+  Meta App Review for publishing permissions. See
+  [PUBLISHING_API.md, section 7](docs/PUBLISHING_API.md#7-real-publishing).
+
+### Pre-live security and reliability hardening (2026-11-23)
+
+Follow-up to the stabilization audit, before anything goes live. Real Meta publishing stays
+disabled; everything below runs with the simulated adapter.
+
+- **Authorization at send time:** just before a post is sent, SocialHub checks again that the
+  member it relies on (the job's creator, or whoever last retried or rescheduled it) is still
+  in the workspace, may still publish and may still use the account. If not, nothing is sent,
+  the destination fails as `AUTHOR_NOT_AUTHORIZED` (never retried automatically) and the
+  activity log says why. An admin can retry it, and the send then relies on the admin.
+- **Job privacy:** a job made from a draft hidden from a member is hidden too, even when it
+  was sent only to accounts the member may use (it shows the draft's caption). Lists,
+  details, the summary, cancel, retry, reschedule and Analytics all answer as for an unknown
+  id. The draft's accounts are recorded on the job when it is made.
+- **Status privacy:** `/health` is public but only says whether the API and database are up;
+  `/publishing/status` no longer shows members the server's queue counts, worker numbers or
+  storage driver. Operators get those from `/health/details` with `HEALTH_DETAILS_TOKEN`.
+- **Recovery:** the moment a post is handed to the platform is recorded, so a worker that
+  stopped before it is safely queued again, while one that stopped after it stays
+  "interrupted" for a person. Jobs whose status update failed are repaired by the sweep.
+  Shutdown lets a post being published finish (up to 90 s, was 10 s).
+- **Performance and polish:** sync status reads one index entry per account instead of the
+  whole history; the posts CSV is one query; the composer refuses more than 100 accounts
+  before saving and warns when hashtags would go in the (unsent) first comment; scheduled
+  posts refresh once a minute until they are nearly due (was every 4 s); CSV file names work
+  across origins; one shared job-visibility rule and one "Simulated" badge.
+- Details: [docs/PUBLISHING_API.md](docs/PUBLISHING_API.md) sections 2, 3 and 5.
+
+### Stabilization audit of Phases 5 and 7 (2026-11-23)
+
+A cross-phase audit (security and isolation, web/API contracts, data integrity) of the
+uncommitted publishing and analytics work, before committing it. No critical issue was found.
+Fixed, each with a regression test:
+
+- **Publishing:** when the platform has accepted a post but saving the result fails, the
+  destination is never retried automatically: it is marked interrupted for a person to check.
+  A failed job-status update can no longer leave a destination stuck. (Latent today: real
+  publishing is disabled.)
+- **Draft privacy:** a hidden draft's file could be reached by attaching its id to one's own
+  draft, and deleting it answered 403 instead of 404 (revealing that it exists).
+- **Captions:** the server repeated hashtags already written in the caption and counted only
+  the hashtag list toward Instagram's 30; it now builds and checks a caption exactly as the
+  composer previews it.
+- **"Publish a draft"** failed with 422 when one of the draft's accounts had been removed;
+  removed accounts are now left out, as the draft view does.
+- **Analytics:** CSV exports began with the text "FEFF" instead of a byte order mark;
+  negative numbers were exported as text; removing an account (including through Meta's
+  data-deletion callback) left its insights and sync history behind; the incremental sync's
+  lookup had no index; demo-mode wording; post dates now use the workspace time zone.
+- **README:** Phase 5 status, known limitations and roadmap brought up to date.
+
+Tests after the fixes: shared 99, API 732, web 1158; lint, formatting, the production build
+and the 50-check smoke test pass. The Phase 5 commit was also checked on its own, without the
+analytics changes, in a separate copy of the tree.
+
+### Phase 7: Analytics & Publishing Intelligence (2026-11-23). Implemented; Meta insights not enabled
+
+Briefed as "Phase 6"; recorded as Phase 7 because Phase 6 is the group-sharing workflow.
+
+- **Screen:** `/w/:slug/analytics` ("Analytics" in the sidebar): publishing performance per
+  mode (posts, deliveries, success rate, average time, retries, results per day), audience and
+  engagement tiles with a per-day chart and table view, an accounts comparison, top posts with
+  official links only, filters, CSV exports and "Sync insights". Responsive at 360 to 1440 px,
+  light and dark.
+- **API:** nine endpoints under `/workspaces/:id/analytics` (`analytics:read` for every role,
+  `analytics:sync` for editors and above), each limited to the accounts the member may use.
+  Indexed aggregations over three new collections (`AccountInsight`, `PostInsight`,
+  `AnalyticsSyncRun`) and two new `PublishDestination` indexes.
+- **Never fabricated:** unreported metrics are null ("Unavailable"), not 0; demo insights are
+  stored as `SIMULATED` and never shown as Meta data; simulated and live publishing are never
+  summed; simulated posts have no link.
+- **Sync:** its own BullMQ queue (`socialhub-analytics`) carrying only run ids; one active run
+  per account; retries with backoff; partial results kept; recovery of lost entries and
+  interrupted runs. Verified on Memurai: `npm run analytics:verify -w @socialhub/api` 34/34.
+- **Meta insights:** an adapter following Meta's documentation as of 2026-11-23 exists but has
+  no switch, has only met a fake Meta, and needs `read_insights` / `instagram_manage_insights`
+  (or the Instagram Login equivalent), which SocialHub does not request yet.
+- **Found and fixed during browser checks:** a red "Failed 0" tile, "1 deliveries", and the
+  accounts table adding simulated and live publishing together (now one line per mode).
+- **Tests added:** shared +14, API +47 (`analytics.test.js` 25, `analytics.sync.test.js` 22),
+  web +16 (`AnalyticsPage.test.jsx`). Suites now: shared 97, API 725, web 1156.
+- Details: [docs/ANALYTICS.md](docs/ANALYTICS.md).
 
 ### Phase 6: Facebook Group distribution (2026-11-23). Implemented
 
@@ -749,6 +1119,8 @@ and SocialHub keeps the plan and the record. Nothing in this phase contacts Face
   dropped) and the custom `shadow-card`, `shadow-pop`, `animate-fade-in` and
   `animate-scale-in` tokens; `text-muted` merges as a text colour. Every class used in
   `apps/web/src` was checked for being misread as a colour.
+- **Landing page:** the sample "Combined followers" card shows the same Facebook /
+  Instagram split instead of a growth chart (the app does not store follower history).
 - **Tests added:** web `utils.test.js` (8), `OverviewPage.test.jsx` (4) and 4 more in
   `FollowersCard.test.jsx`.
 
@@ -779,6 +1151,110 @@ nothing here calls Meta, so it does not depend on the pending Meta verification.
   (`accountLabels.test.js`), web +19 (`AccountOrganization.test.jsx` 13, composer 6). Existing tests that
   pin the exact list response and row menus were updated for the new fields and actions.
 
+### Public landing page (2026-11-21)
+
+- **Routes:** `/` shows the landing page to signed-out visitors (signed-in users still go to
+  their last workspace or onboarding); `/welcome` shows it to everyone.
+- **What it covers:** features, how it works, a tour of every app page, the composer, roles,
+  security, how the Meta connection works, an honest roadmap and an FAQ. The copy lives in
+  `apps/web/src/pages/landing/landingContent.js` and mirrors this README,
+  `docs/ARCHITECTURE.md`, `META_SETUP_GUIDE.md` and the RBAC matrix. Update it when a feature
+  ships, especially the roadmap statuses.
+- **Honesty:** publishing and scheduling are shown as "In development"; product
+  illustrations use labelled sample data; there are no customer logos, testimonials or usage
+  figures.
+- **Design:** always dark (independent of the app's theme toggle); CSS and SVG motion only
+  (the CSP allows same-origin scripts only), switched off by `prefers-reduced-motion`; a
+  lazy-loaded chunk of about 20 kB gzipped.
+- **Verified:** 5 landing tests, the full web suite, lint, the production build, and
+  screenshots in headless Chrome at 1440 px and 360 px. Not checked on real phones or in
+  browsers other than Chrome.
+
+### Phase 5: real Redis verification (2026-11-23). Verified in simulation
+
+- **Redis:** Memurai Developer 4.1.2 (Redis API 7.2.5). Its Windows installer had failed on
+  2026-11-21 (error 1603, not run as administrator), so with the user's agreement it was
+  unpacked from the same installer (checksum matching winget's) and run as an ordinary
+  process on `127.0.0.1:6379`, then stopped and removed after the checks. It is not installed
+  on this machine now; `REDIS_URL` stays set in `apps/api/.env`, so the app reports the queue
+  as unreachable until Redis is installed for good.
+- **Real Redis, real BullMQ, real API and worker processes, MongoDB:** `queue:verify` 22/22;
+  `publishing:verify` 47/47 (several accounts, partial failure, retries with backoff,
+  duplicates, cancellation, uncertain outcome, clean stop, worker restart, killed worker,
+  Redis data loss, connections cut, no tokens anywhere, no post ids); a Redis **server**
+  restart while the API ran 9/9; a worker across a server restart 9/9. Meta was simulated
+  throughout: nothing was sent to Facebook or Instagram.
+- **Screens against the real API:** Publishing screen (every tab, worker stopped, Redis
+  unreachable), "Change time" saved through the real API (new delayed entry in Redis), and
+  the composer's Publish creating a real queued job, at 360, 768, 1024 and 1440 px, light
+  and dark. A scheduled row's time now has its own line (its separators wrapped badly).
+- **Found and fixed:** the queue could stay broken after starting before Redis was ready
+  (`skipWaitingForReady`); the reconnection checks disconnected every client of the server;
+  the token check flagged SocialHub's own sign-in token; the check's test accounts lacked
+  permissions. Details in [docs/PUBLISHING_API.md](docs/PUBLISHING_API.md).
+- **Phase 5 status:** complete for simulated publishing through a real Redis. Real Meta
+  publishing remains disabled by design; it needs a verified Meta app with publishing
+  permissions and public HTTPS media storage.
+
+### Draft privacy and Phase 5 completion work (2026-11-21). Implemented; Phase 5 not complete
+
+- **Draft privacy:** drafts and publishing jobs are now hidden from editors and viewers who
+  cannot use every account on them (before, they saw the caption with the other accounts
+  left out). Owners and admins see everything. Lists filter in the database query; reading,
+  editing, deleting and publishing a hidden draft answer `404` like an unknown id. Drafts
+  with no accounts follow the content permissions. Closes the open decision from the
+  integration audit.
+- **Scheduling:** a Scheduled tab (soonest first), "Change time" on scheduled posts
+  (`PATCH /publish-jobs/:id/schedule`, safe against a worker that has just started), date,
+  time and time-zone fields in the composer and in "Publish a draft", past and too-distant
+  times refused. A scheduled post with one account cancelled now stays "Scheduled".
+- **Composer Publish:** saves the draft, then creates the job for the selected accounts, now
+  or scheduled; shows simulation warnings, blocking problems and the job's live status
+  afterwards. Needs team drafts on. The unused `submitPost` stub (an endpoint that never
+  existed) was removed.
+- **Wording:** "isn't available yet" texts now say that _real_ publishing is not available;
+  the landing page still says publishing is in development.
+- **Redis:** still not installed (no service, nothing on port 6379, no Docker or WSL).
+  `queue:verify` and `publishing:verify` stop with "REDIS_URL is not set". Memurai Developer
+  4.1.2 is available through winget; installing it is the user's decision (see "Installing
+  Redis").
+- **Not done, so Phase 5 is not complete:** no run against a real Redis server, so no job
+  has gone through the real BullMQ queue and worker; real publishing stays disabled.
+
+### Phase 5: publishing engine (2026-11-21). Implemented in simulation; not complete
+
+- **Built:** publish jobs with one record per account, BullMQ queue on Redis, worker,
+  retries with exponential backoff, cancellation, idempotency keys, duplicate prevention,
+  recovery after an interrupted worker, queue and worker health, activity entries, the
+  Publishing screen, and adapters for Facebook Pages, Instagram and simulation.
+- **Tests:** shared 68, API 593, web 1,070. Lint, formatting and the production build
+  pass.
+- **Run for real:** the API with no Redis and with Redis down (clear 503 and status, nothing
+  queued); local media storage on the F: drive.
+- **Not done, so the phase is not complete:**
+  - The queue has not run against a real Redis server. None is installed here (no Docker,
+    no WSL). `npm run queue:verify -w @socialhub/api` checks it once Redis is installed.
+  - Because of that, no job has gone through the real queue end to end, and the Publishing
+    screen has not been used against a live queue.
+  - Real publishing is disabled. The Facebook and Instagram adapters have only met a
+    simulated Meta.
+- **Decisions to know about:**
+  - Publishing starts from the Publishing screen, from saved team drafts. The composer's
+    Publish button stays disabled.
+  - First comments are not posted (the permissions are not requested); the account's result
+    carries a note instead.
+  - Scheduling is accepted by the API but has no screen yet.
+
+### Local media storage on the F: drive (2026-11-21). Verified
+
+- `STORAGE_DRIVER=local`, `STORAGE_LOCAL_DIR="F:/Social Hub Data"`, outside the repository.
+- No files existed in the old location, so nothing was moved or deleted.
+- `npm run storage:verify-local` ran the real API against the real folder: image and video
+  upload, files present on disk with identical content, verification, copy from `uploads`
+  to `workspaces`, retrieval, API restart, deletion, clean-up, workspace separation and
+  rejected paths. 25 of 25 checks passed. The test files are tiny generated JPEG and MP4
+  files; the check removes them afterwards.
+
 ### Cross-phase integration audit (2026-11-21)
 
 An audit of the combined work of the parallel sessions (Phases 1–4 and the follower totals),
@@ -808,7 +1284,8 @@ on the uncommitted working tree.
     storage driver warns in production, the storage test seam refuses to run outside
     tests, and "not configured" errors log as warnings.
   - Open decision: drafts are readable by every role with `content:read`. Only the account
-    IDs a reader cannot use are hidden.
+    IDs a reader cannot use are hidden. **Decided and implemented later the same day:**
+    such drafts are now hidden entirely (see "Draft privacy and Phase 5 completion work").
 - **Composer test timeouts (investigated):** two `ComposerPage` tests take about 3 s alone,
   because typing re-renders the whole composer on each keystroke. With every test file
   running in parallel they went past the 5 s default. They now have a 20 s budget.
@@ -1042,18 +1519,29 @@ The repository started empty. Phase 1 delivered:
 
 ## Roadmap
 
-| Phase                          | Status                                       | Scope                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1: Foundation**              | Complete                                     | Auth, workspaces, RBAC, invitations, activity, dashboard.                                                                                                                                                                                                                                                               |
-| **2: Meta integration**        | Implemented; awaiting live Meta testing      | Official Facebook Login and Instagram Login; multiple identities; Page and Instagram discovery and selection; token health, reauthorization, disconnection; Meta callbacks.                                                                                                                                             |
-| **3: Account management**      | Implemented; real-Meta sync not yet verified | Dashboard, logins, Facebook Pages and Instagram views; detail pages; synchronization with history; least-privilege team access.                                                                                                                                                                                         |
-| **4: Composer and publishing** | Composer implemented; publishing not started | Universal composer (media upload, multi-destination select, caption, hashtags, SEO keywords, first comment, alt text, per-destination overrides, preview, schedule). BullMQ engine with one `PublishingJob` per destination: idempotent, exponential backoff, permanent-error classification, accurate partial success. |
-| **6: Group distribution**      | Implemented                                  | Manual Facebook Group sharing workflow: directory, categories, relevance tags, sharing tasks and links, completion tracking, duplicate prevention. No automation or scraping.                                                                                                                                           |
+| Phase                     | Status                                                           | Scope                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1: Foundation**         | Complete                                                         | Auth, workspaces, RBAC, invitations, activity, dashboard.                                                                                                                                                                                                                                                                             |
+| **2: Meta integration**   | Implemented; awaiting live Meta testing                          | Official Facebook Login and Instagram Login; multiple identities; Page and Instagram discovery and selection; token health, reauthorization, disconnection; Meta callbacks.                                                                                                                                                           |
+| **3: Account management** | Implemented; real-Meta sync not yet verified                     | Dashboard, logins, Facebook Pages and Instagram views; detail pages; synchronization with history; least-privilege team access.                                                                                                                                                                                                       |
+| **4: Composer**           | Implemented                                                      | Universal composer (media upload, multi-destination select, caption, hashtags, SEO keywords, first comment, alt text, per-destination overrides, preview), team drafts, media storage, account presets.                                                                                                                               |
+| **5: Publishing engine**  | Implemented and verified in simulation; real publishing disabled | BullMQ engine with one record per destination: idempotent, exponential backoff, permanent-error classification, accurate partial success, Publishing screen, scheduling, composer Publish, draft privacy; queue verified on a real Redis. Open: real publishing (needs Meta credentials, permissions and public HTTPS media storage). |
+| **6: Group distribution** | Implemented                                                      | Manual Facebook Group sharing workflow: directory, categories, relevance tags, sharing tasks and links, completion tracking, duplicate prevention. No automation or scraping.                                                                                                                                                         |
+| **7: Analytics**          | Implemented; Meta insights not enabled                           | Publishing performance per mode, insights per source with coverage, accounts comparison, top posts, CSV exports, insights sync queue. Open: Meta insights permissions, App Review and a verified live adapter.                                                                                                                        |
 
 ## Known limitations
 
-- **No publishing or scheduling.** The composer saves drafts, media and presets; nothing is
-  sent to Facebook or Instagram.
+- **Nothing is sent to Facebook or Instagram.** Real publishing is disabled; the publishing
+  engine only runs in simulation. See [Publishing engine](#publishing-engine).
+- **Redis has only been run locally.** The publishing and analytics queues were verified on
+  Memurai 4.1.2 on this development machine (2026-11-23); no hosted or production Redis has
+  been set up.
+- **Insights are never read from Meta yet.** Analytics shows SocialHub's publishing records
+  and, in development, labelled demo insights. Reading Meta insights needs new permissions and
+  App Review; see [docs/ANALYTICS.md](docs/ANALYTICS.md#6-meta-insights-not-enabled).
+- **Media is stored on the local drive** (`F:\Social Hub Data`). Meta cannot fetch it, so real
+  publishing will need public HTTPS storage first. The folder is not backed up by SocialHub.
+- First comments are not posted.
 - **The S3 overwrite fix is not verified on a real bucket.** Uploads now go to a separate
   key and are copied to a final key before verification, so an upload link can no longer
   change a verified file. This is proven against a simulated provider only. Run
@@ -1061,14 +1549,12 @@ The repository started empty. Phase 1 delivered:
 - **Media URLs are public to anyone who has the link.** Meta must be able to fetch media, so
   objects are readable without signing in. Keys are long random strings; keep bucket listing
   disabled.
-- **Drafts are readable by every role that can read content,** including viewers and members
-  restricted to other accounts. Only the account list is filtered per reader.
 - The per-account Followers column is hidden below about 1,360 px; the totals always show.
 - **S3 media storage has not been run against a real bucket.** Only the local-disk driver
   has been exercised for real.
 - **No video thumbnails or transcoding.** Videos have no preview image in draft lists, MOV is
   not converted for Facebook, and non-JPEG images are not converted for Instagram.
-- Media clean-up is a script to schedule yourself until the BullMQ worker exists.
+- Media clean-up is a script to schedule yourself (the publish worker does not run it).
 
 - **Phase 2 has not been run against a real Meta Developer App.** The Meta behaviour in
   tests is simulated from the official documentation. See the live verification checklist
