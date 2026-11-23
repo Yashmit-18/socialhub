@@ -8,8 +8,8 @@ This document describes the data model and service boundaries.
 - Phase 3 adds social account management: searchable destination and login views with
   computed health, synchronization with recorded history, least-privilege team access and
   detail pages.
-- Composer and publishing (Phase 4) and group distribution (Phase 5) are designed here but
-  not built.
+- Phase 4 adds the composer backend, Phase 5 the publishing engine and Phase 6 the manual
+  Facebook Group distribution workflow (see "Group distribution (Phase 6)" below).
 
 ## Guiding rules
 
@@ -189,13 +189,29 @@ sequenceDiagram
 
 ### Planned (not implemented yet)
 
-| Model                                           | Phase | Shape (summary)                                                                                                                                                                                                                                         |
-| ----------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Post`                                          | 4     | `workspace`, `contentPackage`, `scheduledAt`, per-destination caption overrides, aggregate status derived from jobs                                                                                                                                     |
-| `PublishingJob`                                 | 4     | `post`, `socialAccount`, status (`PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED`, `CANCELLED`, `RETRYING`), `attempts`, `externalPostId`, `lastError {code, message, permanent}`, `publishedAt`. Unique (`post`,`socialAccount`) is the idempotency key. |
-| `FacebookGroup`, `GroupCategory`, `SharingTask` | 5     | Manual group-sharing directory with relevance tags, share links, completion tracking. Duplicate prevention is a unique (`group`,`post`) index. No automation or scraping.                                                                               |
+| Model           | Phase | Shape (summary)                                                                                                                                                                                                                                         |
+| --------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Post`          | 4     | `workspace`, `contentPackage`, `scheduledAt`, per-destination caption overrides, aggregate status derived from jobs                                                                                                                                     |
+| `PublishingJob` | 4     | `post`, `socialAccount`, status (`PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED`, `CANCELLED`, `RETRYING`), `attempts`, `externalPostId`, `lastError {code, message, permanent}`, `publishedAt`. Unique (`post`,`socialAccount`) is the idempotency key. |
 
 The status enums already live in `packages/shared/src/enums.js`.
+
+### Group distribution (Phase 6, implemented 2026-11-23)
+
+People post in Facebook Groups by hand; SocialHub keeps the directory, the plan and the record
+and never calls Facebook (Meta removed the Groups API in Graph API v19.0). Details:
+[GROUP_SHARING.md](GROUP_SHARING.md).
+
+| Model           | Shape (summary)                                                                                                                                                             | Indexes                                                                                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GroupCategory` | Directory category of a workspace                                                                                                                                           | unique `{workspace, nameKey}`                                                                                                                     |
+| `FacebookGroup` | Name, canonical link and `urlKey`, category, tags, approximate members, rules/notes, `minDaysBetweenShares`, ACTIVE/ARCHIVED, `lastSharedAt` (kept in step with done tasks) | unique `{workspace, urlKey}`; `{workspace, status, name}`, `{workspace, category}`, `{workspace, tags}`                                           |
+| `GroupShare`    | Title, text and optional link to post                                                                                                                                       | `{workspace, _id:-1}`                                                                                                                             |
+| `SharingTask`   | One share in one group: OPEN/DONE/SKIPPED, assignee, due date, who finished it and when, post link, note                                                                    | unique `{share, group}` (duplicate prevention); `{workspace, status, _id:-1}`, `{workspace, assignee, status}`, `{group, status, completedAt:-1}` |
+
+A group's `minDaysBetweenShares` keeps new tasks away until it allows another share. Task
+updates are conditional on the task's `status` and `updatedAt`, so two people finishing the
+same task get one success and one `409`.
 
 ## Meta integration (Phase 2)
 

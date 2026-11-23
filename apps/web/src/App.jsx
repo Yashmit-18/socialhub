@@ -29,6 +29,12 @@ const AccountDetailPage = lazy(() => import('./pages/workspace/accounts/AccountD
 const AccessPage = lazy(() => import('./pages/workspace/accounts/AccessPage.jsx'));
 // Universal Post Composer (Phase 4 frontend; publishing is not implemented).
 const ComposerPage = lazy(() => import('./features/composer/ComposerPage.jsx'));
+// Facebook Group distribution (Phase 6): manual sharing tasks, shares and the group directory.
+const GroupsLayout = lazy(() => import('./features/groups/GroupsLayout.jsx'));
+const GroupTasksPage = lazy(() => import('./features/groups/TasksPage.jsx'));
+const GroupSharesPage = lazy(() => import('./features/groups/SharesPage.jsx'));
+const GroupShareDetailPage = lazy(() => import('./features/groups/ShareDetailPage.jsx'));
+const GroupDirectoryPage = lazy(() => import('./features/groups/DirectoryPage.jsx'));
 const MetaOAuthResultPage = lazy(() => import('./pages/MetaOAuthResultPage.jsx'));
 const TeamPage = lazy(() => import('./pages/workspace/TeamPage.jsx'));
 const ActivityPage = lazy(() => import('./pages/workspace/ActivityPage.jsx'));
@@ -90,6 +96,16 @@ export const routes = [
             children: [
               { index: true, element: <OverviewPage /> },
               { path: 'compose', element: <ComposerPage /> },
+              {
+                path: 'groups',
+                element: <GroupsLayout />,
+                children: [
+                  { index: true, element: <GroupTasksPage /> },
+                  { path: 'shares', element: <GroupSharesPage /> },
+                  { path: 'shares/:shareId', element: <GroupShareDetailPage /> },
+                  { path: 'directory', element: <GroupDirectoryPage /> },
+                ],
+              },
               {
                 path: 'accounts',
                 element: <AccountsLayout />,

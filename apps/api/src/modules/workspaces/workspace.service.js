@@ -22,12 +22,16 @@ import {
   AccountLabel,
   AccountPreset,
   AccountStar,
+  FacebookGroup,
+  GroupCategory,
+  GroupShare,
   ActivityLog,
   ContentPackage,
   Invitation,
   MediaAsset,
   Membership,
   OAuthState,
+  SharingTask,
   SocialAccount,
   SocialConnection,
   SyncRun,
@@ -243,6 +247,10 @@ const WORKSPACE_SCOPED_MODELS = [
   MediaAsset,
   AccountLabel,
   AccountStar,
+  FacebookGroup,
+  GroupCategory,
+  GroupShare,
+  SharingTask,
 ];
 
 export async function deleteWorkspace(workspace, actor, { confirmation, password }) {

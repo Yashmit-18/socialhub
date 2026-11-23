@@ -104,6 +104,15 @@ export const ACTIVITY_ACTIONS = Object.freeze({
   ACCOUNT_LABEL_DELETED: 'account_label.deleted',
   SOCIAL_ACCOUNT_LABELS_UPDATED: 'social_account.labels_updated',
   SOCIAL_ACCOUNT_NOTES_UPDATED: 'social_account.notes_updated',
+  /** Facebook Group distribution (Phase 6): directory, shares and manual sharing tasks. */
+  FACEBOOK_GROUP_ADDED: 'facebook_group.added',
+  FACEBOOK_GROUP_UPDATED: 'facebook_group.updated',
+  FACEBOOK_GROUP_REMOVED: 'facebook_group.removed',
+  GROUP_SHARE_CREATED: 'group_share.created',
+  GROUP_SHARE_DELETED: 'group_share.deleted',
+  SHARING_TASK_COMPLETED: 'sharing_task.completed',
+  SHARING_TASK_SKIPPED: 'sharing_task.skipped',
+  SHARING_TASK_REOPENED: 'sharing_task.reopened',
 });
 
 /**

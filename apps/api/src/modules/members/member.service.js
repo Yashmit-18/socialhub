@@ -10,6 +10,7 @@ import { runInTransaction } from '../../db/mongoose.js';
 import { badRequest, conflict, forbidden, notFound, validationError } from '../../lib/errors.js';
 import { Membership } from '../../models/index.js';
 import { recordActivity } from '../activity/activity.service.js';
+import { releaseTasksOf } from '../groups/sharing.service.js';
 import {
   applyAccessChange,
   resolveWorkspaceAccountIds,
@@ -260,6 +261,7 @@ export async function removeMember(workspace, actorMembership, actor, memberId, 
   const target = await loadManageableTarget(workspace, actorMembership, memberId);
   await runInTransaction(async (session) => {
     await Membership.deleteOne({ _id: target._id }, { session });
+    await releaseTasksOf(workspace._id, target.user?._id ?? target.user, session);
     await recordActivity({
       workspace,
       actor,
@@ -278,6 +280,7 @@ export async function leaveWorkspace(workspace, membership, actor, context) {
   }
   await runInTransaction(async (session) => {
     await Membership.deleteOne({ _id: membership._id }, { session });
+    await releaseTasksOf(workspace._id, membership.user?._id ?? membership.user, session);
     await recordActivity({
       workspace,
       actor,

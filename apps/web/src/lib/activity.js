@@ -7,6 +7,7 @@ import {
   Link2,
   LogOut,
   MailPlus,
+  Megaphone,
   MailX,
   RefreshCw,
   Settings,
@@ -206,6 +207,62 @@ export function describeActivity(entry) {
         text: `${parts.join(' and ') || 'changed the labels'} on ${target}`,
       };
     }
+    case ACTIVITY_ACTIONS.FACEBOOK_GROUP_ADDED:
+      return {
+        icon: Megaphone,
+        tone: 'success',
+        actor,
+        text: `added the Facebook Group ${quoted(target)}`,
+      };
+    case ACTIVITY_ACTIONS.FACEBOOK_GROUP_UPDATED:
+      return {
+        icon: Megaphone,
+        tone: 'neutral',
+        actor,
+        text: `updated the Facebook Group ${quoted(target)}`,
+      };
+    case ACTIVITY_ACTIONS.FACEBOOK_GROUP_REMOVED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `removed the Facebook Group ${quoted(target)}`,
+      };
+    case ACTIVITY_ACTIONS.GROUP_SHARE_CREATED:
+      return {
+        icon: Megaphone,
+        tone: 'brand',
+        actor,
+        text: `created the group share ${quoted(target)} for ${m.groups === 1 ? '1 group' : `${m.groups ?? 'some'} groups`}`,
+      };
+    case ACTIVITY_ACTIONS.GROUP_SHARE_DELETED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `deleted the group share ${quoted(target)}`,
+      };
+    case ACTIVITY_ACTIONS.SHARING_TASK_COMPLETED:
+      return {
+        icon: Megaphone,
+        tone: 'success',
+        actor,
+        text: `shared ${m.share ? quoted(m.share) : 'a post'} in ${quoted(m.group ?? target)}`,
+      };
+    case ACTIVITY_ACTIONS.SHARING_TASK_SKIPPED:
+      return {
+        icon: Megaphone,
+        tone: 'neutral',
+        actor,
+        text: `skipped ${quoted(m.group ?? target)} for ${m.share ? quoted(m.share) : 'a share'}`,
+      };
+    case ACTIVITY_ACTIONS.SHARING_TASK_REOPENED:
+      return {
+        icon: RefreshCw,
+        tone: 'neutral',
+        actor,
+        text: `reopened the sharing task for ${quoted(m.group ?? target)}`,
+      };
     case ACTIVITY_ACTIONS.SOCIAL_ACCOUNT_NOTES_UPDATED:
       return {
         icon: StickyNote,

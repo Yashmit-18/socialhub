@@ -635,37 +635,48 @@ All routes are prefixed with `/api/v1`.
 
 **Composer (Phase 4)**
 
-| Method    | Path                                                   | Permission / notes                                                                        |
-| --------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| GET       | `/workspaces/:id/content-packages?status&cursor&limit` | `content:read`; drafts, newest first                                                      |
-| POST      | `/workspaces/:id/content-packages`                     | `content:create`; creates a draft (version 1)                                             |
-| GET       | `/workspaces/:id/content-packages/:packageId`          | `content:read`                                                                            |
-| PATCH     | `/workspaces/:id/content-packages/:packageId`          | `content:create`; full save with `version`; `409` when stale                              |
-| DELETE    | `/workspaces/:id/content-packages/:packageId`          | `content:create`                                                                          |
-| POST      | `/workspaces/:id/media/uploads`                        | `content:create`; body `{ fileName, mimeType, sizeBytes, kind }`; returns the upload link |
-| POST      | `/workspaces/:id/media/:mediaId/complete`              | `content:create`; verifies the stored file; `409 UPLOAD_INCOMPLETE` if it has not arrived |
-| GET       | `/workspaces/:id/media/:mediaId`                       | `content:read`                                                                            |
-| DELETE    | `/workspaces/:id/media/:mediaId`                       | `content:create`; uploader or admin; `409` while a draft uses it                          |
-| GET       | `/workspaces/:id/account-presets`                      | `content:read`                                                                            |
-| POST      | `/workspaces/:id/account-presets`                      | `content:create`; body `{ name, socialAccountIds }`; `409` for a duplicate name           |
-| DELETE    | `/workspaces/:id/account-presets/:presetId`            | `content:create`; creator or admin                                                        |
-| PUT / GET | `/storage/uploads/:token`, `/storage/objects/*`        | Only with `STORAGE_DRIVER=local`: upload target and file serving                          |
+| Method                | Path                                                   | Permission / notes                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET                   | `/workspaces/:id/content-packages?status&cursor&limit` | `content:read`; drafts, newest first                                                                                                                                  |
+| POST                  | `/workspaces/:id/content-packages`                     | `content:create`; creates a draft (version 1)                                                                                                                         |
+| GET                   | `/workspaces/:id/content-packages/:packageId`          | `content:read`                                                                                                                                                        |
+| PATCH                 | `/workspaces/:id/content-packages/:packageId`          | `content:create`; full save with `version`; `409` when stale                                                                                                          |
+| DELETE                | `/workspaces/:id/content-packages/:packageId`          | `content:create`                                                                                                                                                      |
+| POST                  | `/workspaces/:id/media/uploads`                        | `content:create`; body `{ fileName, mimeType, sizeBytes, kind }`; returns the upload link                                                                             |
+| POST                  | `/workspaces/:id/media/:mediaId/complete`              | `content:create`; verifies the stored file; `409 UPLOAD_INCOMPLETE` if it has not arrived                                                                             |
+| GET                   | `/workspaces/:id/media/:mediaId`                       | `content:read`                                                                                                                                                        |
+| DELETE                | `/workspaces/:id/media/:mediaId`                       | `content:create`; uploader or admin; `409` while a draft uses it                                                                                                      |
+| GET                   | `/workspaces/:id/account-presets`                      | `content:read`                                                                                                                                                        |
+| POST                  | `/workspaces/:id/account-presets`                      | `content:create`; body `{ name, socialAccountIds }`; `409` for a duplicate name                                                                                       |
+| DELETE                | `/workspaces/:id/account-presets/:presetId`            | `content:create`; creator or admin                                                                                                                                    |
+| PUT / GET             | `/storage/uploads/:token`, `/storage/objects/*`        | Only with `STORAGE_DRIVER=local`: upload target and file serving                                                                                                      |
+| GET                   | `/workspaces/:id/group-categories`                     | `content:read`; categories of the group directory with group counts                                                                                                   |
+| POST / PATCH / DELETE | `/workspaces/:id/group-categories[/:categoryId]`       | `groups:manage`; `409` for a duplicate name; deleting leaves its groups without a category                                                                            |
+| GET                   | `/workspaces/:id/facebook-groups`                      | `content:read`; query `q`, `category` (id or `none`), `tag`, `status` (`ACTIVE`, `ARCHIVED`, `ALL`), `sort`, `page`, `limit`; facets for categories, tags and status  |
+| POST                  | `/workspaces/:id/facebook-groups`                      | `groups:manage`; body `{ name, url, categoryId?, tags?, memberCount?, notes?, minDaysBetweenShares? }`; `409` when the group is already listed                        |
+| GET / PATCH / DELETE  | `/workspaces/:id/facebook-groups/:groupId`             | read: `content:read` (with sharing history); change: `groups:manage`; `PATCH {status: "ARCHIVED"}` archives; `DELETE` is `409` once something was shared there        |
+| GET / POST            | `/workspaces/:id/group-shares`                         | read: `content:read` (with progress); create: `groups:manage`, body `{ title, message, link?, groupIds, assigneeId?, dueAt? }`, returns `{ share, created, skipped }` |
+| GET / PATCH / DELETE  | `/workspaces/:id/group-shares/:shareId`                | read: `content:read` (with every task); change: `groups:manage`; `DELETE` is `409` once posted somewhere                                                              |
+| POST                  | `/workspaces/:id/group-shares/:shareId/groups`         | `groups:manage`; adds groups; duplicates and groups whose rules do not allow a share yet are reported in `skipped`                                                    |
+| GET                   | `/workspaces/:id/sharing-tasks`                        | `content:read`; query `status` (`OPEN`, `DONE`, `SKIPPED`, `ALL`), `assignee` (`me`, `unassigned`, `available`, `any`), `shareId`, `groupId`; status `counts`         |
+| PATCH                 | `/workspaces/:id/sharing-tasks/:taskId`                | `sharing_tasks:complete`; body `{ status?, postUrl?, note?, assigneeId? }`; `409` if the task changed meanwhile                                                       |
 
 Non-members get `404` (not `403`) for workspace routes, so workspace IDs cannot be probed.
 
 ## Roles and permissions
 
-| Capability                                       | Owner |       Admin       | Editor | Viewer |
-| ------------------------------------------------ | :---: | :---------------: | :----: | :----: |
-| View workspace, members, accounts, content       |   ✓   |         ✓         |   ✓    |   ✓    |
-| Create, schedule and publish content _(Phase 4)_ |   ✓   |         ✓         |   ✓    |        |
-| Complete group-sharing tasks _(Phase 5)_         |   ✓   |         ✓         |   ✓    |        |
-| Invite members                                   |   ✓   | ✓ (editor/viewer) |        |        |
-| Change roles, remove members, set account access |   ✓   | ✓ (editor/viewer) |        |        |
-| Connect, sync, reconnect, disconnect Meta logins |   ✓   |         ✓         |        |        |
-| View activity log                                |   ✓   |         ✓         |        |        |
-| Edit workspace settings                          |   ✓   |         ✓         |        |        |
-| Transfer ownership, delete workspace             |   ✓   |                   |        |        |
+| Capability                                              | Owner |       Admin       | Editor | Viewer |
+| ------------------------------------------------------- | :---: | :---------------: | :----: | :----: |
+| View workspace, members, accounts, content              |   ✓   |         ✓         |   ✓    |   ✓    |
+| Create, schedule and publish content _(Phase 4)_        |   ✓   |         ✓         |   ✓    |        |
+| Complete group-sharing tasks _(Phase 6)_                |   ✓   |         ✓         |   ✓    |        |
+| Manage the group directory and group shares _(Phase 6)_ |   ✓   |         ✓         |        |        |
+| Invite members                                          |   ✓   | ✓ (editor/viewer) |        |        |
+| Change roles, remove members, set account access        |   ✓   | ✓ (editor/viewer) |        |        |
+| Connect, sync, reconnect, disconnect Meta logins        |   ✓   |         ✓         |        |        |
+| View activity log                                       |   ✓   |         ✓         |        |        |
+| Edit workspace settings                                 |   ✓   |         ✓         |        |        |
+| Transfer ownership, delete workspace                    |   ✓   |                   |        |        |
 
 Hierarchy rules:
 
@@ -680,18 +691,47 @@ Hierarchy rules:
 
 ## Project history
 
-| Date       | Phase                                        | Status                                                                                                          |
-| ---------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| 2026-11-19 | 1: Foundation                                | Complete                                                                                                        |
-| 2026-11-20 | 2: Meta OAuth integration                    | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app         |
-| 2026-11-20 | 2: Real-world verification preparation       | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                      |
-| 2026-11-20 | 3: Social account management                 | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified             |
-| 2026-11-20 | 4 (frontend): Universal Post Composer        | Frontend implemented                                                                                            |
-| 2026-11-21 | 4 (backend): Composer drafts, media, presets | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                      |
-| 2026-11-21 | Combined follower totals                     | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                   |
-| 2026-11-21 | Cross-phase integration audit                | All automated checks pass; no real Meta app or real S3 bucket used                                              |
-| 2026-11-21 | Account organisation                         | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls |
-| 2026-11-21 | Followers on the Overview; class merging fix | Implemented and tested; follower counts still only read from the simulated Meta                                 |
+| Date       | Phase                                        | Status                                                                                                                             |
+| ---------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-19 | 1: Foundation                                | Complete                                                                                                                           |
+| 2026-11-20 | 2: Meta OAuth integration                    | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app                            |
+| 2026-11-20 | 2: Real-world verification preparation       | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                                         |
+| 2026-11-20 | 3: Social account management                 | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified                                |
+| 2026-11-20 | 4 (frontend): Universal Post Composer        | Frontend implemented                                                                                                               |
+| 2026-11-21 | 4 (backend): Composer drafts, media, presets | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                                         |
+| 2026-11-21 | Combined follower totals                     | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                                      |
+| 2026-11-21 | Cross-phase integration audit                | All automated checks pass; no real Meta app or real S3 bucket used                                                                 |
+| 2026-11-21 | Account organisation                         | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls                    |
+| 2026-11-21 | Followers on the Overview; class merging fix | Implemented and tested; follower counts still only read from the simulated Meta                                                    |
+| 2026-11-23 | 6: Facebook Group distribution               | Implemented and tested (directory, categories, tags, shares, manual tasks, duplicate and frequency rules); never contacts Facebook |
+
+### Phase 6: Facebook Group distribution (2026-11-23). Implemented
+
+A manual workflow for sharing posts in Facebook Groups. Meta's API no longer lets apps post in
+groups, and SocialHub never automates or scrapes Facebook, so a person posts each share by hand
+and SocialHub keeps the plan and the record. Nothing in this phase contacts Facebook.
+
+- **Group sharing** section (`/w/:slug/groups`, "Group sharing" in the sidebar) with three tabs:
+  - **Sharing tasks:** each person's queue with the text, the link, the group's rules, "Copy
+    text", a link to the group, "Mark as shared" (with an optional link to the post), "Skip"
+    and "Take it"; tabs for shared and skipped tasks.
+  - **Shares:** a post written once for many groups, with progress per share; a share's page
+    lists every group's task, who posts it, the result and the post link.
+  - **Group directory:** groups with categories, relevance tags, approximate member count,
+    rules and notes, and "days between shares"; search, filters, sorting, archive.
+- **Duplicate prevention:** a share reaches each group at most once (unique `(share, group)`
+  index), and a group whose "days between shares" has not passed gets no new task; skipped
+  groups are reported with the reason and the date the next share is allowed.
+- **Roles:** owners and admins (`groups:manage`) keep the directory and create shares; editors
+  (`sharing_tasks:complete`) work on tasks assigned to them or to nobody; viewers can read.
+  Open tasks of a member who leaves go back to "anyone". Deleting a workspace removes all of
+  it. A group or share that was already posted somewhere can only be archived, so the history
+  stays.
+- **Not included:** shares do not read drafts from the composer (their text is entered on the
+  Shares tab), and SocialHub cannot check that a post really appeared in the group.
+- Details: [docs/GROUP_SHARING.md](docs/GROUP_SHARING.md).
+- **Tests added:** API +15 (`groups.test.js`), shared +6 (`groups.test.js`), web +7
+  (`features/groups/groups.test.jsx`).
 
 ### Followers on the Overview and class merging fix (2026-11-21)
 
@@ -1008,7 +1048,7 @@ The repository started empty. Phase 1 delivered:
 | **2: Meta integration**        | Implemented; awaiting live Meta testing      | Official Facebook Login and Instagram Login; multiple identities; Page and Instagram discovery and selection; token health, reauthorization, disconnection; Meta callbacks.                                                                                                                                             |
 | **3: Account management**      | Implemented; real-Meta sync not yet verified | Dashboard, logins, Facebook Pages and Instagram views; detail pages; synchronization with history; least-privilege team access.                                                                                                                                                                                         |
 | **4: Composer and publishing** | Composer implemented; publishing not started | Universal composer (media upload, multi-destination select, caption, hashtags, SEO keywords, first comment, alt text, per-destination overrides, preview, schedule). BullMQ engine with one `PublishingJob` per destination: idempotent, exponential backoff, permanent-error classification, accurate partial success. |
-| **5: Group distribution**      | Not started                                  | Manual Facebook Group sharing workflow: directory, categories, relevance tags, sharing tasks and links, completion tracking, duplicate prevention. No automation or scraping.                                                                                                                                           |
+| **6: Group distribution**      | Implemented                                  | Manual Facebook Group sharing workflow: directory, categories, relevance tags, sharing tasks and links, completion tracking, duplicate prevention. No automation or scraping.                                                                                                                                           |
 
 ## Known limitations
 
