@@ -1,12 +1,17 @@
 import { lazy, Suspense } from 'react';
 import { Link, Outlet, createBrowserRouter } from 'react-router';
 import { GuestOnly, RequireAuth } from './components/auth/RouteGuards.jsx';
-import { RootRedirect, WorkspaceLayout } from './components/layout/WorkspaceLayout.jsx';
+import { WorkspaceLayout } from './components/layout/WorkspaceLayout.jsx';
 import { PageLoader } from './components/ui/Feedback.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
 import RegisterPage from './pages/auth/RegisterPage.jsx';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/auth/PasswordResetPages.jsx';
 import { LegacyConnectionRedirect } from './pages/workspace/accounts/redirects.jsx';
+// `/` shows the public landing page to guests and redirects signed-in users to a workspace.
+import { HomeRoute, LandingPage } from './pages/landing/HomeRoute.jsx';
+// Public legal pages are static HTML (crawler-readable); these short routes forward to them.
+import { LegalRedirect } from './pages/legal/LegalRedirect.jsx';
+import { LEGAL_LINKS } from './pages/legal/legalLinks.js';
 
 // Authenticated areas are code-split so the sign-in page loads fast.
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage.jsx'));
@@ -85,10 +90,16 @@ export const routes = [
       },
       { path: '/reset-password', element: <ResetPasswordPage /> },
       { path: '/invite/:token', element: <AcceptInvitationPage /> },
+      { path: '/', element: <HomeRoute /> },
+      { path: '/welcome', element: <LandingPage /> },
+      // Public for everyone, signed in or not.
+      ...LEGAL_LINKS.map(({ alias, path, title }) => ({
+        path: alias,
+        element: <LegalRedirect to={path} title={title} />,
+      })),
       {
         element: <RequireAuth />,
         children: [
-          { path: '/', element: <RootRedirect /> },
           { path: '/onboarding', element: <OnboardingPage /> },
           { path: '/account', element: <AccountPage /> },
           { path: '/oauth/meta/result', element: <MetaOAuthResultPage /> },

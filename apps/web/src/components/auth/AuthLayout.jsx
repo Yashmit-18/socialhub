@@ -1,5 +1,6 @@
 import { History, ShieldCheck, Users } from 'lucide-react';
 import { Link } from 'react-router';
+import { LEGAL_LINKS } from '../../pages/legal/legalLinks.js';
 import { Logo } from '../ui/Brand.jsx';
 
 const HIGHLIGHTS = [
@@ -73,6 +74,17 @@ export function AuthLayout({ title, subtitle, children, footer }) {
           {subtitle && <p className="mt-2 text-sm text-muted">{subtitle}</p>}
           <div className="mt-8">{children}</div>
           {footer && <div className="mt-8 text-center text-sm text-muted">{footer}</div>}
+          <nav
+            aria-label="Legal"
+            className="mt-10 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted"
+          >
+            {/* Static pages outside the SPA: plain links load them from the server. */}
+            {LEGAL_LINKS.map(({ path, title }) => (
+              <a key={path} href={path} className="hover:text-slate-900 dark:hover:text-white">
+                {title}
+              </a>
+            ))}
+          </nav>
         </div>
       </main>
     </div>
