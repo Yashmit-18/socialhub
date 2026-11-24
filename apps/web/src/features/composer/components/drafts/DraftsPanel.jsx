@@ -6,6 +6,7 @@ import { Button } from '../../../../components/ui/Button.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../../components/ui/Feedback.jsx';
 import { FormError } from '../../../../components/ui/Field.jsx';
 import { Modal } from '../../../../components/ui/Modal.jsx';
+import { resolveApiLink } from '../../../../lib/api.js';
 import { relativeTime, useNow } from '../../hooks/useNow.js';
 import { composerDraftsQueryKey } from '../../hooks/useServerDraft.js';
 import { summarize } from '../../model/text.js';
@@ -21,7 +22,9 @@ function thumbnailOf(item) {
   const first = Array.isArray(item?.media) ? item.media[0] : null;
   const asset = first?.media ?? first;
   const url = asset?.thumbnailUrl ?? (asset?.kind === 'VIDEO' ? null : asset?.url);
-  return typeof url === 'string' && /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : null;
+  return typeof url === 'string' && /^(https?:\/\/|\/(?!\/))/i.test(url)
+    ? resolveApiLink(url)
+    : null;
 }
 
 function uniqueById(items) {

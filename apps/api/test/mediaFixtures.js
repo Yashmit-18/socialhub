@@ -273,9 +273,9 @@ export function requestSlot(token, workspaceId, body) {
   return as(token).post(mediaUrl(workspaceId, '/uploads')).send(body);
 }
 
-/** PUTs bytes to a slot issued by the local-disk driver (strips the public origin). */
+/** PUTs bytes to a slot issued by the local-disk driver (a same-origin path). */
 export function putToSlot(upload, bytes, headers = upload.headers) {
-  const path = new URL(upload.url).pathname;
+  const path = new URL(upload.url, 'http://socialhub.test').pathname;
   let req = api().put(path);
   for (const [name, value] of Object.entries(headers)) req = req.set(name, value);
   return req.send(bytes);

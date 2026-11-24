@@ -134,5 +134,7 @@ export function createS3Storage({
     },
 
     publicUrl: (key) => `${publicBaseUrl.replace(/\/+$/, '')}/${encodeKeyPath(key)}`,
+    // Files are served from the public base URL (STORAGE_PUBLIC_BASE_URL) for the browser too.
+    viewUrl: (key) => `${publicBaseUrl.replace(/\/+$/, '')}/${encodeKeyPath(key)}`,
   };
 }

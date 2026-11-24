@@ -920,3 +920,128 @@ describe('media section wiring (dropzone → useMediaManager → grid → previe
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('useMediaManager — retries without leaving records behind', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_COMPOSER_MEDIA_UPLOAD', 'true');
+  });
+
+  const item = (result) => result.current.state.media[0];
+  const freshSlot = () =>
+    jsonResponse(201, {
+      media: { id: 'm1', status: 'PENDING_UPLOAD' },
+      upload: {
+        url: '/api/v1/storage/uploads/token.sig',
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/jpeg' },
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      },
+    });
+  const DELETE = 'DELETE /workspaces/w1/media/m1';
+
+  it('retries with the same slot while it is valid: one file record, no clean-up needed', async () => {
+    const api = mediaApi({ 'POST /workspaces/w1/media/uploads': freshSlot });
+    const xhrs = installFakeXhr();
+    const { result } = renderManager();
+    await add(result, [jpeg()]);
+    await waitFor(() => expect(xhrs).toHaveLength(1));
+    act(() => xhrs[0].respond(503));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.FAILED));
+
+    act(() => {
+      result.current.manager.retryUpload(item(result).id);
+    });
+    await waitFor(() => expect(xhrs).toHaveLength(2));
+    expect(xhrs[1].url).toBe('/api/v1/storage/uploads/token.sig');
+    act(() => xhrs[1].respond(200));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.UPLOADED));
+    expect(api.count('POST /workspaces/w1/media/uploads')).toBe(1);
+    expect(api.count(DELETE)).toBe(0);
+  });
+
+  it('treats "already uploaded" (409) on a retry as delivered and only confirms the file', async () => {
+    let completes = 0;
+    const api = mediaApi({
+      'POST /workspaces/w1/media/uploads': freshSlot,
+      'POST /workspaces/w1/media/m1/complete': () =>
+        (completes += 1) === 1
+          ? apiError(503, 'SERVICE_UNAVAILABLE', 'Try again')
+          : jsonResponse(200, asset('READY')),
+    });
+    const xhrs = installFakeXhr();
+    const { result } = renderManager();
+    await add(result, [jpeg()]);
+    await waitFor(() => expect(xhrs).toHaveLength(1));
+    act(() => xhrs[0].respond(200));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.FAILED));
+
+    act(() => {
+      result.current.manager.retryUpload(item(result).id);
+    });
+    await waitFor(() => expect(xhrs).toHaveLength(2));
+    act(() => xhrs[1].respond(409));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.UPLOADED));
+    expect(api.count('POST /workspaces/w1/media/uploads')).toBe(1);
+    expect(api.count('POST /workspaces/w1/media/m1/complete')).toBe(2);
+  });
+
+  it('asks for a new slot, and discards the old record, when the storage refused the link', async () => {
+    const api = mediaApi({
+      'POST /workspaces/w1/media/uploads': freshSlot,
+      [DELETE]: () => new Response(null, { status: 204 }),
+    });
+    const xhrs = installFakeXhr();
+    const { result } = renderManager();
+    await add(result, [jpeg()]);
+    await waitFor(() => expect(xhrs).toHaveLength(1));
+    act(() => xhrs[0].respond(403));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.FAILED));
+    await waitFor(() => expect(api.count(DELETE)).toBe(1));
+
+    act(() => {
+      result.current.manager.retryUpload(item(result).id);
+    });
+    await waitFor(() => expect(xhrs).toHaveLength(2));
+    expect(api.count('POST /workspaces/w1/media/uploads')).toBe(2);
+  });
+
+  it('discards the record of an upload that never finished when the item is removed', async () => {
+    const api = mediaApi({
+      'POST /workspaces/w1/media/uploads': freshSlot,
+      [DELETE]: () => new Response(null, { status: 204 }),
+    });
+    const xhrs = installFakeXhr();
+    const { result } = renderManager();
+    await add(result, [jpeg()]);
+    await waitFor(() => expect(xhrs).toHaveLength(1));
+    act(() => result.current.manager.removeMedia(item(result).id));
+    await waitFor(() => expect(api.count(DELETE)).toBe(1));
+  });
+
+  it('keeps an uploaded file on the server when the item is removed (a draft may use it)', async () => {
+    const api = mediaApi({ 'POST /workspaces/w1/media/uploads': freshSlot });
+    const xhrs = installFakeXhr();
+    const { result } = renderManager();
+    await add(result, [jpeg()]);
+    await waitFor(() => expect(xhrs).toHaveLength(1));
+    act(() => xhrs[0].respond(200));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.UPLOADED));
+    act(() => result.current.manager.removeMedia(item(result).id));
+    await act(async () => {});
+    expect(api.count(DELETE)).toBe(0);
+  });
+
+  it('shows the request id with the error, so it can be found in the server log', async () => {
+    mediaApi({ 'POST /workspaces/w1/media/uploads': freshSlot });
+    const xhrs = installFakeXhr();
+    const { result } = renderManager();
+    await add(result, [jpeg()]);
+    await waitFor(() => expect(xhrs).toHaveLength(1));
+    xhrs[0].responseText = JSON.stringify({
+      error: { code: 'BAD_REQUEST', message: 'The upload was interrupted.', requestId: 'req-7' },
+    });
+    act(() => xhrs[0].respond(400));
+    await waitFor(() => expect(item(result).upload.status).toBe(UPLOAD_STATUS.FAILED));
+    expect(item(result).upload.error).toBe('The upload was interrupted. (request req-7)');
+  });
+});

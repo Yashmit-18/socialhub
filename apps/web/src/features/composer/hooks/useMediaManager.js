@@ -12,6 +12,7 @@ import { getComposerCapabilities } from '../services/capabilities.js';
 import {
   completeMediaUpload,
   createMediaUpload,
+  deleteMedia,
   getMedia,
   uploadFileToStorage,
 } from '../services/composerApi.js';
@@ -142,7 +143,25 @@ function inspect(files, dispatch, id) {
 function failureMessage(error) {
   if (error?.name === 'AbortError') return 'The upload was interrupted. Try again.';
   const message = typeof error?.message === 'string' ? error.message.trim() : '';
-  return message || 'The upload failed. Try again.';
+  const requestId = typeof error?.requestId === 'string' ? error.requestId : '';
+  const text = message || 'The upload failed. Try again.';
+  // The request id lets the server log be matched to what the person saw.
+  return requestId ? `${text} (request ${requestId})` : text;
+}
+
+/** A slot from an earlier attempt that can still be used (at least a minute left). */
+const SLOT_MARGIN_MS = 60 * 1000;
+function usableSlot(slot) {
+  const expires = Date.parse(slot?.upload?.expiresAt ?? '');
+  return slot?.media?.id && slot?.upload?.url && expires - Date.now() > SLOT_MARGIN_MS
+    ? slot
+    : null;
+}
+
+/** The server record of an upload that never finished: removed so it leaves nothing behind. */
+function discardSlot(workspaceId, slot) {
+  const mediaId = slot?.media?.id;
+  if (mediaId) deleteMedia(workspaceId, mediaId).catch(() => {});
 }
 
 /**
@@ -151,11 +170,20 @@ function failureMessage(error) {
  */
 async function uploadToServer({ id, entry, workspaceId, dispatch, signal }) {
   const { file, fileName, mimeType, sizeBytes, kind } = entry;
-  const slot = await createMediaUpload(
-    workspaceId,
-    { fileName, mimeType, sizeBytes, kind },
-    { signal },
-  );
+  // A retry reuses the slot of the attempt that failed while it is still valid, so retrying
+  // never leaves another unused file record behind. An expired one is discarded.
+  let slot = usableSlot(entry.slot);
+  if (!slot) {
+    const previous = entry.slot;
+    entry.slot = null;
+    if (previous) discardSlot(workspaceId, previous);
+    slot = await createMediaUpload(
+      workspaceId,
+      { fileName, mimeType, sizeBytes, kind },
+      { signal },
+    );
+    entry.slot = slot;
+  }
   throwIfAborted(signal);
   const mediaId = slot?.media?.id;
   if (!mediaId || !slot?.upload?.url) {
@@ -163,15 +191,29 @@ async function uploadToServer({ id, entry, workspaceId, dispatch, signal }) {
   }
 
   let lastPercent = -1;
-  await uploadFileToStorage(slot.upload, file, {
-    signal,
-    onProgress: (fraction) => {
-      const percent = Math.floor(fraction * 100);
-      if (signal.aborted || percent === lastPercent) return;
-      lastPercent = percent;
-      dispatch(composerActions.mediaUploadProgress(id, fraction));
-    },
-  });
+  try {
+    await uploadFileToStorage(slot.upload, file, {
+      signal,
+      onProgress: (fraction) => {
+        const percent = Math.floor(fraction * 100);
+        if (signal.aborted || percent === lastPercent) return;
+        lastPercent = percent;
+        dispatch(composerActions.mediaUploadProgress(id, fraction));
+      },
+    });
+  } catch (error) {
+    // 409: an earlier attempt with this slot already delivered the bytes; only the
+    // confirmation below is missing.
+    if (error?.status !== 409) {
+      // The storage refused this link itself (expired, not valid, file mismatch): a retry
+      // needs a new one. A dropped connection or a server error keeps it for the retry.
+      if (error?.status >= 400 && error?.status < 500) {
+        entry.slot = null;
+        discardSlot(workspaceId, slot);
+      }
+      throw error;
+    }
+  }
   throwIfAborted(signal);
 
   let asset = (await completeMediaUpload(workspaceId, mediaId, { signal }))?.media;
@@ -195,7 +237,10 @@ async function uploadToServer({ id, entry, workspaceId, dispatch, signal }) {
     throwIfAborted(signal);
   }
 
-  if (asset?.status === SERVER_STATUS.READY) return asset.id || mediaId;
+  if (asset?.status === SERVER_STATUS.READY) {
+    entry.slot = null;
+    return asset.id || mediaId;
+  }
   if (asset?.status === SERVER_STATUS.FAILED) {
     throw new Error(asset.failureReason || "SocialHub couldn't process this file.");
   }
@@ -368,10 +413,13 @@ export function useMediaManager({ media, dispatch, workspaceId }) {
   /** Removes an item: aborts its upload, revokes its preview URL and drops it from the state. */
   const removeMedia = useCallback(
     (id) => {
+      // An upload that never finished leaves a server record behind: discard it.
+      const unfinished = filesRef.current.get(id)?.slot;
       releaseFile(filesRef.current, uploadsRef.current, id);
+      if (unfinished && getComposerCapabilities().mediaUpload) discardSlot(workspaceId, unfinished);
       dispatch(composerActions.removeMedia(id));
     },
-    [dispatch],
+    [dispatch, workspaceId],
   );
 
   /** (Re)starts an upload. No-op (false) when the media API is off or the file isn't here. */

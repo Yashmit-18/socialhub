@@ -518,3 +518,74 @@ describe('uploadFileToStorage (pre-signed storage upload)', () => {
     expect(xhrs[0].aborted).toBe(false);
   });
 });
+
+describe('uploadFileToStorage: explaining what went wrong', () => {
+  beforeEach(() => vi.stubEnv(FLAG.mediaUpload, 'true'));
+
+  it("uses the storage's own message and request id when it sends them", async () => {
+    const xhrs = installFakeXhr();
+    const upload = uploadFileToStorage(UPLOAD_SLOT, makeFile('a.jpg', 'image/jpeg'));
+    xhrs[0].responseText = JSON.stringify({
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'The file does not match the upload that was requested.',
+        requestId: 'req-42',
+      },
+    });
+    xhrs[0].respond(400);
+    const error = await upload.catch((err) => err);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 400,
+      code: 'UPLOAD_FAILED',
+      message: 'The file does not match the upload that was requested.',
+      requestId: 'req-42',
+      details: { storageCode: 'BAD_REQUEST' },
+    });
+  });
+
+  it('ignores a body that is not SocialHub JSON (for example an HTML error page)', async () => {
+    const xhrs = installFakeXhr();
+    const upload = uploadFileToStorage(UPLOAD_SLOT, makeFile('a.jpg', 'image/jpeg'));
+    xhrs[0].responseText = '<html><body>Bad gateway</body></html>';
+    xhrs[0].respond(502);
+    await expect(upload).rejects.toMatchObject({
+      message: 'The file could not be uploaded (storage answered 502).',
+    });
+  });
+
+  it('says plainly when the file is too large for the connection', async () => {
+    const xhrs = installFakeXhr();
+    const upload = uploadFileToStorage(UPLOAD_SLOT, makeFile('a.mp4', 'video/mp4'));
+    xhrs[0].respond(413);
+    await expect(upload).rejects.toMatchObject({
+      status: 413,
+      message: expect.stringMatching(/too large/),
+    });
+  });
+
+  it('names the address that did not answer when it is not the page itself', async () => {
+    const xhrs = installFakeXhr();
+    const upload = uploadFileToStorage(UPLOAD_SLOT, makeFile('a.jpg', 'image/jpeg'));
+    xhrs[0].failNetwork();
+    const error = await upload.catch((err) => err);
+    expect(error).toMatchObject({ status: 0, code: 'NETWORK_ERROR' });
+    expect(error.message).toContain('storage.example');
+    expect(error.message).toContain(window.location.host);
+  });
+
+  it('describes a lost connection for a same-origin upload path', async () => {
+    const xhrs = installFakeXhr();
+    const upload = uploadFileToStorage(
+      { url: '/api/v1/storage/uploads/token.sig', headers: {} },
+      makeFile('a.jpg', 'image/jpeg'),
+    );
+    expect(xhrs[0].url).toBe('/api/v1/storage/uploads/token.sig');
+    xhrs[0].failNetwork();
+    await expect(upload).rejects.toMatchObject({
+      code: 'NETWORK_ERROR',
+      message:
+        'The connection to SocialHub was lost during the upload. Check your connection and try again.',
+    });
+  });
+});

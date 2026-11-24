@@ -8,6 +8,7 @@ import {
   createInitialComposerState,
   createMediaItem,
 } from './composerState.js';
+import { resolveApiLink } from '../../../lib/api.js';
 import { HASHTAG_PLACEMENTS, TEXT_LIMITS, mergeUnique } from './text.js';
 
 /**
@@ -196,9 +197,10 @@ export function fromContentPackage(contentPackage) {
           fileName: text(asset.fileName) || (isVideo ? 'Video' : 'Image'),
           mimeType: text(asset.mimeType),
           sizeBytes: Number.isFinite(asset.sizeBytes) ? asset.sizeBytes : 0,
-          previewUrl: (isVideo ? asset.url : (asset.thumbnailUrl ?? asset.url)) ?? null,
+          previewUrl:
+            resolveApiLink(isVideo ? asset.url : (asset.thumbnailUrl ?? asset.url)) ?? null,
         }),
-        posterUrl: isVideo ? (asset.thumbnailUrl ?? null) : null,
+        posterUrl: isVideo ? (resolveApiLink(asset.thumbnailUrl) ?? null) : null,
         width: asset.width ?? null,
         height: asset.height ?? null,
         durationSec: asset.durationSec ?? null,

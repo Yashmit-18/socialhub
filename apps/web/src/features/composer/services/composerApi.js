@@ -1,4 +1,4 @@
-import { api, ApiError } from '../../../lib/api.js';
+import { api, ApiError, resolveApiLink } from '../../../lib/api.js';
 import { requireCapability } from './capabilities.js';
 
 /**
@@ -39,6 +39,65 @@ export async function createMediaUpload(
 }
 
 /**
+ * Turns a refused upload into a useful error: the storage's own message and request id when
+ * it sent one (SocialHub's local storage does), otherwise a plain description of the status.
+ */
+function uploadRefused(xhr) {
+  let body = null;
+  try {
+    body =
+      typeof xhr.responseText === 'string' && xhr.responseText
+        ? JSON.parse(xhr.responseText)
+        : null;
+  } catch {
+    // Not JSON (for example an HTML error page from a proxy): no details.
+  }
+  const error = body?.error && typeof body.error === 'object' ? body.error : null;
+  const requestId =
+    (typeof error?.requestId === 'string' && error.requestId) ||
+    xhr.getResponseHeader?.('X-Request-Id') ||
+    undefined;
+  const fallback =
+    xhr.status === 413
+      ? 'The file is too large for the server or for the connection in between (HTTP 413).'
+      : `The file could not be uploaded (storage answered ${xhr.status}).`;
+  const message = typeof error?.message === 'string' && error.message ? error.message : fallback;
+  return new ApiError(
+    xhr.status,
+    'UPLOAD_FAILED',
+    message,
+    error?.code ? { storageCode: error.code } : undefined,
+    requestId,
+  );
+}
+
+/**
+ * No answer at all. The browser does not say why (a blocked request looks the same as a
+ * dropped connection), but an upload to another address than the page is the usual cause, so
+ * say which address it was.
+ */
+function uploadUnanswered(url) {
+  let target = null;
+  try {
+    target = new URL(url, window.location.href);
+  } catch {
+    // Not a usable URL: describe it as a lost connection.
+  }
+  if (target && target.origin !== window.location.origin) {
+    return new ApiError(
+      0,
+      'NETWORK_ERROR',
+      `The upload to ${target.host} got no answer. It may be unreachable, or it may not accept uploads from ${window.location.host}.`,
+    );
+  }
+  return new ApiError(
+    0,
+    'NETWORK_ERROR',
+    'The connection to SocialHub was lost during the upload. Check your connection and try again.',
+  );
+}
+
+/**
  * Step 2: send the bytes straight to object storage with the pre-signed request from step 1.
  * Uses XMLHttpRequest because fetch() cannot report upload progress.
  * Resolves with nothing; rejects with ApiError('UPLOAD_FAILED' | 'NETWORK_ERROR') or an
@@ -52,7 +111,9 @@ export async function uploadFileToStorage(upload, file, { onProgress, signal } =
       return;
     }
     const xhr = new XMLHttpRequest();
-    xhr.open(upload?.method ?? 'PUT', upload.url);
+    // Local storage sends a path; it belongs to the API's origin (see resolveApiLink).
+    const target = resolveApiLink(upload.url);
+    xhr.open(upload?.method ?? 'PUT', target);
     for (const [name, value] of Object.entries(upload?.headers ?? {})) {
       xhr.setRequestHeader(name, value);
     }
@@ -65,20 +126,11 @@ export async function uploadFileToStorage(upload, file, { onProgress, signal } =
     xhr.onload = () => {
       done();
       if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else
-        reject(
-          new ApiError(
-            xhr.status,
-            'UPLOAD_FAILED',
-            `The file could not be uploaded (storage answered ${xhr.status}).`,
-          ),
-        );
+      else reject(uploadRefused(xhr));
     };
     xhr.onerror = () => {
       done();
-      reject(
-        new ApiError(0, 'NETWORK_ERROR', 'The upload was interrupted. Check your connection.'),
-      );
+      reject(uploadUnanswered(target));
     };
     xhr.onabort = () => {
       done();

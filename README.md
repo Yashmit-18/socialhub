@@ -896,7 +896,7 @@ admins always); others get `404`. Publishing endpoints (`/publish-jobs…`, incl
 | GET | `/workspaces/:id/account-presets` | `content:read` |
 | POST | `/workspaces/:id/account-presets` | `content:create`; body `{ name, socialAccountIds }`; `409` for a duplicate name |
 | DELETE | `/workspaces/:id/account-presets/:presetId` | `content:create`; creator or admin |
-| PUT / GET | `/storage/uploads/:token`, `/storage/objects/*` | Only with `STORAGE_DRIVER=local`: upload target and file serving |
+| PUT / GET | `/storage/uploads/:token`, `/storage/objects/*` | Only with `STORAGE_DRIVER=local`: upload target and file serving (signed, expiring links only) |
 | GET | `/workspaces/:id/group-categories` | `content:read`; categories of the group directory with group counts |
 | POST / PATCH / DELETE | `/workspaces/:id/group-categories[/:categoryId]` | `groups:manage`; `409` for a duplicate name; deleting leaves its groups without a category |
 | GET | `/workspaces/:id/facebook-groups` | `content:read`; query `q`, `category` (id or `none`), `tag`, `status` (`ACTIVE`, `ARCHIVED`, `ALL`), `sort`, `page`, `limit`; facets for categories, tags and status |
@@ -962,6 +962,31 @@ Hierarchy rules:
 | 2026-11-23 | Stabilization audit of Phases 5 and 7             | Cross-phase audit; no critical issues; 9 problems fixed with tests; still uncommitted, awaiting approval                                                  |
 | 2026-11-23 | Pre-live security and reliability hardening       | Send-time authorization, job privacy, private queue status, safer recovery and shutdown; tested; still uncommitted, awaiting approval                     |
 | 2026-11-23 | 8: Real Facebook and Instagram publishing         | Behind two switches (server `live`, workspace owner/admin + password); tested with a simulated Meta only; **not yet run on real accounts**                |
+| 2026-11-23 | Upload fix and signed media links                 | Root cause found and fixed (absolute upload links blocked by the page's CSP); signed, expiring file links; tested; browser upload to be confirmed by hand |
+
+### Upload fix and signed media links (2026-11-23)
+
+**Symptom:** uploading in the composer failed with "The upload was interrupted. Check your
+connection." **Cause:** with local storage the API returned upload links as absolute URLs on
+`API_PUBLIC_URL` (the tunnel host). The page's Content-Security-Policy allows requests only to
+its own origin (`connect-src 'self'`), so whenever SocialHub was open on another address
+(`http://localhost:4000`, or a new tunnel host after a restart) the browser blocked the upload
+before any byte was sent, and only reported a failed request.
+
+- **Fix:** upload links and links for showing files are same-origin paths
+  (`/api/v1/storage/…`), so they work on localhost, any tunnel and a domain. Only links handed
+  to Meta are absolute, on `API_PUBLIC_URL`.
+- **Stored files are no longer public by name:** every download link is signed for one file and
+  expires (6 hours in SocialHub, 2 hours for Meta). Unsigned, tampered or other files' links
+  get 404, expired ones 403 (JSON, never the web app).
+- Uploads forwarded without `Content-Length` (chunked by a proxy) are accepted; the bytes
+  received are still counted and must match.
+- The composer says what went wrong: the storage's own message and request id, "too large"
+  for 413, and which address did not answer.
+- Retries reuse a still-valid upload slot (an "already uploaded" answer counts as delivered),
+  so they no longer leave unused file records; a refused or expired slot, and the slot of an
+  upload removed before it finished, are discarded.
+- Tests: API media and storage links, chunked uploads; web upload errors and retries.
 
 ### Phase 8: Real Facebook and Instagram publishing (2026-11-23). Implemented, not verified live
 
@@ -1546,9 +1571,10 @@ The repository started empty. Phase 1 delivered:
   key and are copied to a final key before verification, so an upload link can no longer
   change a verified file. This is proven against a simulated provider only. Run
   `npm run storage:verify -w @socialhub/api` against your bucket to confirm it.
-- **Media URLs are public to anyone who has the link.** Meta must be able to fetch media, so
-  objects are readable without signing in. Keys are long random strings; keep bucket listing
-  disabled.
+- **S3 media URLs are public to anyone who has the link.** Meta must be able to fetch media, so
+  S3 objects are readable without signing in. Keys are long random strings; keep bucket
+  listing disabled. With local storage every link is signed for one file and expires (6 hours
+  in SocialHub, 2 hours for Meta).
 - The per-account Followers column is hidden below about 1,360 px; the totals always show.
 - **S3 media storage has not been run against a real bucket.** Only the local-disk driver
   has been exercised for real.

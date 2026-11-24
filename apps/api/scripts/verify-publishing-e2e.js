@@ -360,7 +360,7 @@ async function main() {
       sizeBytes: image.length,
     });
     if (slot.status === 201) {
-      await fetch(slot.body.upload.url, {
+      await fetch(new URL(slot.body.upload.url, origin), {
         method: 'PUT',
         headers: slot.body.upload.headers,
         body: image,
@@ -670,7 +670,15 @@ async function main() {
     title('Worker killed in the middle of publishing (stalled job)');
     const d11 = await draft('End-to-end check: worker killed');
     const j11 = (await publish(d11, [account.slow])).body.publishJob;
-    await waitJob(j11.id, (job) => job.destinations[0].state === 'PROCESSING', 10_000);
+    // Killed AFTER the hand-over to the platform (sendingAt set; the simulated "slow" account
+    // then takes 8 s). A worker killed before it is queued again instead: never sent, so
+    // safe to repeat. That case is the unit tests' (publishing.test.js).
+    const handedOver = await until(
+      async () => Boolean((await PublishDestination.findOne({ job: j11.id }).lean())?.sendingAt),
+      10_000,
+      50,
+    );
+    check(handedOver, 'The worker recorded the hand-over before sending (sendingAt)');
     await kill(worker); // hard stop: no clean-up at all
     worker = await startWorker();
     await sleep(4000);

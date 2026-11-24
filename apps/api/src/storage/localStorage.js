@@ -11,6 +11,17 @@ import { randomToken, safeEqual } from '../lib/crypto.js';
  * Local-disk storage for development and tests: files live under one directory and are
  * uploaded to, and served by, this API.
  *
+ * Links for the BROWSER (upload links, viewUrl) are same-origin paths such as
+ * `/api/v1/storage/uploads/…`, so they work however SocialHub was opened: localhost, a tunnel
+ * or a domain. An absolute link on API_PUBLIC_URL would be blocked by the page's
+ * Content-Security-Policy (connect-src 'self') whenever the page is on another host, which
+ * the browser only reports as a failed request. Links for Meta (publicUrl) are absolute, on
+ * API_PUBLIC_URL, because Meta downloads the files itself.
+ *
+ * Stored files are never public by name: every download link is signed for one file and
+ * expires (`?expires=…&signature=…`). A wrong, missing or tampered signature is answered like
+ * an unknown file (404); an expired one with 403.
+ *
  * It follows the same direct-upload flow as S3: the browser PUTs the bytes to a short-lived
  * signed URL that is bound to one key, type and size. It is NOT meant for production:
  * its URLs are only as public as this API is, so Meta can fetch them only when the API itself
@@ -22,6 +33,7 @@ import { randomToken, safeEqual } from '../lib/crypto.js';
 const KEY_PATTERN = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)*$/;
 const TYPES = {
   jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
   png: 'image/png',
   gif: 'image/gif',
   mp4: 'video/mp4',
@@ -29,6 +41,9 @@ const TYPES = {
 };
 
 const storageError = (status, code, message) => new AppError(status, code, message);
+
+/** Default lifetime of a download link when the caller does not choose one. */
+export const DOWNLOAD_LINK_TTL_SECONDS = 60 * 60;
 
 /**
  * Whether files served under `baseUrl` can be downloaded by Meta: HTTPS on a host that is not
@@ -65,6 +80,17 @@ export function isPublicHttpsUrl(baseUrl) {
 export function createLocalStorage({ directory, baseUrl, secret }) {
   const root = path.resolve(directory);
   const sign = (payload) => createHmac('sha256', secret).update(payload).digest('base64url');
+  // The path part of the API's address (normally "/api/v1"): links for the browser use only
+  // this, so they stay on whatever host the page was loaded from.
+  const basePath = new URL(baseUrl).pathname.replace(/\/+$/, '');
+  const downloadSignature = (key, expires) => sign(`download:${key}:${expires}`);
+  function downloadPath(
+    key,
+    { expiresInSeconds = DOWNLOAD_LINK_TTL_SECONDS, now = Date.now() } = {},
+  ) {
+    const expires = Math.floor(Number(now) / 1000) + expiresInSeconds;
+    return `/storage/objects/${key}?expires=${expires}&signature=${downloadSignature(key, expires)}`;
+  }
 
   function filePath(key) {
     if (!KEY_PATTERN.test(key) || key.includes('..')) throw notFound('File not found');
@@ -95,7 +121,8 @@ export function createLocalStorage({ directory, baseUrl, secret }) {
         JSON.stringify({ k: key, t: contentType, s: sizeBytes, e: expires }),
       ).toString('base64url');
       return {
-        url: `${baseUrl}/storage/uploads/${payload}.${sign(payload)}`,
+        // Same-origin path: see the note at the top of this file.
+        url: `${basePath}/storage/uploads/${payload}.${sign(payload)}`,
         method: 'PUT',
         headers: { 'Content-Type': contentType },
         expiresAt: new Date(expires).toISOString(),
@@ -150,7 +177,10 @@ export function createLocalStorage({ directory, baseUrl, secret }) {
       await rm(filePath(key), { force: true });
     },
 
-    publicUrl: (key) => `${baseUrl}/storage/objects/${key}`,
+    /** Signed, expiring download link on API_PUBLIC_URL, for Meta to fetch. */
+    publicUrl: (key, options) => `${baseUrl}${downloadPath(key, options)}`,
+    /** Signed, expiring same-origin link, for showing the file in SocialHub itself. */
+    viewUrl: (key, options) => `${basePath}${downloadPath(key, options)}`,
 
     /** Routes the API mounts at /storage while this driver is active. */
     router() {
@@ -169,7 +199,10 @@ export function createLocalStorage({ directory, baseUrl, secret }) {
           .split(';')[0]
           .trim()
           .toLowerCase();
-        if (type !== grant.t || Number(req.get('content-length')) !== grant.s) {
+        // A proxy (for example a Cloudflare tunnel) may forward the body chunked, without a
+        // Content-Length. The byte count below is checked either way.
+        const declared = req.get('content-length');
+        if (type !== grant.t || (declared !== undefined && Number(declared) !== grant.s)) {
           throw storageError(
             400,
             ERROR_CODES.BAD_REQUEST,
@@ -209,8 +242,23 @@ export function createLocalStorage({ directory, baseUrl, secret }) {
         res.status(200).end();
       });
 
+      // Downloads need a link signed for this exact file. Without a valid signature the file
+      // "does not exist" (404), so file names can neither be guessed nor confirmed.
       router.get('/objects/*key', async (req, res) => {
         const key = [].concat(req.params.key).join('/');
+        const expires = Number(req.query.expires);
+        const signature = typeof req.query.signature === 'string' ? req.query.signature : '';
+        if (
+          !Number.isInteger(expires) ||
+          !signature ||
+          !safeEqual(downloadSignature(key, expires), signature)
+        ) {
+          throw notFound('File not found');
+        }
+        const remaining = expires - Math.floor(Date.now() / 1000);
+        if (remaining <= 0) {
+          throw storageError(403, ERROR_CODES.FORBIDDEN, 'This file link has expired.');
+        }
         const file = filePath(key);
         if (!(await storage.stat(key))) throw notFound('File not found');
         res.setHeader(
@@ -219,7 +267,7 @@ export function createLocalStorage({ directory, baseUrl, secret }) {
         );
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-        res.setHeader('Cache-Control', 'private, max-age=3600');
+        res.setHeader('Cache-Control', `private, max-age=${Math.min(3600, remaining)}`);
         res.sendFile(file);
       });
 

@@ -130,7 +130,11 @@ describe('uploading to the local driver', () => {
       failureReason: null,
     });
     expect(media.thumbnailUrl).toBe(media.url);
-    const served = await api().get(new URL(media.url).pathname);
+    // A same-origin, signed and expiring link: it works on whatever host the page is on.
+    expect(media.url).toMatch(
+      /^\/api\/v1\/storage\/objects\/workspaces\/.+\?expires=\d+&signature=[\w-]+$/,
+    );
+    const served = await api().get(media.url);
     expect(served.status).toBe(200);
     expect(served.headers['content-type']).toBe('image/jpeg');
     expect(served.headers['x-content-type-options']).toBe('nosniff');
@@ -169,9 +173,11 @@ describe('uploading to the local driver', () => {
     expect(await activeStorage().stat(asset.storageKey)).toBeNull();
   });
 
-  it('does not serve paths outside the storage directory', async () => {
+  it('does not serve paths outside the storage directory, even with a valid signature', async () => {
     for (const path of ['..%2F..%2Fpackage.json', 'a/../../package.json', 'nope/missing.jpg']) {
       expect((await api().get(`/api/v1/storage/objects/${path}`)).status).toBe(404);
+      const signed = activeStorage().viewUrl(decodeURIComponent(path));
+      expect((await api().get(signed)).status).toBe(404);
     }
   });
 });
@@ -442,7 +448,7 @@ describe('audit regressions', () => {
     const swapped = Buffer.alloc(bytes.length, 0x41);
     const again = await putToSlot(body.upload, swapped);
     expect(again.status).toBe(409);
-    const served = await api().get(new URL(done.body.media.url).pathname);
+    const served = await api().get(done.body.media.url);
     expect(Buffer.compare(served.body, bytes)).toBe(0);
   });
 
@@ -462,5 +468,93 @@ describe('audit regressions', () => {
       'content-security-policy'
     ];
     expect(local).not.toContain('connect-src');
+  });
+});
+
+describe('links to stored files (local storage)', () => {
+  it('gives the browser a same-origin upload path, never an absolute URL on API_PUBLIC_URL', async () => {
+    const bytes = jpegBytes();
+    const { body } = await requestSlot(team.editor.token, ws, jpegSlot(bytes));
+    // API_PUBLIC_URL is http://localhost:4000 in tests; the page may be on any host.
+    expect(body.upload.url).toMatch(/^\/api\/v1\/storage\/uploads\/[\w-]+\.[\w-]+$/);
+    expect(body.upload.url).not.toContain('localhost');
+    // supertest talks to another host than API_PUBLIC_URL: the same path still works.
+    expect((await api().put(body.upload.url).set(body.upload.headers).send(bytes)).status).toBe(
+      200,
+    );
+  });
+
+  it('never serves a file without a valid, unexpired signature for exactly that file', async () => {
+    const one = await uploadMedia(team.editor.token, ws, { bytes: jpegBytes() });
+    const two = await uploadMedia(team.editor.token, ws, { bytes: jpegBytes(1080, 1080) });
+    const [path, query] = one.url.split('?');
+    const params = new URLSearchParams(query);
+
+    expect((await api().get(one.url)).status).toBe(200);
+    // No signature, a tampered one, or another file's: the file "does not exist".
+    expect((await api().get(path)).status).toBe(404);
+    params.set('signature', `${params.get('signature').slice(0, -2)}xx`);
+    expect((await api().get(`${path}?${params}`)).status).toBe(404);
+    const otherSignature = new URLSearchParams(two.url.split('?')[1]);
+    expect((await api().get(`${path}?${otherSignature}`)).status).toBe(404);
+    // Changing the expiry invalidates the signature.
+    const longer = new URLSearchParams(query);
+    longer.set('expires', String(Number(longer.get('expires')) + 3600));
+    expect((await api().get(`${path}?${longer}`)).status).toBe(404);
+
+    const asset = await MediaAsset.findById(one.id);
+    const expired = activeStorage().viewUrl(asset.storageKey, {
+      expiresInSeconds: 60,
+      now: Date.now() - 3_600_000,
+    });
+    const res = await api().get(expired);
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toBe('This file link has expired.');
+    // Never the web app's HTML.
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+  });
+
+  it('gives Meta an absolute link on API_PUBLIC_URL that the API accepts', async () => {
+    const media = await uploadMedia(team.editor.token, ws, { bytes: jpegBytes() });
+    const asset = await MediaAsset.findById(media.id);
+    const link = activeStorage().publicUrl(asset.storageKey, { expiresInSeconds: 600 });
+    expect(link.startsWith('http://localhost:4000/api/v1/storage/objects/workspaces/')).toBe(true);
+    const url = new URL(link);
+    const expires = Number(url.searchParams.get('expires'));
+    expect(expires - Date.now() / 1000).toBeGreaterThan(590);
+    expect(expires - Date.now() / 1000).toBeLessThanOrEqual(600);
+    const served = await api().get(`${url.pathname}${url.search}`);
+    expect(served.status).toBe(200);
+    expect(served.headers['cache-control']).toMatch(/^private, max-age=(\d+)$/);
+  });
+
+  it('accepts an upload forwarded without a Content-Length (chunked), checking the bytes received', async () => {
+    const bytes = jpegBytes();
+    const { body } = await requestSlot(team.editor.token, ws, jpegSlot(bytes));
+    const { Readable } = await import('node:stream');
+    const chunked = (payload) =>
+      new Promise((resolve, reject) => {
+        const req = api()
+          .put(body.upload.url)
+          .set('Content-Type', 'image/jpeg')
+          .set('Transfer-Encoding', 'chunked');
+        req.on('response', resolve).on('error', reject);
+        Readable.from([payload.subarray(0, 10), payload.subarray(10)]).pipe(req);
+      });
+    // Too few bytes is still refused, and nothing is stored.
+    const { body: other } = await requestSlot(team.editor.token, ws, jpegSlot(bytes));
+    const short = await new Promise((resolve, reject) => {
+      const req = api()
+        .put(other.upload.url)
+        .set('Content-Type', 'image/jpeg')
+        .set('Transfer-Encoding', 'chunked');
+      req.on('response', resolve).on('error', reject);
+      Readable.from([bytes.subarray(0, 10)]).pipe(req);
+    });
+    expect(short.status).toBe(400);
+    const res = await chunked(bytes);
+    expect(res.status).toBe(200);
+    const done = await complete(team.editor.token, ws, body.media.id);
+    expect(done.body.media.status).toBe('READY');
   });
 });

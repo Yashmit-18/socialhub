@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
 import { EmptyState, Skeleton } from '../../components/ui/Feedback.jsx';
+import { resolveApiLink } from '../../lib/api.js';
 import { cn, timeAgo } from '../../lib/utils.js';
 import { SimulatedBadge } from '../publishing/PublishingBadges.jsx';
 import { safeExternalUrl } from '../publishing/labels.js';
@@ -513,7 +514,7 @@ export function TopPostsSection({ data, loading, metric, timeZone = 'UTC' }) {
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-white/5">
                   {post.thumbnailUrl ? (
                     <img
-                      src={post.thumbnailUrl}
+                      src={resolveApiLink(post.thumbnailUrl)}
                       alt=""
                       className="h-full w-full object-cover"
                       loading="lazy"

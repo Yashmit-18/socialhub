@@ -64,6 +64,8 @@ export const DUE_TOLERANCE_MS = 5000;
 /** A waiting destination this far past its time has probably lost its queue entry. */
 export const REQUEUE_AFTER_MS = 2 * 60 * 1000;
 const ATTEMPT_HISTORY = 20;
+/** Media links handed to Meta are signed and expire after this long (local storage). */
+export const MEDIA_LINK_TTL_SECONDS = 2 * 60 * 60;
 
 const fail = (code, message, options) => new PublishError(code, message, options);
 
@@ -500,7 +502,7 @@ async function prepare(destination, job) {
       height: asset.height,
       durationSec: asset.durationSec,
       altText: entry.altText,
-      url: storage.publicUrl(asset.storageKey),
+      url: storage.publicUrl(asset.storageKey, { expiresInSeconds: MEDIA_LINK_TTL_SECONDS }),
     };
   });
 

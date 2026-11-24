@@ -51,6 +51,19 @@ function emitSessionExpired() {
   for (const listener of sessionExpiredListeners) listener();
 }
 
+/**
+ * Makes a link the API sent as a path ("/api/v1/storage/…", from local storage) usable
+ * wherever this app runs. In the normal single-origin setup (the API serves the app, or the
+ * dev server proxies /api) it is returned unchanged. When the app talks to an API on another
+ * origin (VITE_API_URL), it is resolved against that origin, not the page's. Absolute links
+ * (S3, https://…) and anything else are returned as they are.
+ */
+export function resolveApiLink(url, base = BASE_URL) {
+  if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) return url;
+  if (!/^https?:\/\//i.test(base)) return url;
+  return new URL(url, base).href;
+}
+
 function buildUrl(path, query) {
   const url = `${BASE_URL}${path}`;
   if (!query) return url;

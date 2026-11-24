@@ -501,8 +501,10 @@ a Page role with the `CREATE_CONTENT` task), and media storage Meta can download
 
 - `STORAGE_DRIVER=s3` with a public HTTPS `STORAGE_PUBLIC_BASE_URL`, or
 - `STORAGE_DRIVER=local` when `API_PUBLIC_URL` is a public HTTPS address (for example a
-  Cloudflare tunnel). Files are then served at `{API_PUBLIC_URL}/api/v1/storage/objects/…`
-  under long random names. `isPublicHttpsUrl` (`apps/api/src/storage/localStorage.js`) treats
+  Cloudflare tunnel). Meta then gets a link signed for each file,
+  `{API_PUBLIC_URL}/api/v1/storage/objects/…?expires=…&signature=…`, valid for 2 hours (a new
+  one on every attempt); files cannot be downloaded without such a link. `isPublicHttpsUrl`
+  (`apps/api/src/storage/localStorage.js`) treats
   `localhost`, private networks and plain `http` as not public. It cannot prove the address is
   reachable; if Meta cannot download a file, the post fails with Meta's message.
 

@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiError, jsonResponse, mockFetch } from '../test/fetchMock.js';
-import { ApiError, api, login, onSessionExpired, refreshSession, setAccessToken } from './api.js';
+import {
+  ApiError,
+  api,
+  login,
+  onSessionExpired,
+  refreshSession,
+  resolveApiLink,
+  setAccessToken,
+} from './api.js';
 
 const session = (token = 'access-2') =>
   jsonResponse(200, { user: { id: 'u1', name: 'Ada' }, accessToken: token });
@@ -111,5 +119,29 @@ describe('api client', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     setAccessToken('t');
     await expect(api.get('/x')).rejects.toMatchObject({ code: 'NETWORK_ERROR', status: 0 });
+  });
+});
+
+describe('resolveApiLink (storage links sent as paths)', () => {
+  const PATH = '/api/v1/storage/objects/w1/a.jpg?expires=1&signature=s';
+
+  it('leaves a path alone when the app talks to its own origin', () => {
+    expect(resolveApiLink(PATH, '/api/v1')).toBe(PATH);
+  });
+
+  it('resolves a path against the API origin when the API is elsewhere', () => {
+    expect(resolveApiLink(PATH, 'https://api.example.com/api/v1')).toBe(
+      `https://api.example.com${PATH}`,
+    );
+  });
+
+  it('leaves absolute links, protocol-relative links and non-strings unchanged', () => {
+    const s3 = 'https://cdn.example.com/w1/a.jpg';
+    expect(resolveApiLink(s3, 'https://api.example.com/api/v1')).toBe(s3);
+    expect(resolveApiLink('//evil.example/x', 'https://api.example.com/api/v1')).toBe(
+      '//evil.example/x',
+    );
+    expect(resolveApiLink(null, 'https://api.example.com/api/v1')).toBeNull();
+    expect(resolveApiLink(undefined)).toBeUndefined();
   });
 });

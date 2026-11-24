@@ -44,6 +44,8 @@ const EXTENSIONS = {
 export const VERIFY_CLAIM_MS = 2 * 60 * 1000;
 /** Unfinished uploads are kept this long after their slot expired, then removed. */
 export const ABANDONED_UPLOAD_GRACE_MS = 60 * 60 * 1000;
+/** How long a link to show a file in SocialHub stays valid (a new one comes with every read). */
+export const VIEW_LINK_TTL_SECONDS = 6 * 60 * 60;
 /** Verified or failed files that no draft references are removed after this long. */
 export const UNREFERENCED_MEDIA_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -51,7 +53,10 @@ export const UNREFERENCED_MEDIA_TTL_MS = 24 * 60 * 60 * 1000;
 export function mediaView(asset, storage = getStorage()) {
   const servable =
     asset.status === MEDIA_STATUS.READY && storage && storage.name === asset.storageDriver;
-  const url = servable ? storage.publicUrl(asset.storageKey) : null;
+  // For the browser: a same-origin, signed link that expires (local storage), or the public
+  // storage URL (S3). Never a link Meta would use.
+  const view = storage?.viewUrl ?? storage?.publicUrl;
+  const url = servable ? view(asset.storageKey, { expiresInSeconds: VIEW_LINK_TTL_SECONDS }) : null;
   return {
     id: String(asset._id),
     kind: asset.kind,

@@ -156,6 +156,8 @@ async function main() {
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   const base = `${origin}/api/v1`;
+  // Links for the browser are same-origin paths; resolve them like a browser on this API would.
+  const absolute = (url) => new URL(url, origin).toString();
   const env = {
     ...process.env,
     NODE_ENV: 'development',
@@ -202,7 +204,7 @@ async function main() {
       sizeBytes: file.bytes.length,
     });
   const put = (upload, bytes) =>
-    fetch(upload.url, { method: upload.method, headers: upload.headers, body: bytes });
+    fetch(absolute(upload.url), { method: upload.method, headers: upload.headers, body: bytes });
   const complete = (who, id) =>
     call(who.token, 'POST', `/workspaces/${who.ws}/media/${id}/complete`);
   const filesOf = async (ws) =>
@@ -324,7 +326,7 @@ async function main() {
     );
 
     /* ---- retrieval ---- */
-    const fetched = await fetch(imageDone.body.media.url);
+    const fetched = await fetch(absolute(imageDone.body.media.url));
     const fetchedBytes = Buffer.from(await fetched.arrayBuffer());
     check(
       fetched.status === 200 && sha(fetchedBytes) === sha(image.bytes),
@@ -387,7 +389,7 @@ async function main() {
     apiProcess = startApi(env);
     await waitForApi(base, apiProcess);
     const afterRestart = await call(alice.token, 'GET', `/workspaces/${alice.ws}/media/${videoId}`);
-    const refetched = await fetch(afterRestart.body?.media?.url ?? `${base}/none`);
+    const refetched = await fetch(absolute(afterRestart.body?.media?.url ?? `${base}/none`));
     const refetchedBytes = Buffer.from(await refetched.arrayBuffer());
     check(
       down === null &&
@@ -407,7 +409,7 @@ async function main() {
     /* ---- deletion ---- */
     const del = await call(alice.token, 'DELETE', `/workspaces/${alice.ws}/media/${imageId}`);
     const afterDelete = await onDisk(alice.ws, imageId, 'workspaces');
-    const gone = await fetch(imageDone.body.media.url);
+    const gone = await fetch(absolute(imageDone.body.media.url));
     check(
       del.status === 204 && afterDelete.length === 0 && gone.status === 404,
       '8. Deleting removes the file from disk and it is no longer served',
