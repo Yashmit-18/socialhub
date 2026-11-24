@@ -11,3 +11,6 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 storage-data/
+
+# Windows launcher state (process IDs of the API and tunnel it started)
+.socialhub/

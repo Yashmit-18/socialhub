@@ -139,6 +139,56 @@ Open <http://localhost:5173>, create an account and create your first workspace.
 >   Configure SMTP before relying on password reset.
 > - The invite dialog always shows the link and says whether it was emailed.
 
+### 5. One-click start on Windows (Cloudflare Quick Tunnel)
+
+For using SocialHub through a public HTTPS address (needed for Facebook login and Meta's
+callbacks) without owning a domain. Needs Node.js, cloudflared, Redis (Memurai) when publishing
+is on, and a built web app (`npm run build`).
+
+| Script (repository root)     | What it does                                                                                                                                                                                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start-socialhub.cmd`        | Starts a Cloudflare Quick Tunnel to `http://localhost:4000` (or reuses one that is running), writes its URL to `apps/api/.env`, starts the API (restarting one it started if the URL changed), checks the local and public addresses and prints both URLs |
+| `start-socialhub-api.cmd`    | Starts only the API                                                                                                                                                                                                                                       |
+| `start-socialhub-tunnel.cmd` | Starts or reuses only the tunnel and updates `apps/api/.env`                                                                                                                                                                                              |
+| `stop-socialhub.cmd`         | Stops the API and the tunnel that the launcher started, and nothing else                                                                                                                                                                                  |
+
+Double-click `start-socialhub.cmd`, or run it in a terminal from the project folder. The API and
+the tunnel each run in their own window ("SocialHub API", "SocialHub Tunnel"); closing a window
+stops that part. SocialHub is then at <http://localhost:4000> and at the public URL printed at the
+end (also in `API_PUBLIC_URL` in `apps/api/.env`). Stop it with `stop-socialhub.cmd`.
+
+What the launcher does, and does not do:
+
+- **Checks first:** Node.js, npm and cloudflared; MongoDB (with `MONGODB_URI`) before it starts the
+  API; Redis when publishing uses it (a warning only: the API runs without it).
+- **Reads the tunnel URL from cloudflared** (its local status endpoint) and accepts only
+  `https://<name>.trycloudflare.com`. If no valid URL appears, `.env` is not changed.
+- **Changes only `CLIENT_ORIGIN`, `APP_URL` and `API_PUBLIC_URL`** in `apps/api/.env`, and only when
+  all three hold the same URL. Every other line stays exactly as it was. Secret values are never
+  printed. `PUBLISHING_MODE` is never touched.
+- **Never stops what it did not start.** It records the windows and processes it started (process
+  ID and start time) in `.socialhub/` and stops only those. An API or tunnel started some other way
+  is reused or reported, never stopped. If such an API still uses an old URL, the launcher says so
+  and leaves it to you to restart it.
+- **Starts nothing twice.** A running API on port 4000 or a running tunnel to it is reused.
+
+**The public URL is not permanent.** Every new Quick Tunnel gets a new random
+`*.trycloudflare.com` hostname. Reusing a running tunnel keeps the URL; stopping the tunnel
+(`stop-socialhub.cmd`, closing its window, restarting Windows) means the next start gets a new
+one. The API reads `.env` only when it starts, which is why the launcher restarts the API it
+started after a URL change.
+
+When the URL changes, the launcher prints **THE PUBLIC URL CHANGED** with the exact values to
+paste into the Meta Developer Dashboard: the Valid OAuth Redirect URI
+(`<url>/api/v1/oauth/facebook/callback`), the deauthorize and data-deletion callbacks
+(`<url>/api/v1/meta/facebook/deauthorize`, `…/data-deletion`), App Domains, and the Privacy Policy,
+Terms of Service and Data Deletion Instructions URLs (`/privacy.html`, `/terms.html`,
+`/data-deletion.html`). Facebook login fails, and Meta's checks of those pages fail, until they are
+updated. A permanent address needs a domain and a Cloudflare named tunnel.
+
+`node scripts/socialhub-launcher.js status` shows what is running;
+`start-socialhub.cmd --new-tunnel` forces a fresh tunnel.
+
 ## Scripts (run from the repository root)
 
 | Command                                                         | What it does                                                                                                                                                                                                            |
@@ -963,6 +1013,7 @@ Hierarchy rules:
 | 2026-11-23 | Pre-live security and reliability hardening       | Send-time authorization, job privacy, private queue status, safer recovery and shutdown; tested; still uncommitted, awaiting approval                     |
 | 2026-11-23 | 8: Real Facebook and Instagram publishing         | Behind two switches (server `live`, workspace owner/admin + password); tested with a simulated Meta only; **not yet run on real accounts**                |
 | 2026-11-23 | Upload fix and signed media links                 | Root cause found and fixed (absolute upload links blocked by the page's CSP); signed, expiring file links; tested; browser upload to be confirmed by hand |
+| 2026-11-24 | Windows one-click launcher (Quick Tunnel)         | start/stop scripts; tunnel URL captured and written to .env; stops only what it started; tested on this PC                                                |
 
 ### Upload fix and signed media links (2026-11-23)
 
