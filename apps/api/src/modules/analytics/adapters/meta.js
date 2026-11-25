@@ -9,9 +9,9 @@ import { facebookSettings, metaSettings } from '../../../integrations/meta/setti
 import { AnalyticsError, ANALYTICS_ERROR_CODES, fromMetaError } from '../analyticsError.js';
 
 /**
- * Meta insights through the official Graph API (docs/ANALYTICS.md, "Meta insights"). NOT
- * ENABLED: ANALYTICS_MODE has no live value, so this adapter only runs in tests against a
- * simulated Meta. It has never been run against the real Graph API.
+ * Meta insights through the official Graph API (docs/ANALYTICS.md, "Meta insights"). Runs
+ * only with ANALYTICS_MODE=live (off by default), GET requests only. Tested against a
+ * simulated Meta; it has not yet been run against a real account with insights permissions.
  *
  * Metric names follow Meta's documentation as checked on 2026-11-23 (impressions and
  * page_fans are retired; views and unique viewers replace them):

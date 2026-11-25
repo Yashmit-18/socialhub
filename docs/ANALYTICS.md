@@ -112,7 +112,13 @@ sequenceDiagram
 ```
 
 - **Modes** (`ANALYTICS_MODE`): `disabled` (default: syncs answer `503 ANALYTICS_DISABLED`),
-  `simulated` (development only, demo data). There is no live value.
+  `simulated` (development only, demo data), `live` (reads real insights from Meta, GET only;
+  added 2026-11-24, not yet run against a real account). LIVE needs `read_insights` (Pages) and
+  `instagram_manage_insights` (Instagram via Facebook Login) granted on the login: add them to
+  `META_FACEBOOK_SCOPES` and reconnect. Without them a sync of that account stops with
+  `PERMISSION_MISSING` before calling Meta and stores nothing (nothing is shown as 0); a metric
+  Meta does not return for an account is left out as unavailable. Real (`META`) and demo
+  (`SIMULATED`) figures are stored and shown apart.
 - **Queue:** its own BullMQ queue `socialhub-analytics` on the same Redis, built with the
   publishing queue's connection code (verified on a real Redis on 2026-11-23), so syncs never
   hold up publishing. An entry carries one run id and nothing else (the shared helper stores

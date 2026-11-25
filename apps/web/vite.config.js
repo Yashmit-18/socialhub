@@ -46,7 +46,9 @@ export default defineConfig({
     },
   },
   build: {
-    sourcemap: true,
+    // Maps are still written (for debugging a build locally) but the bundles do not point to
+    // them, so browsers do not fetch the original source. dist/*.map is not deployed content.
+    sourcemap: 'hidden',
     chunkSizeWarningLimit: 700,
   },
   test: {

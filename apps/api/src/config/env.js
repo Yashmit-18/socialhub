@@ -149,9 +149,12 @@ const envSchema = z.object({
    * Analytics insights (docs/ANALYTICS.md):
    * disabled   nothing is synced (default); SocialHub publishing figures are still shown
    * simulated  development only: syncs make DEMO insights, labelled as such; Meta is not called
-   * Reading real Meta insights is not enabled in this build, so there is no "live" value.
+   * live       reads real insights from Meta (GET only) for Facebook Pages and Instagram
+   *            professional accounts. Needs the insights permissions (read_insights,
+   *            instagram_manage_insights) granted on the login; without them the sync stops
+   *            (PERMISSION_MISSING) and stores nothing. Not yet verified against a real account.
    */
-  ANALYTICS_MODE: z.enum(['disabled', 'simulated']).default('disabled'),
+  ANALYTICS_MODE: z.enum(['disabled', 'simulated', 'live']).default('disabled'),
   /** Run the analytics worker inside the API process. Set false when `npm run worker` runs it. */
   ANALYTICS_WORKER_INLINE: booleanString.optional(),
   ANALYTICS_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
@@ -229,6 +232,32 @@ export function loadConfig(source = process.env) {
 
   const appUrl = (env.APP_URL ?? env.CLIENT_ORIGIN[0]).replace(/\/+$/, '');
   const publicApiUrl = (env.API_PUBLIC_URL ?? appUrl).replace(/\/+$/, '');
+
+  if (isProduction) {
+    // Production must never run sign-in cookies or Meta callbacks over plain HTTP. Local
+    // addresses stay allowed: nobody else can reach them (for example a production build
+    // tried out on this machine).
+    const problems = [];
+    const local = (host) =>
+      ['localhost', '127.0.0.1', '[::1]'].includes(host) || host.endsWith('.localhost');
+    const requireHttps = (name, value) => {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' && !local(url.hostname)) {
+        problems.push(`${name} must use https:// in production (${url.origin})`);
+      }
+    };
+    for (const origin of env.CLIENT_ORIGIN) requireHttps('CLIENT_ORIGIN', origin);
+    requireHttps('APP_URL', appUrl);
+    requireHttps('API_PUBLIC_URL', publicApiUrl);
+    if (env.COOKIE_SECURE === false) {
+      problems.push(
+        'COOKIE_SECURE=false is not allowed in production (sign-in cookies must be Secure)',
+      );
+    }
+    if (problems.length) {
+      throw new Error(`Invalid environment configuration:\n  - ${problems.join('\n  - ')}`);
+    }
+  }
 
   let trustProxy = false;
   if (env.TRUST_PROXY !== undefined) {
@@ -315,7 +344,7 @@ export function loadConfig(source = process.env) {
       recoveryIntervalMs: env.PUBLISHING_RECOVERY_INTERVAL_SECONDS * 1000,
     },
     analytics: {
-      mode: env.ANALYTICS_MODE === 'simulated' ? 'SIMULATED' : 'DISABLED',
+      mode: { simulated: 'SIMULATED', live: 'LIVE' }[env.ANALYTICS_MODE] ?? 'DISABLED',
       inlineWorker: env.ANALYTICS_WORKER_INLINE ?? true,
       concurrency: env.ANALYTICS_CONCURRENCY,
       maxAttempts: env.ANALYTICS_MAX_ATTEMPTS,

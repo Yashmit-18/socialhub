@@ -11,6 +11,8 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 storage-data/
+# Database backups (npm run db:backup): password hashes and encrypted tokens, never commit
+backups/
 
 # Windows launcher state (process IDs of the API and tunnel it started)
 .socialhub/

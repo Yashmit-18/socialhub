@@ -1,6 +1,35 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { redactUrl } from '../src/app.js';
+import { createApp, redactUrl } from '../src/app.js';
 import { api } from './helpers.js';
+
+describe('serving the built web app', () => {
+  it('serves pages, assets and client routes, but never source maps', async () => {
+    const dist = mkdtempSync(path.join(os.tmpdir(), 'socialhub-dist-'));
+    try {
+      mkdirSync(path.join(dist, 'assets'));
+      writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>SocialHub</title>');
+      writeFileSync(path.join(dist, 'assets', 'index-abc.js'), 'console.log(1)');
+      writeFileSync(path.join(dist, 'assets', 'index-abc.js.map'), '{"sources":["secret.jsx"]}');
+      const web = request(createApp({ serveWebDist: dist }));
+
+      expect((await web.get('/assets/index-abc.js')).status).toBe(200);
+      const page = await web.get('/w/acme/compose');
+      expect(page.status).toBe(200);
+      expect(page.text).toContain('<title>SocialHub</title>');
+      const map = await web.get('/assets/index-abc.js.map');
+      expect(map.status).toBe(404);
+      expect(map.text).not.toContain('secret.jsx');
+      // API routes still answer as the API, not with the web page.
+      expect((await web.get('/api/v1/nope')).status).toBe(404);
+    } finally {
+      rmSync(dist, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('access log redaction', () => {
   it('redacts invitation link tokens but keeps resource ids', () => {
@@ -16,6 +45,17 @@ describe('access log redaction', () => {
     expect(redactUrl(`/api/v1/workspaces/${id}/invitations?x=1`)).toBe(
       `/api/v1/workspaces/${id}/invitations?x=1`,
     );
+  });
+
+  it('redacts the token in the web invitation link, which this server also serves', () => {
+    const token = 'Zk3J9q-vT_2xYb8LmN0pQrStUvWxYz0123456789abc';
+    expect(redactUrl(`/invite/${token}`)).toBe('/invite/[redacted]');
+    expect(redactUrl(`/invite/${encodeURIComponent(token)}?from=email`)).toBe(
+      '/invite/[redacted]?from=email',
+    );
+    // Other pages are left alone.
+    expect(redactUrl('/invitations-help')).toBe('/invitations-help');
+    expect(redactUrl('/w/acme/team')).toBe('/w/acme/team');
   });
 });
 

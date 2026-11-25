@@ -31,12 +31,14 @@ const VERSION = '0.1.0';
 const SECRET_QUERY_PARAMS = /([?&](?:code|state|access_token|signed_request|token)=)[^&#]*/gi;
 
 /**
- * Keeps bearer secrets out of access logs: invitation tokens in paths, and OAuth codes /
+ * Keeps bearer secrets out of access logs: invitation tokens in API paths and in the web
+ * app's own invitation link (`/invite/<token>`, served by this server), and OAuth codes /
  * states / tokens in query strings (Meta's callback carries the authorization code).
  */
 export function redactUrl(url = '') {
   return url
     .replace(/(\/invitations\/)(?![a-f\d]{24}(?:[/?]|$))[^/?]+/i, '$1[redacted]')
+    .replace(/^(\/invite\/)[^/?#]+/i, '$1[redacted]')
     .replace(SECRET_QUERY_PARAMS, '$1[redacted]');
 }
 
@@ -113,6 +115,10 @@ function mountWebApp(app, distPath) {
     );
     return;
   }
+  // Source maps (written by the build for local debugging) would publish the original source.
+  app.use((req, res, next) =>
+    /\.map$/i.test(req.path) ? notFoundHandler(req, res, next) : next(),
+  );
   app.use(express.static(resolved, { index: false, maxAge: '1h' }));
   // SPA fallback for client-side routes (anything that is not an API call).
   app.use((req, res, next) => {
@@ -124,7 +130,8 @@ function mountWebApp(app, distPath) {
 
 /**
  * Builds the Express application without binding a port, so tests can drive it with
- * supertest. `overrides.rateLimit` lets tests tighten limits.
+ * supertest. `overrides.rateLimit` lets tests tighten limits; `overrides.serveWebDist` mounts a
+ * built web app from another folder (SERVE_WEB_DIST).
  */
 export function createApp(overrides = {}) {
   const rateLimit = { ...config.rateLimit, ...overrides.rateLimit };
@@ -214,7 +221,8 @@ export function createApp(overrides = {}) {
   app.use('/api/v1', v1);
   app.use('/api', notFoundHandler);
 
-  if (config.serveWebDist) mountWebApp(app, config.serveWebDist);
+  const webDist = overrides.serveWebDist ?? config.serveWebDist;
+  if (webDist) mountWebApp(app, webDist);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -10,11 +10,12 @@ import { analyticsQueueStatus } from '../../queue/analyticsQueue.js';
 /**
  * Analytics settings (config.analytics), read through here so tests can change them.
  *
- * REAL META ANALYTICS ARE NOT ENABLED IN THIS BUILD. ANALYTICS_MODE only accepts `disabled`
- * and `simulated`, so `mode` can never be LIVE on a running server. The Meta insights adapter
- * exists and is tested against a simulated Meta, with LIVE switched on through the test-only
- * override below. Enabling it later is a deliberate change to config/env.js, after it has been
- * verified with a real Meta app that has the insights permissions (docs/ANALYTICS.md).
+ * Real Meta analytics are off unless the server operator sets ANALYTICS_MODE=live (default:
+ * disabled). LIVE only reads insights (GET) with the stored tokens; without the insights
+ * permissions (read_insights, instagram_manage_insights) a sync stops with PERMISSION_MISSING
+ * and stores nothing (never 0), and LIVE figures are kept apart from simulated ones. The
+ * Meta insights adapter is tested against a simulated Meta; it has not yet been run against a
+ * real account with the insights permissions (docs/ANALYTICS.md).
  */
 const DEFAULTS = Object.freeze({
   mode: ANALYTICS_MODES.DISABLED,

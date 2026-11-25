@@ -41,6 +41,8 @@ const QUICK_TUNNEL_HOST = /^[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/;
 const METRICS_PORTS = [20990, 20991, 20992, 20993, 20994, 20995, 20996, 20997, 20998, 20999];
 const API_HEALTH_TIMEOUT_MS = 90_000;
 const TUNNEL_TIMEOUT_MS = 60_000;
+/** How long a running tunnel may take to reconnect before it is treated as disconnected. */
+const TUNNEL_READY_WAIT_MS = 15_000;
 const PUBLIC_TIMEOUT_MS = 120_000;
 /** Batch files need CRLF line endings. */
 const CRLF = String.fromCharCode(13, 10);
@@ -410,6 +412,24 @@ async function quickTunnelHost(metricsPort) {
   return typeof host === 'string' && QUICK_TUNNEL_HOST.test(host) ? host : null;
 }
 
+/**
+ * Whether cloudflared still has a connection to Cloudflare: its status endpoint answers
+ * GET /ready with 200 while at least one connection is up, 503 otherwise. A quick tunnel that
+ * lost its connections for long enough (for example while the PC slept) keeps reporting its old
+ * address on /quicktunnel, but Cloudflare has deleted that address and it no longer resolves.
+ * cloudflared reconnects by itself after short drops, so this keeps asking for `waitMs` before
+ * it calls the tunnel disconnected.
+ */
+export async function tunnelConnected(metricsPort, { waitMs = TUNNEL_READY_WAIT_MS } = {}) {
+  const until = Date.now() + waitMs;
+  for (;;) {
+    const res = await fetchStatus(`http://127.0.0.1:${metricsPort}/ready`, { timeoutMs: 2000 });
+    if (res?.ok) return true;
+    if (Date.now() >= until) return false;
+    await sleep(1000);
+  }
+}
+
 /** A quick tunnel to this API that the launcher did not start (for example one started by hand). */
 async function findOtherTunnel(port) {
   const target = new RegExp(
@@ -422,7 +442,12 @@ async function findOtherTunnel(port) {
   for (const candidate of candidates) {
     for (const metricsPort of listeningPorts(candidate.pid)) {
       const host = await quickTunnelHost(metricsPort);
-      if (host) return { pid: candidate.pid, host };
+      if (!host) continue;
+      if (await tunnelConnected(metricsPort)) return { pid: candidate.pid, host };
+      // Not ours to stop: it is left running, and a new tunnel is used instead.
+      warn(
+        `A quick tunnel that the launcher did not start (PID ${candidate.pid}) has lost its connection to Cloudflare, so https://${host} no longer works. It is not used.`,
+      );
     }
   }
   return null;
@@ -501,11 +526,15 @@ async function ensureTunnel(port, { newTunnel }) {
     warn('The tunnel started earlier by the launcher had stopped; a new one is started.');
   else if (owned && !newTunnel) {
     const host = await quickTunnelHost(owned.metricsPort);
-    if (host) {
+    if (host && (await tunnelConnected(owned.metricsPort))) {
       step(`Tunnel already running (started by the launcher): https://${host}`);
       return { host, owned: true, started: false };
     }
-    warn("The launcher's tunnel is running but reports no address; it is replaced.");
+    warn(
+      host
+        ? `The launcher's tunnel has lost its connection to Cloudflare (often after the PC slept), so https://${host} no longer works. It is replaced with a new tunnel, which has a new address.`
+        : "The launcher's tunnel is running but reports no address; it is replaced.",
+    );
     stopTree(owned.window?.pid ?? owned.process.pid);
     clearState('tunnel');
   } else if (owned && newTunnel) {
@@ -844,8 +873,10 @@ async function status() {
   say(
     `API (port ${port}): ${health?.ok ? 'healthy' : health ? 'unhealthy' : 'not answering'}${api && !api.stale ? ' - started by the launcher' : ''}`,
   );
+  const tunnelUp = tunnel && !tunnel.stale;
+  const connected = tunnelUp && (await tunnelConnected(tunnel.metricsPort, { waitMs: 0 }));
   say(
-    `Tunnel: ${tunnel && !tunnel.stale ? `https://${tunnel.host} - started by the launcher` : 'none started by the launcher'}`,
+    `Tunnel: ${tunnelUp ? `https://${tunnel.host} - started by the launcher${connected ? '' : ' - NOT CONNECTED to Cloudflare: this address no longer works; run start-socialhub.cmd for a new one'}` : 'none started by the launcher'}`,
   );
   say(`.env public URL: ${values.API_PUBLIC_URL}`);
   say(`Publishing: ${(values.PUBLISHING_MODE || 'disabled').toUpperCase()}`);

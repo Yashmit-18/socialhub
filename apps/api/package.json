@@ -9,6 +9,10 @@
     "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "start": "node --env-file-if-exists=.env src/server.js",
     "db:indexes": "node --env-file-if-exists=.env scripts/sync-indexes.js",
+    "db:backup": "node --env-file-if-exists=.env scripts/db-backup.js",
+    "db:verify-backup": "node scripts/db-verify-backup.js",
+    "db:restore": "node --env-file-if-exists=.env scripts/db-restore.js",
+    "secrets:rotate-key": "node --env-file-if-exists=.env scripts/rotate-token-key.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "meta:sync": "node --env-file-if-exists=.env scripts/sync-meta-connections.js",
@@ -19,7 +23,8 @@
     "queue:verify": "node --env-file-if-exists=.env scripts/verify-queue.js",
     "publishing:verify": "node --env-file-if-exists=.env scripts/verify-publishing-e2e.js",
     "analytics:verify": "node --env-file-if-exists=.env scripts/verify-analytics-queue.js",
-    "meta:verify": "node --env-file-if-exists=.env scripts/verify-meta-integration.js"
+    "meta:verify": "node --env-file-if-exists=.env scripts/verify-meta-integration.js",
+    "meta:oauth-attempts": "node --env-file-if-exists=.env scripts/oauth-attempts.js"
   },
   "dependencies": {
     "@socialhub/shared": "0.1.0",

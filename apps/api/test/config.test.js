@@ -26,6 +26,31 @@ describe('environment configuration', () => {
     ).toThrow(/TOKEN_ENCRYPTION_KEY/);
   });
 
+  it('refuses plain HTTP public addresses and insecure cookies in production', () => {
+    expect(() => loadConfig({ ...base, CLIENT_ORIGIN: 'http://app.example.com' })).toThrow(
+      /CLIENT_ORIGIN must use https:\/\/ in production \(http:\/\/app\.example\.com\)/,
+    );
+    expect(() =>
+      loadConfig({
+        ...base,
+        CLIENT_ORIGIN: 'https://app.example.com',
+        API_PUBLIC_URL: 'http://api.example.com',
+      }),
+    ).toThrow(/API_PUBLIC_URL must use https:\/\/ in production/);
+    expect(() =>
+      loadConfig({ ...base, CLIENT_ORIGIN: 'https://app.example.com', COOKIE_SECURE: 'false' }),
+    ).toThrow(/COOKIE_SECURE=false is not allowed in production/);
+    // Local addresses (a production build tried out on this machine) are still accepted.
+    expect(loadConfig({ ...base, CLIENT_ORIGIN: 'http://localhost:5173' }).appUrl).toBe(
+      'http://localhost:5173',
+    );
+    // Development keeps working on http.
+    expect(
+      loadConfig({ ...base, NODE_ENV: 'development', CLIENT_ORIGIN: 'http://192.168.1.5:5173' })
+        .appUrl,
+    ).toBe('http://192.168.1.5:5173');
+  });
+
   it('parses origin lists and derives the app URL', () => {
     const config = loadConfig({
       ...base,
