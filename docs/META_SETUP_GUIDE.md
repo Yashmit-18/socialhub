@@ -344,7 +344,7 @@ Rules SocialHub enforces when it starts:
 - Leaving a pair empty disables that flow, and its **Connect** button doesn't appear.
 
 Every variable, with its default, is documented in
-[`apps/api/.env.example`](apps/api/.env.example). Restart the API after editing `.env`.
+[`apps/api/.env.example`](../apps/api/.env.example). Restart the API after editing `.env`.
 
 ## 10. Check the configuration
 

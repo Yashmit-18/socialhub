@@ -45,7 +45,7 @@ integrates with the official Meta Graph API.
 - [Composer backend](#composer-backend): drafts, media storage and account presets
 - [Composer API contract](docs/COMPOSER_API_CONTRACT.md)
 - [Analytics](docs/ANALYTICS.md): formulas, API, insights sync, what Meta insights still need
-- **[Meta setup guide](META_SETUP_GUIDE.md)**: step-by-step Meta Developer Dashboard setup,
+- **[Meta setup guide](docs/META_SETUP_GUIDE.md)**: step-by-step Meta Developer Dashboard setup,
   with notes on which facts were checked against Meta's docs
 - [Project history](#project-history)
 - [Roadmap](#roadmap)
@@ -296,7 +296,7 @@ Add them to `META_FACEBOOK_SCOPES` only when needed.
 ### Meta Developer Dashboard setup (manual)
 
 The full walkthrough, including troubleshooting and App Review, is in
-**[META_SETUP_GUIDE.md](META_SETUP_GUIDE.md)**. This is the short version.
+**[docs/META_SETUP_GUIDE.md](docs/META_SETUP_GUIDE.md)**. This is the short version.
 `API_PUBLIC_URL` below is the public **HTTPS** origin where Meta reaches the API.
 
 1. **Create the app** at developers.facebook.com. Add the **Facebook Login** (or
@@ -344,6 +344,9 @@ The full walkthrough, including troubleshooting and App Review, is in
 - **Business Verification**;
 - switching the app to **Live** mode.
 
+Preparing the App Review submission (permission-to-feature mapping, reviewer instructions,
+screencast checklist, data handling): **[docs/META_APP_REVIEW_GUIDE.md](docs/META_APP_REVIEW_GUIDE.md)**.
+
 ### Publishing engine
 
 One prepared post is sent to many Facebook Pages and Instagram accounts. Each account is
@@ -352,8 +355,8 @@ and the API are in [docs/PUBLISHING_API.md](docs/PUBLISHING_API.md).
 
 > **Simulation is the default.** In simulated mode the whole process runs (queue, worker,
 > retries, history) but **nothing is sent to Facebook or Instagram**, and every such post is
-> labelled "Simulated". Real publishing exists (Phase 8) but stays off until both switches
-> below are on; it has not yet been run against real accounts.
+> labelled "Simulated". Real publishing (Phase 8) stays off until both switches below are on;
+> it was verified with real Facebook Page posts on 2026-11-24 (Instagram not yet).
 
 ### What it does
 
@@ -419,6 +422,69 @@ Off by default, and it takes two deliberate steps:
 
 Posts keep the mode they were created in. Real posts still waiting when real publishing is
 switched off are refused, never quietly simulated.
+
+3. Every real post is confirmed explicitly, by the UI and by the API. The composer's
+   **Publish** dialog and **Publishing › Publish a draft** show what will be posted (the
+   images and the exact caption each platform receives) and the destination accounts. In real
+   publishing they also say **This creates a REAL public post**, and the button stays disabled
+   until the person ticks the confirmation for that post (it is cleared when the dialog closes,
+   another draft or workspace is chosen, or the mode changes). The request then carries
+   `confirmRealPost: true`, and the API refuses to create a real job without it
+   (`400 REAL_POST_CONFIRMATION_REQUIRED`: nothing created, never turned into a simulation),
+   whether the post is sent now or scheduled, and whichever screen or client sends it. One
+   click sends one request (an idempotency key per click), so a double click or a retried
+   request cannot create a second post. **Retrying** a failed real destination sends a real
+   post again, so it needs the same confirmation (`confirmRealPost` on the retry; the retry
+   dialog shows the checkbox), and after an uncertain outcome also the duplicate-risk
+   acknowledgement. Changing the time of a scheduled real post moves the confirmed post and
+   creates nothing new.
+4. A real Facebook post that was published can be **edited** (its text) or **deleted** on
+   Facebook from the post's details (**Edit text**, **Delete from Facebook**), with the same
+   explicit confirmation, enforced by the API (`PATCH`/`DELETE …/destinations/:id/post`,
+   Meta `POST`/`DELETE /{post-id}`). It is recorded only when Meta confirms it; an unclear
+   answer is shown as such and never repeated by itself. Instagram posts and a video's text
+   cannot be changed from SocialHub. Tested against a simulated Meta only.
+
+**Status on this PC (2026-11-24).** `PUBLISHING_MODE=live`, and the workspace "yashmit.talks"
+has real publishing switched on (its owner did it in Settings); every other workspace is in
+simulation. **Real Facebook publishing is verified:** the owner published three posts from the
+composer (two on "Yashmit talks", one on "Aerwvs"). For each, SocialHub stored the post ID
+Meta returned, and a read-only `GET /{post-id}` with the Page token answered HTTP 200 with
+`is_published: true`. Instagram has no connected account yet: Meta reports **no Instagram
+professional account linked to "Yashmit talks"**; see
+[Connecting Instagram](#connecting-instagram-on-this-pc). Facebook accounts other than the
+Meta app's administrator cannot connect until they are added under App roles or Meta approves
+the App Review ([docs/META_APP_REVIEW_GUIDE.md](docs/META_APP_REVIEW_GUIDE.md)). Before
+Facebook login (connect or reconnect) works through a new tunnel address, the Meta Developer
+Dashboard must list that address (the launcher prints the values to paste).
+
+#### Connecting Instagram on this PC
+
+SocialHub connects an Instagram **Business or Creator** account through the Facebook Page it
+is linked to (Facebook Login, permissions `instagram_basic` and `instagram_content_publish`,
+both already granted on the existing login). Personal Instagram accounts cannot be connected:
+Meta's APIs do not offer them for publishing.
+
+1. In the Instagram app: **Settings › Account type and tools › Switch to professional
+   account** (Business or Creator), if it is not one already.
+2. Link it to the Facebook Page **Yashmit talks**: on Facebook, the Page's **Settings ›
+   Linked accounts › Instagram › Connect** (or Meta Business Suite › Settings › Instagram
+   accounts). Use a Facebook profile that has full control of the Page.
+3. In SocialHub: **Social accounts › Logins › the Facebook login › Choose accounts**, then
+   **Refresh from Meta** (uses the stored login, no Meta dialog). The Instagram account
+   appears under _Instagram accounts_ with its username, picture and linked Page. If it does
+   not, use **Connect Instagram** (or **Reconnect** on the login) and, in Meta's dialog, allow
+   the Instagram account as well as the Page.
+4. Tick it and choose **Add**. The accounts table then shows it with its publishing
+   readiness. Nothing is published, and the workspace stays in simulation.
+
+**Connect Instagram** is shown whenever Facebook Login is configured: without Instagram Login
+(`INSTAGRAM_APP_ID` / `INSTAGRAM_APP_SECRET` unset, as on this PC) it opens Facebook Login,
+which finds the Page-linked Instagram accounts. Any Meta dialog (Connect, Reconnect) needs the
+current public address registered in the Meta Developer Dashboard (Valid OAuth Redirect URI
+`API_PUBLIC_URL/api/v1/oauth/facebook/callback`); `start-socialhub.cmd` prints the values
+whenever the quick-tunnel address changes. Until step 2 is done, the account-selection screen
+says which Pages have no linked Instagram account and what to do.
 
 Before anything is sent, SocialHub checks the account (connected, Page role, permissions,
 token), the text and every file against Meta's documented limits (for example Instagram
@@ -515,6 +581,37 @@ are never mixed. Details, formulas and the API: [docs/ANALYTICS.md](docs/ANALYTI
 | Sync on a real Redis                                                                    | **Verified 2026-11-23** on Memurai 4.1.2: `analytics:verify` 34/34 (real API and worker processes, simulated Meta)                   |
 | Analytics screen                                                                        | 18 component tests; viewed in headless Chrome against the real API with seeded records at 360, 768, 1024 and 1440 px, light and dark |
 | Meta insights adapter                                                                   | Tests against a **fake** Meta transport only. **Never run against Meta**; switched off                                               |
+
+## Backups, key rotation and production safety
+
+**Backups.** `npm run db:backup -w @socialhub/api` writes every MongoDB collection to a new
+folder (`apps/api/backups/socialhub-<date>-<time>`, or `BACKUP_DIR`): one Extended JSON file
+per collection plus a `manifest.json` with each file's document count and SHA-256. Add
+`-- --with-media` to copy `STORAGE_LOCAL_DIR` too. It only reads the database.
+`npm run db:verify-backup -w @socialhub/api -- <folder>` checks a backup against its manifest.
+`npm run db:restore -w @socialhub/api -- <folder>` restores into `RESTORE_MONGODB_URI` (default
+`MONGODB_URI`), but only into empty collections, after verifying the backup, so it never
+overwrites data; then run `npm run db:indexes -w @socialhub/api`. A backup holds password hashes
+and Meta tokens encrypted with `TOKEN_ENCRYPTION_KEY`: keep it private, and keep the key,
+because restored tokens only work with it. `backups/` is git-ignored. Back up regularly, for
+example before every update.
+
+**Rotating `TOKEN_ENCRYPTION_KEY`.** `npm run secrets:rotate-key -w @socialhub/api`
+re-encrypts every stored Meta token with `NEW_TOKEN_ENCRYPTION_KEY`; the steps are at the top
+of `apps/api/scripts/rotate-token-key.js`. Without `--apply` it only reports. With `--apply` it
+refuses while the API is running, writes nothing unless every token can be read, never
+overwrites a token that changed meanwhile, verifies every token with the new key afterwards,
+and can be run again safely.
+
+**Production settings.** With `NODE_ENV=production` the API refuses to start when
+`CLIENT_ORIGIN`, `APP_URL` or `API_PUBLIC_URL` use plain `http://` for a public host, or when
+`COOKIE_SECURE=false` (local addresses stay allowed for trying a build on one machine).
+
+**Facebook-only login.** This PC's `apps/api/.env` sets
+`META_FACEBOOK_SCOPES=pages_show_list,pages_read_engagement,pages_manage_posts`, the permissions
+submitted for App Review. Page discovery then does not ask Meta for linked Instagram accounts,
+and "Connect Instagram" through Facebook is hidden. Add `instagram_basic` and
+`instagram_content_publish` back when Instagram publishing is ready to be reviewed.
 
 ## Testing against a real Meta app locally
 
@@ -1014,6 +1111,13 @@ Hierarchy rules:
 | 2026-11-23 | 8: Real Facebook and Instagram publishing         | Behind two switches (server `live`, workspace owner/admin + password); tested with a simulated Meta only; **not yet run on real accounts**                |
 | 2026-11-23 | Upload fix and signed media links                 | Root cause found and fixed (absolute upload links blocked by the page's CSP); signed, expiring file links; tested; browser upload to be confirmed by hand |
 | 2026-11-24 | Windows one-click launcher (Quick Tunnel)         | start/stop scripts; tunnel URL captured and written to .env; stops only what it started; tested on this PC                                                |
+| 2026-11-24 | Real Facebook publishing: readiness               | Server back to simulated, no real post; Page token and permissions verified; image link public (Meta's own fetch unproven); dialog preview + confirmation |
+| 2026-11-24 | Real-post confirmation enforced by the API        | `confirmRealPost` required for every real job (now or scheduled, any client); composer + Publish a draft ask for it; no real post made                    |
+| 2026-11-24 | Facebook + Instagram integration hardening        | Retry of a real post confirmed; FB post link read back; IG link explained; worker count per Redis db; ANALYTICS_MODE=live (opt-in)                        |
+| 2026-11-24 | Real Facebook publishing verified                 | Owner published 3 posts from the composer to 2 Pages; each Meta post ID stored and confirmed by a read-only GET (is_published); Instagram not yet         |
+| 2026-11-24 | Audit: App Review prep, diagnostics, fixes        | App Review guide; OAuth diagnostics (meta:oauth-attempts); dead tunnels replaced; composer live-mode text; invite links redacted; source maps private     |
+| 2026-11-24 | Backups, key rotation, production checks          | db:backup/verify/restore (empty targets only); secrets:rotate-key; production refuses http/insecure cookies; FB-only login scopes; PC no longer sleeps    |
+| 2026-11-24 | Edit and delete real Facebook posts               | Text edit + delete on Facebook from the post details; explicit confirmation enforced by the API; recorded only on Meta success; simulated Meta only       |
 
 ### Upload fix and signed media links (2026-11-23)
 
@@ -1234,7 +1338,7 @@ nothing here calls Meta, so it does not depend on the pending Meta verification.
 - **What it covers:** features, how it works, a tour of every app page, the composer, roles,
   security, how the Meta connection works, an honest roadmap and an FAQ. The copy lives in
   `apps/web/src/pages/landing/landingContent.js` and mirrors this README,
-  `docs/ARCHITECTURE.md`, `META_SETUP_GUIDE.md` and the RBAC matrix. Update it when a feature
+  `docs/ARCHITECTURE.md`, `docs/META_SETUP_GUIDE.md` and the RBAC matrix. Update it when a feature
   ships, especially the roadmap statuses.
 - **Honesty:** publishing and scheduling are shown as "In development"; product
   illustrations use labelled sample data; there are no customer logos, testimonials or usage
@@ -1549,7 +1653,7 @@ collection is the `SyncRun` history.
   - Honest messaging when Meta isn't configured; publishing still described as
     unavailable.
 - **Review against Meta's current docs** (same day; full notes in
-  [META_SETUP_GUIDE.md](META_SETUP_GUIDE.md)):
+  [docs/META_SETUP_GUIDE.md](docs/META_SETUP_GUIDE.md)):
   - OAuth error 467 is "invalid token" (→ `REVOKED`), and a bare 190 means expired.
   - Rate-limit codes are limited to the documented set (plus 368).
   - Picture fields use the documented `picture.width().height()` form.

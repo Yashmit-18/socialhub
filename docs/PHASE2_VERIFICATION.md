@@ -40,7 +40,7 @@ Other baseline results:
 
 ## What you need first
 
-1. **A Meta app** configured per [META_SETUP_GUIDE.md](../META_SETUP_GUIDE.md): Facebook
+1. **A Meta app** configured per [META_SETUP_GUIDE.md](META_SETUP_GUIDE.md): Facebook
    Login (for Business), Require App Secret, and the callback URLs.
 2. **Test accounts**, all with a **role on the app** (App roles → Roles). In Development
    mode nobody else can authorize.
