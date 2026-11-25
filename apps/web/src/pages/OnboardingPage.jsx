@@ -38,7 +38,7 @@ export default function OnboardingPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-12">
       <div
-        className="absolute -top-40 left-1/2 h-[30rem] w-[30rem] -translate-x-1/2 rounded-full bg-brand-500/15 blur-3xl"
+        className="absolute -top-40 left-1/2 h-[30rem] w-[30rem] -translate-x-1/2 animate-drift rounded-full bg-brand-500/15 blur-3xl"
         aria-hidden="true"
       />
       <div className="relative w-full max-w-lg">
@@ -53,8 +53,8 @@ export default function OnboardingPage() {
             </Link>
           )}
         </div>
-        <div className="surface p-7 sm:p-9">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/25">
+        <div className="surface auth-form animate-scale-in p-7 sm:p-9">
+          <div className="flex h-12 w-12 animate-pop-in items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/30 ring-1 ring-white/25 ring-inset">
             <Building2 className="h-6 w-6" aria-hidden="true" />
           </div>
           <h1 className="mt-5 text-2xl font-semibold tracking-tight">

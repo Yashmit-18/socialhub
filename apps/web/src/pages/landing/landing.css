@@ -1557,7 +1557,118 @@ html.lp-vt::view-transition-new(root) {
   .lp-beam-v,
   .lp-caret,
   .lp-rays,
-  .lp-hero-glow {
+  .lp-hero-glow,
+  .lp-beam-border,
+  .lp-grid-spot {
     display: none;
+  }
+}
+
+/* ---------- Hero: cursor spotlight, border beam, scroll-linked depth ---------- */
+
+@layer components {
+  /*
+   * A brighter patch of the grid and a soft glow follow the pointer across the hero.
+   * usePointerParallax writes --hx/--hy (pixels) and `.is-pointer-in` on the hero section.
+   */
+  .lp-grid-spot {
+    --lp-grid-hot: rgb(99 102 241 / 0.32);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(
+        480px circle at var(--hx, 50%) var(--hy, 30%),
+        var(--lp-spot),
+        transparent 70%
+      ),
+      linear-gradient(to right, var(--lp-grid-hot) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--lp-grid-hot) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      64px 64px,
+      64px 64px;
+    -webkit-mask-image: radial-gradient(
+      360px circle at var(--hx, 50%) var(--hy, 30%),
+      #000 0%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      360px circle at var(--hx, 50%) var(--hy, 30%),
+      #000 0%,
+      transparent 100%
+    );
+    opacity: 0;
+    transition: opacity 700ms ease;
+  }
+
+  .dark .lp-grid-spot {
+    --lp-grid-hot: rgb(165 180 252 / 0.3);
+  }
+
+  .is-pointer-in > .lp-grid-spot {
+    opacity: 1;
+  }
+
+  /* A light that keeps travelling around the hero dashboard's frame. */
+  .lp-beam-border {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    border-radius: inherit;
+    padding: 1.5px;
+    pointer-events: none;
+    background: conic-gradient(
+      from var(--lp-angle),
+      transparent 0 68%,
+      #818cf8 78%,
+      #e879f9 86%,
+      #fb923c 92%,
+      transparent 98%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: lp-angle 7s linear infinite;
+  }
+}
+
+/*
+ * Scroll-linked depth (browsers with scroll-driven animations): the hero copy recedes as the
+ * page scrolls, and the dashboard starts tilted back and settles flat as it comes into view.
+ */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .lp-hero-copy {
+      animation: lp-hero-recede linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 75vh;
+    }
+
+    .lp-scroll-tilt {
+      transform-origin: 50% 0%;
+      animation: lp-scroll-tilt linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 42%;
+    }
+  }
+}
+
+@keyframes lp-hero-recede {
+  to {
+    opacity: 0.15;
+    transform: translateY(-56px) scale(0.97);
+    filter: blur(4px);
+  }
+}
+
+@keyframes lp-scroll-tilt {
+  from {
+    transform: perspective(1800px) rotateX(18deg) scale(0.92);
+  }
+  to {
+    transform: none;
   }
 }

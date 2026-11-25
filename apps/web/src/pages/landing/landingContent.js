@@ -1,7 +1,9 @@
 /**
  * Copy for the public landing page. Every claim here mirrors what the product actually does
- * today (README.md, docs/ARCHITECTURE.md, META_SETUP_GUIDE.md, packages/shared/src/roles.js).
- * Publishing and scheduling are NOT built yet, so they only ever appear as "in development".
+ * today (README.md, docs/ARCHITECTURE.md, docs/META_SETUP_GUIDE.md, packages/shared/src/roles.js).
+ * Publishing and scheduling to Facebook Pages are built and were verified with real posts on
+ * 2026-11-24. Instagram publishing is built but not yet verified with a real Instagram
+ * account, and people without a role on the Meta app can connect only after Meta's App Review.
  * Keep this file in sync with those references when features change.
  */
 import {
@@ -183,8 +185,7 @@ export const STEPS = [
   {
     icon: SquarePen,
     title: 'Create, preview & check',
-    body: 'Compose once, tailor per platform and check it against Meta’s documented limits before it goes anywhere.',
-    soon: 'Publishing & scheduling: in development',
+    body: 'Compose once, tailor per platform and check it against Meta’s documented limits, then publish now or schedule it. Every real post is previewed and confirmed first.',
   },
 ];
 
@@ -231,7 +232,7 @@ export const TOUR = [
       'Internal SEO keywords that are stored but never published',
       'Account presets, autosave and team drafts',
     ],
-    note: 'Publishing and scheduling are in development. The composer never sends anything to Meta yet.',
+    note: 'Publish now or schedule for later. Before a real post, SocialHub shows exactly what will be posted and where, and asks you to confirm it. A workspace can also run in simulation, which sends nothing to Meta.',
   },
   {
     id: 'team',
@@ -430,14 +431,15 @@ export const ROADMAP = [
     ],
   },
   {
-    status: 'In development',
-    tone: 'pink',
+    // Verified with real Facebook Page posts on 2026-11-24; Instagram not yet verified.
+    status: 'Ready for Facebook Pages',
+    tone: 'mint',
     icon: CalendarClock,
     title: 'Publishing & scheduling',
     items: [
-      'A queue that publishes to each destination',
-      'Automatic retries and clear per-destination results',
-      'Scheduled posts',
+      'Publish now or schedule, with a preview and a confirmation before every real post',
+      'Clear per-destination results with a link to the published post',
+      'Instagram publishing built, not yet verified with a real account',
     ],
   },
   {
@@ -468,7 +470,7 @@ export const FAQ = [
   },
   {
     q: 'Can SocialHub publish or schedule posts today?',
-    a: 'Not yet. The composer builds, previews, checks and saves your posts, but the Publish button stays disabled and nothing is sent to Facebook or Instagram until the publishing engine ships. It is in development now.',
+    a: 'Yes, to Facebook Pages: publish now or schedule for later. Before every real post SocialHub shows exactly what will be posted and where, and you confirm it. Instagram publishing is built but has not yet been verified with a real Instagram account. Until Meta approves SocialHub’s App Review, only Facebook accounts added to the Meta app can connect.',
   },
   {
     q: 'What happens when a connection expires?',

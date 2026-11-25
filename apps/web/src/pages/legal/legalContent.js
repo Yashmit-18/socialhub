@@ -1,7 +1,7 @@
 /**
  * Text of SocialHub's public legal pages (/privacy.html, /terms.html, /data-deletion.html).
  *
- * Every statement here describes what the code actually does (as audited on 2026-11-23).
+ * Every statement here describes what the code actually does (as audited on 2026-11-24).
  * When behaviour changes (publishing goes live, insights are enabled, account self-deletion
  * ships, a new service provider is added), update the matching section AND `LAST_UPDATED`.
  * Do not add claims of certifications or legal compliance that have not been verified.
@@ -21,7 +21,7 @@ export const LEGAL_CONTACT = {
   email: 'workwithyashmit@gmail.com',
 };
 
-export const LAST_UPDATED = '23 November 2026';
+export const LAST_UPDATED = '24 November 2026';
 
 const privacy = legalLink('privacy');
 const terms = legalLink('terms');
@@ -34,7 +34,7 @@ export const PRIVACY_POLICY = {
   intro: [
     'This policy explains what personal data SocialHub collects, why, how it is protected, who it is shared with and how you can have it deleted. SocialHub is a team workspace for managing Facebook Pages and Instagram professional accounts. It is operated by {{operator}}, and you can reach us at {{email}}.',
     {
-      note: 'SocialHub is in active development. Publishing to Facebook and Instagram currently runs in a simulated mode that sends nothing to Meta, and reading detailed insights (analytics) from Meta is not enabled. This policy describes SocialHub as it works today; it will be updated before those features change.',
+      note: 'SocialHub is in active development. A post is sent to Facebook or Instagram only in a workspace whose owner or admin has turned on real publishing, and only after a member confirms that post; otherwise publishing runs in a simulated mode that sends nothing to Meta. Reading detailed insights (analytics) from Meta is not enabled. This policy describes SocialHub as it works today; it will be updated before that changes.',
     },
   ],
   sections: [
@@ -63,7 +63,7 @@ export const PRIVACY_POLICY = {
             '**Follower counts** of connected Pages and Instagram accounts, refreshed when the connection is checked.',
           ],
         },
-        'By default SocialHub requests `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic` and `instagram_content_publish` through Facebook Login, and `instagram_business_basic` and `instagram_business_content_publish` through Instagram Login. Meta’s dialog shows exactly what is requested, and you can decline permissions there.',
+        'Through Facebook Login SocialHub requests `pages_show_list`, `pages_read_engagement` and `pages_manage_posts`. Only when Instagram publishing is switched on does it also request `instagram_basic` and `instagram_content_publish` through Facebook Login, or `instagram_business_basic` and `instagram_business_content_publish` through Instagram Login. Meta’s dialog shows exactly what is requested, and you can decline permissions there.',
       ],
     },
     {
@@ -128,7 +128,7 @@ export const PRIVACY_POLICY = {
             'To create your account, sign you in and keep your account secure.',
             'To show the Facebook Pages and Instagram accounts a workspace has connected to its members, according to the access each member is given.',
             'To check that each connection still works and to keep account names, pictures and follower counts up to date.',
-            'To prepare posts and, once publishing is enabled and a workspace member chooses to publish, to send that content to the Page or Instagram account they selected. Publishing is currently simulated and sends nothing to Meta.',
+            'To prepare posts and, when a workspace member chooses to publish and confirms it, to send that content (its text and media files) to the Page or Instagram account they selected. In a workspace that has not turned on real publishing, publishing is simulated and sends nothing to Meta.',
             'To send emails you ask for: team invitations and password reset links.',
             'To investigate security problems and misuse.',
           ],
@@ -160,13 +160,13 @@ export const PRIVACY_POLICY = {
         'We do not sell or rent personal data. It is shared only as needed to run SocialHub:',
         {
           list: [
-            '**Meta Platforms:** sign-in, token and account requests go to Facebook and Instagram when you connect or check an account, and publishing requests will go to them once publishing is enabled.',
+            '**Meta Platforms:** sign-in, token and account requests go to Facebook and Instagram when you connect or check an account, and a post’s text and media files go to them when a member publishes it for real.',
             '**Members of your workspace:** the people in a workspace see its connected accounts, drafts and activity according to their role.',
             '**Service providers that run SocialHub for us:** MongoDB Atlas, which hosts SocialHub’s database; Cloudflare, which carries traffic between your browser and SocialHub; and, when email delivery is turned on, an email delivery provider. They process data only to provide their service.',
             '**When the law requires it:** we may disclose information if we are legally required to.',
           ],
         },
-        'Media files you upload are stored by SocialHub and can be opened by anyone who has a file’s link. Each link contains a long random code, so it cannot practically be guessed. This lets Meta fetch the files once publishing is enabled.',
+        'Media files you upload are stored by SocialHub and are served only through signed links that expire. Links shown inside SocialHub work for a few hours. When a post is published for real, Meta receives a link that works for about two hours, long enough to download the file; after that the published post is public on Facebook or Instagram.',
       ],
     },
     {
@@ -239,7 +239,7 @@ export const TERMS_OF_SERVICE = {
       blocks: [
         'SocialHub lets teams connect Facebook Pages and Instagram professional accounts through Meta’s official login, see the health of each connection, control which team members can use which accounts, prepare posts and organise sharing to Facebook Groups.',
         {
-          note: 'SocialHub is in active development. Publishing currently runs in a simulated mode that sends nothing to Facebook or Instagram, and features may change, be added or be removed.',
+          note: 'SocialHub is in active development. Posts are sent to Facebook or Instagram only in workspaces where an owner or admin has turned on real publishing, and only after a member confirms each post; elsewhere publishing runs in a simulated mode. Features may change, be added or be removed.',
         },
       ],
     },

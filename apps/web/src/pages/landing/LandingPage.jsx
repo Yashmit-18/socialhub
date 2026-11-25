@@ -314,72 +314,77 @@ function Hero({ signedIn }) {
         <div className="lp-blob lp-blob-c" />
       </div>
       <div className="lp-grid" aria-hidden="true" />
+      <div className="lp-grid-spot" aria-hidden="true" />
 
       <div className={cn(CONTAINER, 'relative text-center')}>
-        <p className="lp-eyebrow lp-rise">
-          <span className="lp-eyebrow-badge">New</span>
-          The universal post composer is here
-        </p>
+        <div className="lp-hero-copy">
+          <p className="lp-eyebrow lp-rise">
+            <span className="lp-eyebrow-badge">New</span>
+            The universal post composer is here
+          </p>
 
-        <h1
-          id="hero-title"
-          className="mx-auto mt-7 max-w-6xl text-[2.6rem] leading-[1.03] font-semibold tracking-[-0.045em] text-balance text-(--lp-text) sm:text-6xl lg:text-[5.25rem]"
-        >
-          <Words text="Every client’s Facebook & Instagram." mode="enter" delay={150} step={70} />{' '}
-          <span className="block">
-            <span className="lp-wipe" style={{ '--lp-delay': '700ms' }}>
-              <span className="lp-grad-text">One calm workspace.</span>
-            </span>
-          </span>
-        </h1>
-
-        <p
-          className="lp-rise mx-auto mt-6 max-w-2xl text-base leading-relaxed text-pretty text-(--lp-muted) sm:text-lg"
-          style={{ '--lp-delay': '950ms' }}
-        >
-          SocialHub connects Facebook Pages and Instagram professional accounts through Meta’s
-          official login, keeps every connection healthy, gives each teammate exactly the access
-          they need and lets you craft posts with live previews, without ever sharing a password.
-        </p>
-
-        <div
-          className="lp-rise mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
-          style={{ '--lp-delay': '1100ms' }}
-        >
-          <span ref={magnetic} className="lp-magnetic w-full sm:w-auto">
-            {signedIn ? (
-              <Link to="/" className="lp-btn-primary lp-shine-auto w-full sm:w-auto">
-                Open your dashboard <ArrowRight className="lp-arrow h-4 w-4" />
-              </Link>
-            ) : (
-              <Link to="/register" className="lp-btn-primary lp-shine-auto w-full sm:w-auto">
-                Create your workspace <ArrowRight className="lp-arrow h-4 w-4" />
-              </Link>
-            )}
-          </span>
-          <a
-            href="#how-it-works"
-            onClick={(event) => scrollToSection(event, '#how-it-works')}
-            className="lp-btn-ghost w-full sm:w-auto"
+          <h1
+            id="hero-title"
+            className="mx-auto mt-7 max-w-6xl text-[2.6rem] leading-[1.03] font-semibold tracking-[-0.045em] text-balance text-(--lp-text) sm:text-6xl lg:text-[5.25rem]"
           >
-            See how it works
-          </a>
+            <Words text="Every client’s Facebook & Instagram." mode="enter" delay={150} step={70} />{' '}
+            <span className="block">
+              <span className="lp-wipe" style={{ '--lp-delay': '700ms' }}>
+                <span className="lp-grad-text">One calm workspace.</span>
+              </span>
+            </span>
+          </h1>
+
+          <p
+            className="lp-rise mx-auto mt-6 max-w-2xl text-base leading-relaxed text-pretty text-(--lp-muted) sm:text-lg"
+            style={{ '--lp-delay': '950ms' }}
+          >
+            SocialHub connects Facebook Pages and Instagram professional accounts through Meta’s
+            official login, keeps every connection healthy, gives each teammate exactly the access
+            they need and lets you craft posts with live previews, without ever sharing a password.
+          </p>
+
+          <div
+            className="lp-rise mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
+            style={{ '--lp-delay': '1100ms' }}
+          >
+            <span ref={magnetic} className="lp-magnetic w-full sm:w-auto">
+              {signedIn ? (
+                <Link to="/" className="lp-btn-primary lp-shine-auto w-full sm:w-auto">
+                  Open your dashboard <ArrowRight className="lp-arrow h-4 w-4" />
+                </Link>
+              ) : (
+                <Link to="/register" className="lp-btn-primary lp-shine-auto w-full sm:w-auto">
+                  Create your workspace <ArrowRight className="lp-arrow h-4 w-4" />
+                </Link>
+              )}
+            </span>
+            <a
+              href="#how-it-works"
+              onClick={(event) => scrollToSection(event, '#how-it-works')}
+              className="lp-btn-ghost w-full sm:w-auto"
+            >
+              See how it works
+            </a>
+          </div>
+
+          <ul
+            className="lp-rise mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-(--lp-muted)"
+            style={{ '--lp-delay': '1250ms' }}
+          >
+            {TRUST.map(({ icon: Icon, label }) => (
+              <li key={label} className="inline-flex items-center gap-2">
+                <Icon className="h-4 w-4 text-(--lp-mint)" />
+                {label}
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <ul
-          className="lp-rise mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-(--lp-muted)"
-          style={{ '--lp-delay': '1250ms' }}
-        >
-          {TRUST.map(({ icon: Icon, label }) => (
-            <li key={label} className="inline-flex items-center gap-2">
-              <Icon className="h-4 w-4 text-(--lp-mint)" />
-              {label}
-            </li>
-          ))}
-        </ul>
-
-        <div ref={stageRef} className="lp-stage mt-16 sm:mt-20">
-          <HeroDashboard />
+        <div className="lp-scroll-tilt mt-16 sm:mt-20">
+          <div ref={stageRef} className="lp-stage">
+            <HeroDashboard />
+          </div>
         </div>
       </div>
     </section>

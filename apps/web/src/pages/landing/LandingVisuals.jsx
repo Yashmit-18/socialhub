@@ -285,6 +285,7 @@ export function HeroDashboard() {
       <div className="lp-parallax relative">
         <div className="lp-tilt-in relative">
           <div className="lp-gradient-border lp-window relative overflow-hidden rounded-[1.75rem] text-left shadow-(--lp-shadow-xl)">
+            <div className="lp-beam-border" />
             <WindowChrome path="/w/bloom-studio" />
             <div className="flex">
               <MiniSidebar active="overview" />
@@ -867,8 +868,8 @@ export function ComposerDemo() {
             <span className="rounded-full px-3 py-1.5 text-[11px] text-(--lp-muted) ring-1 ring-(--lp-border)">
               Save draft
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-(--lp-surface-2) px-3 py-1.5 text-[11px] text-(--lp-faint)">
-              <Lock className="h-3 w-3" /> Publish · coming soon
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-(--lp-surface-2) px-3 py-1.5 text-[11px] text-(--lp-muted)">
+              <ShieldCheck className="h-3 w-3" /> Publish · confirm first
             </span>
           </div>
         </div>

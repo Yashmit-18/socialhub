@@ -1,11 +1,12 @@
 import { PERMISSIONS } from '@socialhub/shared';
-import { Suspense } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { Suspense, useRef } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router';
 import { ConnectButtons } from '../../../components/accounts/ConnectButtons.jsx';
 import { MetaSetupNotice } from '../../../components/accounts/MetaSetupNotice.jsx';
 import { PageHeader } from '../../../components/layout/AppShell.jsx';
 import { PageLoader } from '../../../components/ui/Feedback.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
+import { useActiveIndicator } from '../../../hooks/useActiveIndicator.js';
 import { useStartAuthorization } from '../../../hooks/useStartAuthorization.js';
 import { useAccountSummary, useMetaIntegration } from '../../../lib/queries.js';
 import { cn } from '../../../lib/utils.js';
@@ -24,6 +25,10 @@ export default function AccountsLayout() {
   const start = useStartAuthorization(workspace.id);
   const base = `/w/${workspace.slug}/accounts`;
   const counts = summary.data;
+  const { pathname } = useLocation();
+  const tabsRef = useRef(null);
+  const underlineRef = useRef(null);
+  useActiveIndicator(tabsRef, underlineRef, pathname, 'x');
 
   const tabs = [
     { to: base, label: 'Overview', end: true },
@@ -50,7 +55,12 @@ export default function AccountsLayout() {
         aria-label="Social account sections"
         className="-mt-3 mb-6 overflow-x-auto border-b border-slate-200/80 dark:border-white/10"
       >
-        <ul className="flex min-w-max gap-1">
+        <ul ref={tabsRef} className="relative flex min-w-max gap-1">
+          <li
+            ref={underlineRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-gradient-to-r from-brand-500 via-violet-500 to-fuchsia-500 opacity-0 shadow-[0_0_12px_rgb(139_92_246/0.7)] data-[ready]:transition-[transform,width,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo"
+          />
           {tabs.map((tab) => (
             <li key={tab.to}>
               <NavLink
@@ -58,10 +68,11 @@ export default function AccountsLayout() {
                 end={tab.end}
                 className={({ isActive }) =>
                   cn(
-                    '-mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
+                    'relative isolate -mb-px inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors duration-200',
+                    'after:absolute after:inset-x-1.5 after:top-1 after:bottom-1.5 after:-z-10 after:rounded-lg after:transition-colors',
                     isActive
-                      ? 'border-brand-500 text-brand-700 dark:border-brand-400 dark:text-brand-300'
-                      : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-100',
+                      ? 'text-brand-700 dark:text-white'
+                      : 'text-slate-500 hover:text-slate-800 hover:after:bg-slate-900/[0.04] dark:text-slate-400 dark:hover:text-slate-100 dark:hover:after:bg-white/[0.04]',
                   )
                 }
               >

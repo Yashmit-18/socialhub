@@ -2,6 +2,7 @@ import { Users } from 'lucide-react';
 import { exactFollowers, formatFollowers, missingFollowersNote } from '../../lib/followers.js';
 import { cn, formatDate, timeAgo } from '../../lib/utils.js';
 import { FacebookIcon, InstagramIcon } from '../ui/Brand.jsx';
+import { AnimatedNumber } from '../ui/AnimatedNumber.jsx';
 import { Card } from '../ui/Card.jsx';
 import { Skeleton } from '../ui/Feedback.jsx';
 
@@ -87,7 +88,7 @@ export function FollowersCard({ followers, accounts, loading, emptyAction, class
               title={exactFollowers(total)}
               data-testid="followers-total"
             >
-              {formatFollowers(total)}
+              <AnimatedNumber value={total} format={formatFollowers} />
             </p>
           )}
           {!loading && followers?.asOf && (
@@ -111,7 +112,7 @@ export function FollowersCard({ followers, accounts, loading, emptyAction, class
             return (
               <div
                 key={key}
-                className="min-w-0 rounded-xl border border-slate-100 px-3 py-2.5 dark:border-white/5"
+                className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/40 px-3 py-2.5 transition-colors duration-200 hover:border-slate-200 dark:border-white/5 dark:bg-white/[0.02] dark:hover:border-white/10"
                 data-testid={`followers-${key}`}
               >
                 <dt className="flex items-center gap-1.5 text-xs text-muted">
@@ -122,7 +123,11 @@ export function FollowersCard({ followers, accounts, loading, emptyAction, class
                   className="mt-1 text-lg font-semibold tabular-nums text-slate-900 dark:text-white"
                   title={exactFollowers(value)}
                 >
-                  {loading ? <Skeleton className="h-6 w-14" /> : formatFollowers(value)}
+                  {loading ? (
+                    <Skeleton className="h-6 w-14" />
+                  ) : (
+                    <AnimatedNumber value={value} format={formatFollowers} />
+                  )}
                 </dd>
                 {covers && <dd className="truncate text-[11px] text-muted">{covers}</dd>}
               </div>
@@ -143,7 +148,7 @@ export function FollowersCard({ followers, accounts, loading, emptyAction, class
           {segments.map(({ key, bar, share, label }) => (
             <span
               key={key}
-              className={cn('h-full min-w-1.5 rounded-full', bar)}
+              className={cn('h-full min-w-1.5 origin-left animate-bar-grow rounded-full', bar)}
               style={{ flex: `${share} 1 0%` }}
               title={`${label}: ${Math.round(share)}% of combined followers`}
             />

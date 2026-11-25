@@ -98,10 +98,17 @@ export function usePointerParallax(areaRef, stageRef) {
     let frame = 0;
     let x = 0;
     let y = 0;
+    let hx = 0;
+    let hy = 0;
+    let inside = false;
     const write = () => {
       frame = 0;
       stage.style.setProperty('--px', x.toFixed(3));
       stage.style.setProperty('--py', y.toFixed(3));
+      // The pointer in the area's own pixels, for the hero's cursor spotlight.
+      area.style.setProperty('--hx', `${hx.toFixed(0)}px`);
+      area.style.setProperty('--hy', `${hy.toFixed(0)}px`);
+      area.classList.toggle('is-pointer-in', inside);
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(write);
@@ -110,11 +117,15 @@ export function usePointerParallax(areaRef, stageRef) {
       const rect = area.getBoundingClientRect();
       x = clamp((event.clientX - rect.left - rect.width / 2) / (rect.width / 2 || 1));
       y = clamp((event.clientY - rect.top - rect.height / 2) / (rect.height / 2 || 1));
+      hx = event.clientX - rect.left;
+      hy = event.clientY - rect.top;
+      inside = true;
       schedule();
     };
     const onLeave = () => {
       x = 0;
       y = 0;
+      inside = false;
       schedule();
     };
     area.addEventListener('pointermove', onMove, { passive: true });

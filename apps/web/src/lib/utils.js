@@ -11,16 +11,31 @@ import { extendTailwindMerge } from 'tailwind-merge';
  * - `bg-gradient-to-*`: Tailwind v4 still supports these v3 names (used across the app), but
  *   tailwind-merge only knows `bg-linear-to-*` and would otherwise read them as background
  *   COLOURS, dropping the gradient when a colour follows it.
- * - the custom `shadow-card` / `shadow-pop` shadows and `animate-fade-in` / `animate-scale-in`
- *   animations from index.css.
+ * - the custom shadows, easings and animations from index.css (`shadow-lift`,
+ *   `ease-out-expo`, `animate-rise`, …).
  * The `text-muted` utility is a text colour, which tailwind-merge already assumes for unknown
- * `text-*` names; `surface` and the landing page's `lp-*` classes are unknown to it and kept.
+ * `text-*` names; `surface`, `surface-hover`, `gradient-text` and the landing page's `lp-*`
+ * classes are unknown to it and kept.
  */
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
-      shadow: ['card', 'pop'],
-      animate: ['fade-in', 'scale-in'],
+      shadow: ['card', 'pop', 'lift', 'glow'],
+      ease: ['out-expo', 'spring', 'in-out-quint'],
+      animate: [
+        'fade-in',
+        'scale-in',
+        'rise',
+        'pop-in',
+        'drawer-in',
+        'shimmer',
+        'float',
+        'drift',
+        'icon-in',
+        'ping-soft',
+        'gradient-pan',
+        'bar-grow',
+      ],
     },
     classGroups: {
       'bg-image': [{ bg: [{ gradient: [{ to: ['t', 'tr', 'r', 'br', 'b', 'bl', 'l', 'tl'] }] }] }],

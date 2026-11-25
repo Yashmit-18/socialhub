@@ -1,15 +1,20 @@
+import { useId } from 'react';
 import { cn } from '../../lib/utils.js';
 
 export function LogoMark({ className }) {
+  // One gradient id per mark: with a shared id, a mark inside a hidden sidebar would leave
+  // every other mark on the page without its fill.
+  const gradientId = `sh-logo-${useId().replace(/:/g, '')}`;
   return (
     <svg viewBox="0 0 32 32" className={cn('h-8 w-8', className)} aria-hidden="true">
       <defs>
-        <linearGradient id="sh-logo" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#6366f1" />
-          <stop offset="1" stopColor="#d946ef" />
+          <stop offset="0.55" stopColor="#a855f7" />
+          <stop offset="1" stopColor="#ec4899" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill="url(#sh-logo)" />
+      <rect width="32" height="32" rx="9" fill={`url(#${gradientId})`} />
       <circle cx="11" cy="16" r="3.2" fill="#fff" />
       <circle cx="21.5" cy="10" r="2.6" fill="#fff" opacity=".85" />
       <circle cx="21.5" cy="22" r="2.6" fill="#fff" opacity=".85" />
@@ -25,8 +30,8 @@ export function LogoMark({ className }) {
 
 export function Logo({ className, light = false }) {
   return (
-    <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <LogoMark />
+    <span className={cn('group/logo inline-flex items-center gap-2.5', className)}>
+      <LogoMark className="drop-shadow-[0_6px_14px_rgb(139_92_246/0.35)] transition-transform duration-500 ease-spring group-hover/logo:-rotate-6 group-hover/logo:scale-105" />
       <span
         className={cn(
           'text-[17px] font-semibold tracking-tight',

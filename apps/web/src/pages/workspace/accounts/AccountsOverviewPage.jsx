@@ -46,6 +46,7 @@ import { Badge } from '../../../components/ui/Badge.jsx';
 import { FacebookIcon, InstagramIcon } from '../../../components/ui/Brand.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
 import { Card, CardBody, CardHeader } from '../../../components/ui/Card.jsx';
+import { AnimatedNumber } from '../../../components/ui/AnimatedNumber.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../components/ui/Feedback.jsx';
 import { Pagination } from '../../../components/ui/Pagination.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
@@ -220,19 +221,19 @@ function SyncAllControl({ integration, sync }) {
 
 function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
   return (
-    <Card className="relative h-full overflow-hidden p-5">
+    <Card interactive className="group relative h-full overflow-hidden p-5">
       <div
         className={cn(
-          'absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.12] blur-2xl',
+          'absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-[0.14] blur-2xl transition-[opacity,transform] duration-700 ease-out-expo group-hover:scale-125 group-hover:opacity-25',
           accent,
         )}
         aria-hidden="true"
       />
-      <div className="flex items-center justify-between gap-3">
+      <div className="relative flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-muted">{label}</p>
         <span
           className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm',
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-lg ring-1 ring-white/20 transition-transform duration-500 ease-spring ring-inset group-hover:scale-110 group-hover:-rotate-6',
             accent,
           )}
         >
@@ -242,11 +243,11 @@ function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
       {loading ? (
         <Skeleton className="mt-3 h-8 w-16" />
       ) : (
-        <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
-          {formatCount(value)}
+        <p className="relative mt-2 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">
+          <AnimatedNumber value={value} format={formatCount} />
         </p>
       )}
-      {hint && !loading && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      {hint && !loading && <p className="relative mt-1 text-xs text-muted">{hint}</p>}
     </Card>
   );
 }

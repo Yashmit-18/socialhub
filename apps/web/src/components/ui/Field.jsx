@@ -4,12 +4,12 @@ import { cn } from '../../lib/utils.js';
 
 const controlClass = (invalid) =>
   cn(
-    'block w-full rounded-xl border bg-white px-3.5 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400',
+    'block w-full rounded-xl border bg-white px-3.5 text-sm text-slate-900 shadow-[0_1px_2px_rgb(24_20_51/0.05)] transition-[border-color,box-shadow,background-color] duration-200 ease-out placeholder:text-slate-400',
     'focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500',
-    'dark:bg-slate-900/60 dark:text-slate-100 dark:placeholder:text-slate-500 dark:disabled:bg-slate-800/50',
+    'dark:bg-white/[0.03] dark:text-slate-100 dark:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.03)] dark:placeholder:text-slate-500 dark:disabled:bg-slate-800/50',
     invalid
       ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/15 dark:border-rose-500/60'
-      : 'border-slate-200 focus:border-brand-500 focus:ring-brand-500/15 dark:border-white/10 dark:focus:border-brand-400',
+      : 'border-slate-200 hover:border-slate-300 focus:border-brand-500 focus:ring-brand-500/15 dark:border-white/10 dark:hover:border-white/20 dark:focus:border-brand-400 dark:focus:bg-white/[0.05] dark:focus:ring-brand-400/15',
   );
 
 /** Label + control + hint/error wiring with accessible ids. `children(id, describedBy)` renders the control. */

@@ -147,19 +147,21 @@ describe('landing page', () => {
     document.documentElement.classList.remove('dark');
   });
 
-  it('is honest that publishing is not available yet', async () => {
+  it('is honest about what publishing does today', async () => {
     guest();
     renderApp('/');
     await hero();
     const roadmap = screen.getByRole('region', { name: /What’s ready, and what’s next/ });
     const publishing = within(roadmap).getByRole('heading', { name: 'Publishing & scheduling' });
-    expect(publishing.closest('div')).toHaveTextContent('In development');
+    // Ready for Facebook Pages only: Instagram is not claimed as verified.
+    expect(publishing.closest('div')).toHaveTextContent('Ready for Facebook Pages');
+    expect(publishing.closest('div')).toHaveTextContent(
+      /Instagram publishing built, not yet verified/,
+    );
     const groups = within(roadmap).getByRole('heading', { name: 'Facebook Group sharing' });
     expect(groups.closest('div')).toHaveTextContent('Ready');
-    expect(
-      screen.getByText(
-        /the Publish button stays disabled and nothing is sent to Facebook or Instagram/,
-      ),
-    ).toBeInTheDocument();
+    // Real posts are always confirmed, and public access still waits for Meta's App Review.
+    expect(screen.getByText(/Until Meta approves SocialHub’s App Review/)).toBeInTheDocument();
+    expect(screen.queryByText(/Publish button stays disabled/)).toBeNull();
   });
 });

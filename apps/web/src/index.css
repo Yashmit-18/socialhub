@@ -2,6 +2,15 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * SocialHub design tokens.
+ *
+ * - Neutrals: Tailwind's `slate` scale re-tuned to a violet-leaning grey (same lightness steps,
+ *   so contrast is unchanged), which makes every page sit in the brand's indigo → fuchsia world.
+ * - Motion: expo-out for entrances, a soft spring for pops. Entrance animations use
+ *   `backwards` fill only, so nothing keeps a transform (and its containing block) afterwards.
+ *   Everything collapses to an instant change under `prefers-reduced-motion`.
+ */
 @theme {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
@@ -17,11 +26,43 @@
   --color-brand-900: oklch(0.32 0.13 277);
   --color-brand-950: oklch(0.22 0.09 277);
 
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(15 23 42 / 0.08);
-  --shadow-pop: 0 12px 40px -12px rgb(15 23 42 / 0.35);
+  --color-slate-50: oklch(0.985 0.003 285);
+  --color-slate-100: oklch(0.967 0.006 285);
+  --color-slate-200: oklch(0.927 0.011 285);
+  --color-slate-300: oklch(0.868 0.018 285);
+  --color-slate-400: oklch(0.704 0.028 285);
+  --color-slate-500: oklch(0.554 0.033 285);
+  --color-slate-600: oklch(0.446 0.033 285);
+  --color-slate-700: oklch(0.372 0.032 285);
+  --color-slate-800: oklch(0.279 0.03 285);
+  --color-slate-900: oklch(0.205 0.026 285);
+  --color-slate-950: oklch(0.142 0.02 285);
 
-  --animate-fade-in: fade-in 160ms ease-out;
-  --animate-scale-in: scale-in 160ms ease-out;
+  --shadow-card:
+    0 1px 2px rgb(24 20 51 / 0.04), 0 1px 1px rgb(24 20 51 / 0.02),
+    0 10px 28px -14px rgb(24 20 51 / 0.12);
+  --shadow-lift:
+    0 1px 2px rgb(24 20 51 / 0.05), 0 22px 44px -18px rgb(67 56 202 / 0.28),
+    0 8px 18px -12px rgb(24 20 51 / 0.14);
+  --shadow-pop: 0 2px 6px rgb(24 20 51 / 0.06), 0 28px 70px -20px rgb(24 20 51 / 0.42);
+  --shadow-glow: 0 10px 30px -10px rgb(99 102 241 / 0.6);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+
+  --animate-fade-in: fade-in 220ms ease-out;
+  --animate-scale-in: scale-in 320ms var(--ease-out-expo);
+  --animate-rise: rise 640ms var(--ease-out-expo) backwards;
+  --animate-pop-in: pop-in 420ms var(--ease-spring) backwards;
+  --animate-drawer-in: drawer-in 420ms var(--ease-out-expo);
+  --animate-shimmer: shimmer 1.8s ease-in-out infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-drift: drift 22s ease-in-out infinite alternate;
+  --animate-icon-in: icon-in 480ms var(--ease-spring);
+  --animate-ping-soft: ping-soft 2.4s var(--ease-out-expo) infinite;
+  --animate-gradient-pan: gradient-pan 8s ease-in-out infinite alternate;
+  --animate-bar-grow: bar-grow 1100ms var(--ease-out-expo) backwards;
 
   @keyframes fade-in {
     from {
@@ -34,10 +75,103 @@
   @keyframes scale-in {
     from {
       opacity: 0;
-      transform: translateY(4px) scale(0.98);
+      transform: translateY(6px) scale(0.97);
     }
     to {
       opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+  @keyframes drift {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(6%, 4%, 0) scale(1.08);
+    }
+    100% {
+      transform: translate3d(-4%, 8%, 0) scale(0.96);
+    }
+  }
+  @keyframes icon-in {
+    from {
+      opacity: 0;
+      transform: rotate(-90deg) scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes ping-soft {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    80%,
+    100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+  @keyframes gradient-pan {
+    from {
+      background-position: 0% 50%;
+    }
+    to {
+      background-position: 100% 50%;
+    }
+  }
+  @keyframes bar-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
       transform: none;
     }
   }
@@ -48,13 +182,19 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color-scheme: light;
+    text-rendering: optimizeLegibility;
   }
   html.dark {
     color-scheme: dark;
   }
   body {
     @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
-    font-feature-settings: 'cv11', 'ss01';
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
   }
   ::selection {
     @apply bg-brand-500/25;
@@ -62,12 +202,175 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-brand-500;
   }
+  /* Slim, quiet scrollbars that match the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(120 113 160 / 0.35) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
+/* ---------- Surfaces ---------- */
+
 @utility surface {
-  @apply rounded-2xl border border-slate-200/80 bg-white shadow-card dark:border-white/10 dark:bg-slate-900/70;
+  @apply rounded-2xl border border-slate-200/70 bg-white shadow-card dark:border-white/[0.07] dark:bg-slate-900/55 dark:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04),0_18px_40px_-24px_rgb(0_0_0/0.7)];
+}
+
+/* A surface that lifts towards the pointer: for cards that are links or show live numbers. */
+@utility surface-hover {
+  @apply transition-[transform,box-shadow,border-color] duration-300 ease-out-expo hover:-translate-y-0.5 hover:border-slate-300/70 hover:shadow-lift dark:hover:border-white/[0.13];
 }
 
 @utility text-muted {
   @apply text-slate-500 dark:text-slate-400;
+}
+
+/* Brand gradient text for highlights. */
+@utility gradient-text {
+  @apply bg-gradient-to-r from-brand-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent dark:from-brand-300 dark:via-violet-300 dark:to-fuchsia-300;
+}
+
+/* ---------- Motion helpers ---------- */
+
+/*
+ * Page entrance: AppShell wraps every page in `.page-enter`, so a page's top-level blocks rise
+ * in one after another when it mounts (a lazy page as soon as it has loaded). `.stagger` does
+ * the same for any list or grid. `backwards` fill leaves no transform behind afterwards.
+ */
+@layer components {
+  .page-enter > *,
+  .stagger > *,
+  .auth-form form > * {
+    animation: rise 640ms var(--ease-out-expo) backwards;
+  }
+  .page-enter > :nth-child(2),
+  .stagger > :nth-child(2),
+  .auth-form form > :nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .page-enter > :nth-child(3),
+  .stagger > :nth-child(3),
+  .auth-form form > :nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .page-enter > :nth-child(4),
+  .stagger > :nth-child(4),
+  .auth-form form > :nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .page-enter > :nth-child(5),
+  .stagger > :nth-child(5),
+  .auth-form form > :nth-child(5) {
+    animation-delay: 240ms;
+  }
+  .page-enter > :nth-child(n + 6),
+  .stagger > :nth-child(n + 6),
+  .auth-form form > :nth-child(n + 6) {
+    animation-delay: 300ms;
+  }
+  /* Fixed bars (bulk actions, toasts) appear in place instead of rising from the page. */
+  .page-enter > .fixed {
+    animation: fade-in 220ms ease-out backwards;
+  }
+
+  /* Ambient background behind the app: two soft brand glows and a faded grid. */
+  .app-ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .app-ambient::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, rgb(99 102 241 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(99 102 241 / 0.05) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 70% 50% at 60% 0%, #000 20%, transparent 75%);
+  }
+  .dark .app-ambient::before {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+  }
+  .app-glow {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(90px);
+    animation: drift 24s ease-in-out infinite alternate;
+  }
+  .app-glow-a {
+    top: -14rem;
+    right: 8%;
+    width: 38rem;
+    height: 26rem;
+    background: rgb(129 140 248 / 0.2);
+  }
+  .app-glow-b {
+    top: -10rem;
+    left: 22%;
+    width: 30rem;
+    height: 20rem;
+    background: rgb(232 121 249 / 0.12);
+    animation-duration: 30s;
+    animation-delay: -8s;
+  }
+  .dark .app-glow-a {
+    background: rgb(99 102 241 / 0.22);
+  }
+  .dark .app-glow-b {
+    background: rgb(192 38 211 / 0.13);
+  }
+
+  /* Small keyboard hint (⌘K). */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    border-radius: 0.375rem;
+    border: 1px solid rgb(120 113 160 / 0.25);
+    background: rgb(255 255 255 / 0.7);
+    padding: 0 0.35rem;
+    font-family: inherit;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: var(--color-slate-500);
+    box-shadow: 0 1px 0 rgb(120 113 160 / 0.2);
+  }
+  .dark .kbd {
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.04);
+    color: var(--color-slate-400);
+    box-shadow: none;
+  }
+}
+
+/* ---------- Theme switch: circular reveal (View Transitions) ---------- */
+
+html.vt-theme::view-transition-old(root),
+html.vt-theme::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html.vt-theme::view-transition-new(root) {
+  z-index: 2;
 }

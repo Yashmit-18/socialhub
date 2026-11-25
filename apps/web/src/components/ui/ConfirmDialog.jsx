@@ -2,7 +2,10 @@ import { Button } from './Button.jsx';
 import { FormError } from './Field.jsx';
 import { Modal } from './Modal.jsx';
 
-/** Destructive-action confirmation with loading and error states. */
+/**
+ * Destructive-action confirmation with loading and error states. `confirmDisabled` keeps the
+ * confirm button off until the dialog's own condition is met (for example a ticked checkbox).
+ */
 export function ConfirmDialog({
   open,
   title,
@@ -12,6 +15,7 @@ export function ConfirmDialog({
   onClose,
   loading,
   error,
+  confirmDisabled = false,
   children,
 }) {
   return (
@@ -26,7 +30,12 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" loading={loading} onClick={onConfirm}>
+          <Button
+            variant="danger"
+            loading={loading}
+            disabled={confirmDisabled}
+            onClick={confirmDisabled ? undefined : onConfirm}
+          >
             {confirmLabel}
           </Button>
         </>

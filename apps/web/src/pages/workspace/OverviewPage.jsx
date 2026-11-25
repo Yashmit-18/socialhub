@@ -16,39 +16,50 @@ import { RoleBadge } from '../../components/ui/Badge.jsx';
 import { FacebookIcon, InstagramIcon } from '../../components/ui/Brand.jsx';
 import { ButtonLink } from '../../components/ui/Button.jsx';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
+import { AnimatedNumber } from '../../components/ui/AnimatedNumber.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { useAccountSummary, useOverview } from '../../lib/queries.js';
 import { cn, firstName, greeting } from '../../lib/utils.js';
 
-function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
+function StatCard({ label, value, icon: Icon, accent, glow, hint, loading }) {
   return (
-    <Card className="relative overflow-hidden p-5">
+    <Card interactive className="group relative overflow-hidden p-5">
       <div
         className={cn(
-          'absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.12] blur-2xl',
+          'absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-[0.14] blur-2xl transition-[opacity,transform] duration-700 ease-out-expo group-hover:scale-125 group-hover:opacity-25',
           accent,
         )}
         aria-hidden="true"
       />
-      <div className="flex items-center justify-between">
+      <div className="relative flex items-center justify-between">
         <p className="text-sm font-medium text-muted">{label}</p>
         <span
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm',
+            'flex h-10 w-10 items-center justify-center rounded-xl text-white ring-1 ring-white/20 ring-inset transition-transform duration-500 ease-spring group-hover:scale-110 group-hover:-rotate-6',
             accent,
+            glow,
           )}
         >
           <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
         </span>
       </div>
       {loading ? (
-        <Skeleton className="mt-3 h-8 w-16" />
+        <Skeleton className="mt-3 h-9 w-16" />
       ) : (
-        <p className="mt-2 text-3xl font-semibold tracking-tight">{value ?? '—'}</p>
+        <p className="relative mt-2 text-[32px] leading-none font-semibold tracking-tight tabular-nums">
+          <AnimatedNumber value={value ?? '—'} />
+        </p>
       )}
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      {hint && <p className="relative mt-2 text-xs text-muted">{hint}</p>}
+      <span
+        className={cn(
+          'absolute inset-x-5 bottom-0 h-px origin-left scale-x-0 opacity-70 transition-transform duration-700 ease-out-expo group-hover:scale-x-100',
+          accent,
+        )}
+        aria-hidden="true"
+      />
     </Card>
   );
 }
@@ -86,6 +97,7 @@ export default function OverviewPage() {
       show: can(PERMISSIONS.SOCIAL_CONNECTIONS_MANAGE),
     },
   ].filter((c) => c.show !== false);
+  const doneCount = checklist.filter((c) => c.done).length;
 
   return (
     <>
@@ -108,12 +120,13 @@ export default function OverviewPage() {
         </Card>
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="Team members"
               value={stats?.members}
               icon={Users}
               accent="bg-gradient-to-br from-brand-500 to-violet-500"
+              glow="shadow-lg shadow-brand-500/30"
               loading={isPending}
             />
             <StatCard
@@ -121,6 +134,7 @@ export default function OverviewPage() {
               value={stats?.pendingInvitations}
               icon={Clock}
               accent="bg-gradient-to-br from-sky-500 to-cyan-500"
+              glow="shadow-lg shadow-sky-500/30"
               hint={
                 stats && stats.pendingInvitations === null
                   ? 'Visible to owners and admins'
@@ -133,6 +147,7 @@ export default function OverviewPage() {
               value={stats?.facebookPages}
               icon={FacebookIcon}
               accent="bg-gradient-to-br from-blue-600 to-indigo-500"
+              glow="shadow-lg shadow-blue-600/30"
               loading={isPending}
             />
             <StatCard
@@ -140,6 +155,7 @@ export default function OverviewPage() {
               value={stats?.instagramAccounts}
               icon={InstagramIcon}
               accent="bg-gradient-to-br from-fuchsia-500 to-orange-400"
+              glow="shadow-lg shadow-fuchsia-500/30"
               loading={isPending}
             />
           </div>
@@ -177,20 +193,39 @@ export default function OverviewPage() {
                   icon={Check}
                   title="Getting started"
                   description="Set up the essentials for your team."
+                  action={
+                    <span className="text-xs font-medium text-muted tabular-nums">
+                      {doneCount} of {checklist.length} done
+                    </span>
+                  }
                 />
                 <CardBody>
-                  <ul className="space-y-2">
+                  <div
+                    className="mb-4 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]"
+                    aria-hidden="true"
+                  >
+                    <div
+                      className="h-full origin-left animate-bar-grow rounded-full bg-gradient-to-r from-emerald-400 via-brand-500 to-fuchsia-500 transition-[width] duration-700 ease-out-expo"
+                      style={{ width: `${(doneCount / checklist.length) * 100}%` }}
+                    />
+                  </div>
+                  <ul className="stagger space-y-2">
                     {checklist.map((item) => (
                       <li
                         key={item.label}
-                        className="flex items-center gap-3 rounded-xl border border-slate-100 px-3.5 py-3 dark:border-white/5"
+                        className={cn(
+                          'group flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-[border-color,background-color] duration-200',
+                          item.done
+                            ? 'border-slate-100 dark:border-white/5'
+                            : 'border-slate-200/80 bg-slate-50/50 hover:border-brand-300/60 hover:bg-brand-50/40 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-brand-400/30 dark:hover:bg-brand-500/[0.05]',
+                        )}
                       >
                         <span
                           className={cn(
                             'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
                             item.done
-                              ? 'bg-emerald-500 text-white'
-                              : 'border-2 border-dashed border-slate-300 dark:border-white/20',
+                              ? 'animate-pop-in bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-sm shadow-emerald-500/40'
+                              : 'border-2 border-dashed border-slate-300 transition-colors group-hover:border-brand-400 dark:border-white/20',
                           )}
                         >
                           {item.done && <Check className="h-3.5 w-3.5" aria-label="Done" />}
@@ -297,9 +332,22 @@ export default function OverviewPage() {
                 </CardBody>
               </Card>
 
-              <Card className="overflow-hidden">
-                <div className="bg-gradient-to-br from-brand-600 to-fuchsia-600 p-5 text-white">
-                  <Share2 className="h-6 w-6 opacity-90" aria-hidden="true" />
+              <Card interactive className="group overflow-hidden">
+                <div className="relative isolate overflow-hidden bg-[linear-gradient(120deg,var(--color-brand-600),#9333ea,#db2777,var(--color-brand-600))] bg-[length:240%_240%] p-5 text-white animate-gradient-pan">
+                  <div
+                    className="absolute -top-10 -right-8 -z-10 h-32 w-32 rounded-full bg-white/20 blur-2xl transition-transform duration-700 ease-out-expo group-hover:scale-150"
+                    aria-hidden="true"
+                  />
+                  <div
+                    className="absolute -bottom-12 left-6 -z-10 h-24 w-24 animate-float rounded-full bg-amber-300/25 blur-2xl"
+                    aria-hidden="true"
+                  />
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur ring-inset">
+                    <Share2
+                      className="h-5 w-5 transition-transform duration-500 ease-spring group-hover:scale-110 group-hover:rotate-12"
+                      aria-hidden="true"
+                    />
+                  </span>
                   <h3 className="mt-3 font-semibold">Social accounts</h3>
                   <p className="mt-1 text-sm leading-relaxed text-white/80">
                     {accountsTotal > 0

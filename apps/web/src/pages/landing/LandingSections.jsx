@@ -462,8 +462,8 @@ export function ComposerSection() {
             ))}
           </ul>
           <p className="mt-8 text-sm text-(--lp-faint)">
-            Publishing and scheduling are in development. Until they ship, nothing is sent to
-            Facebook or Instagram.
+            Publish now or schedule for later. Every real post is previewed and confirmed before
+            anything is sent to Facebook.
           </p>
         </Reveal>
         <Reveal delay={150} variant="right">
