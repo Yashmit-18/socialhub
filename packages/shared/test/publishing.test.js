@@ -78,7 +78,23 @@ describe('request schemas', () => {
   const valid = { contentPackageId: 'a'.repeat(24), idempotencyKey: 'k'.repeat(20) };
 
   it('accepts a minimal request and applies defaults', () => {
-    expect(createPublishJobSchema.parse(valid)).toEqual({ ...valid, republish: false });
+    expect(createPublishJobSchema.parse(valid)).toEqual({
+      ...valid,
+      republish: false,
+      // Not confirmed unless the request says so (a real post then gets refused by the API).
+      confirmRealPost: false,
+    });
+  });
+
+  it('takes the real-post confirmation only as a boolean', () => {
+    expect(createPublishJobSchema.parse({ ...valid, confirmRealPost: true }).confirmRealPost).toBe(
+      true,
+    );
+    for (const value of ['true', 1, 'yes', null]) {
+      expect(createPublishJobSchema.safeParse({ ...valid, confirmRealPost: value }).success).toBe(
+        false,
+      );
+    }
   });
 
   it('requires a well-formed idempotency key', () => {

@@ -109,7 +109,7 @@ describe('publishing while team drafts are off', () => {
     const publish = screen.getByRole('button', { name: /^publish/i });
     expect(publish).toBeDisabled();
     expect(publish).toHaveAccessibleDescription(/needs team drafts/);
-    expect(screen.getAllByText(/Real publishing isn.t available yet/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Publishing isn.t available right now/).length).toBeGreaterThan(0);
     await userEvent.click(publish);
 
     expect(screen.queryByText(/post (was )?published/i)).toBeNull();

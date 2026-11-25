@@ -1,4 +1,10 @@
-import { HASHTAG_PLACEMENTS, PERMISSIONS, PUBLISHING_MODES, ROLE_LABELS } from '@socialhub/shared';
+import {
+  HASHTAG_PLACEMENTS,
+  PERMISSIONS,
+  PUBLISHING_MODES,
+  ROLE_LABELS,
+  composeCaption as composeSharedCaption,
+} from '@socialhub/shared';
 import {
   Eye,
   FlaskConical,
@@ -389,6 +395,7 @@ function Composer() {
 
   // ------------------------------------------------------------------ publishing
   const simulatedMode = publishingStatus.data?.mode === PUBLISHING_MODES.SIMULATED;
+  const liveMode = publishingStatus.data?.mode === PUBLISHING_MODES.LIVE;
   // [full explanation for the note above the composer, short label under the Publish button]
   const [publishUnavailable, publishShort] = (() => {
     if (!canPublishRole) {
@@ -473,6 +480,7 @@ function Composer() {
 
       <PublishingNote
         simulated={simulatedMode && !publishUnavailable}
+        live={liveMode && !publishUnavailable}
         unavailable={publishUnavailable}
         publishingHref={`/w/${workspace.slug}/publishing`}
       />
@@ -625,6 +633,8 @@ function Composer() {
 
       {publishOpen && (
         <ComposerPublishDialog
+          // A new workspace gets a new dialog: nothing (such as a real-post confirmation) carries over.
+          key={workspace.id}
           workspaceId={workspace.id}
           workspaceTimeZone={workspace.timezone}
           accounts={validation.selected}
@@ -636,6 +646,22 @@ function Composer() {
             state.hashtagPlacement === HASHTAG_PLACEMENTS.FIRST_COMMENT && state.hashtags.length > 0
           }
           mediaCount={state.media.length}
+          media={state.media}
+          captions={[...new Set(validation.selected.map((account) => account.platform))].map(
+            (platform) => ({
+              platform,
+              // The server's own function: exactly the text each platform will receive.
+              text: composeSharedCaption(
+                {
+                  caption: state.caption,
+                  platformCaptions: state.platformCaptions,
+                  hashtags: state.hashtags,
+                  hashtagPlacement: state.hashtagPlacement,
+                },
+                platform,
+              ),
+            }),
+          )}
           prepare={preparePublish}
           onClose={() => setPublishOpen(false)}
           onCreated={(job) => {
@@ -693,8 +719,11 @@ function Composer() {
   );
 }
 
-/** What Publish will do on this server, above the composer. */
-function PublishingNote({ simulated, unavailable, publishingHref }) {
+/**
+ * What Publish will do in this workspace, above the composer: simulate, publish for real
+ * (after the person confirms each post), or nothing at all and why.
+ */
+function PublishingNote({ simulated, live, unavailable, publishingHref }) {
   const Icon = simulated ? FlaskConical : Send;
   return (
     <div
@@ -712,11 +741,17 @@ function PublishingNote({ simulated, unavailable, publishingHref }) {
           <>
             <span className="font-semibold">Simulation mode.</span> Publish runs the whole
             publishing process (queue, worker, a result for each account), but nothing is posted to
-            Facebook or Instagram. Real publishing is not available yet.
+            Facebook or Instagram. A workspace owner or admin can switch on real publishing in
+            Settings when this server offers it.
+          </>
+        ) : live ? (
+          <>
+            <span className="font-semibold">Real publishing is on.</span> Publish sends a real post
+            to the accounts you select, after you check the preview and confirm it.
           </>
         ) : (
           <>
-            <span className="font-semibold">Real publishing isn’t available yet.</span>{' '}
+            <span className="font-semibold">Publishing isn’t available right now.</span>{' '}
             {unavailable ?? 'Nothing is sent to Facebook or Instagram.'} You can compose, preview
             and save drafts.
           </>

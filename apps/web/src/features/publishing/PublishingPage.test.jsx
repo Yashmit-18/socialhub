@@ -31,8 +31,18 @@ const SUMMARY = `GET ${BASE}/publish-jobs/summary`;
 const LIST = `GET ${BASE}/publish-jobs`;
 const CREATE = `POST ${BASE}/publish-jobs`;
 const DRAFTS = `GET ${BASE}/content-packages`;
+const ACCOUNTS = `GET ${BASE}/social-accounts`;
 
-/** Mocks the three requests every page load makes, plus one detail route per listed job. */
+/** The accounts of the `draft()` fixture (`targetAccountIds: ['a1', 'a2']`). */
+const DRAFT_ACCOUNTS = [
+  { id: 'a1', name: 'Acme Store', platform: 'FACEBOOK_PAGE' },
+  { id: 'a2', name: 'Acme Labs', platform: 'INSTAGRAM_ACCOUNT', username: 'acme.labs' },
+];
+
+/**
+ * Mocks the three requests every page load makes, plus one detail route per listed job, and
+ * the workspace's accounts (read by "Publish a draft").
+ */
 function mockApi({ jobs = [], statusBody = status(), counts, extra = {} } = {}) {
   const details = Object.fromEntries(
     jobs.map((j) => [
@@ -44,6 +54,7 @@ function mockApi({ jobs = [], statusBody = status(), counts, extra = {} } = {}) 
     [STATUS]: () => jsonResponse(200, statusBody),
     [SUMMARY]: () => jsonResponse(200, summary(counts)),
     [LIST]: () => jsonResponse(200, { items: jobs, nextCursor: null }),
+    [ACCOUNTS]: () => jsonResponse(200, { items: DRAFT_ACCOUNTS }),
     ...details,
     ...extra,
   });
@@ -472,13 +483,42 @@ describe('job details', () => {
     const dialog = await openDetails(j);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry for Acme Labs' }));
 
+    // A real post sent again: the person confirms it first; nothing is sent before that.
+    const confirm = await screen.findByRole('dialog', { name: 'Publish this post again?' });
+    expect(confirm).toHaveTextContent('This creates a REAL public post.');
+    expect(within(confirm).getByRole('button', { name: 'Retry' })).toBeDisabled();
+    expect(mock.count(RETRY)).toBe(0);
+    await userEvent.click(
+      within(confirm).getByRole('checkbox', { name: /publishes a real post on these accounts/ }),
+    );
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Retry' }));
+
     await waitFor(() => expect(mock.count(RETRY)).toBe(1));
-    expect(bodyOf(mock.calls.find((c) => c.key === RETRY))).toEqual({});
-    expect(await within(dialog).findByText('Waiting')).toBeInTheDocument();
+    expect(bodyOf(mock.calls.find((c) => c.key === RETRY))).toEqual({ confirmRealPost: true });
+    const details = await screen.findByRole('dialog', { name: 'Post details' });
+    expect(await within(details).findByText('Waiting')).toBeInTheDocument();
     expect(
-      within(dialog).queryByText('Instagram did not accept this image.'),
+      within(details).queryByText('Instagram did not accept this image.'),
     ).not.toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith('Trying Acme Labs again');
+  });
+
+  it('retries a simulated post without any confirmation', async () => {
+    const j = partialJob();
+    j.mode = 'SIMULATED';
+    j.simulated = true;
+    const RETRY = `POST ${BASE}/publish-jobs/${j.id}/destinations/d-bad/retry`;
+    const mock = mockApi({
+      jobs: [j],
+      statusBody: status({ mode: 'SIMULATED' }),
+      extra: { [RETRY]: () => jsonResponse(200, { publishJob: j }) },
+    });
+    renderPage();
+    const dialog = await openDetails(j);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry for Acme Labs' }));
+    await waitFor(() => expect(mock.count(RETRY)).toBe(1));
+    expect(bodyOf(mock.calls.find((c) => c.key === RETRY))).toEqual({});
+    expect(screen.queryByText('This creates a REAL public post.')).toBeNull();
   });
 
   it('asks before retrying when the post may already be on the account', async () => {
@@ -513,11 +553,17 @@ describe('job details', () => {
     });
     expect(confirm).toHaveTextContent('trying again could post it twice');
     expect(mock.count(RETRY)).toBe(0);
+    // A real post: accepting the duplicate risk is not enough, the real post is confirmed too.
+    expect(within(confirm).getByRole('button', { name: 'Retry anyway' })).toBeDisabled();
+    await userEvent.click(
+      within(confirm).getByRole('checkbox', { name: /publishes a real post on these accounts/ }),
+    );
 
     await userEvent.click(within(confirm).getByRole('button', { name: 'Retry anyway' }));
     await waitFor(() => expect(mock.count(RETRY)).toBe(1));
     expect(bodyOf(mock.calls.find((c) => c.key === RETRY))).toEqual({
       acknowledgeDuplicateRisk: true,
+      confirmRealPost: true,
     });
     // The details come back once the confirmation is done.
     expect(await screen.findByRole('dialog', { name: 'Post details' })).toBeInTheDocument();
@@ -540,11 +586,24 @@ describe('job details', () => {
     renderPage();
     const dialog = await openDetails(j);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry for Acme Labs' }));
+    const real = await screen.findByRole('dialog', { name: 'Publish this post again?' });
+    await userEvent.click(
+      within(real).getByRole('checkbox', { name: /publishes a real post on these accounts/ }),
+    );
+    await userEvent.click(within(real).getByRole('button', { name: 'Retry' }));
+    // The server asks the duplicate-risk question too; the real-post confirmation is kept.
     const confirm = await screen.findByRole('dialog', {
       name: 'This post may already be published',
     });
+    expect(
+      within(confirm).getByRole('checkbox', { name: /publishes a real post on these accounts/ }),
+    ).toBeChecked();
     await userEvent.click(within(confirm).getByRole('button', { name: 'Retry anyway' }));
     await waitFor(() => expect(mock.count(RETRY)).toBe(2));
+    expect(bodyOf(mock.calls.filter((c) => c.key === RETRY)[1])).toEqual({
+      acknowledgeDuplicateRisk: true,
+      confirmRealPost: true,
+    });
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -637,6 +696,119 @@ describe('job details', () => {
   });
 });
 
+describe('a real published Facebook post: edit and delete', () => {
+  const realPost = (overrides = {}) =>
+    job({
+      destinations: [
+        destination({
+          id: 'd-real',
+          externalPostId: '5001_9002',
+          externalUrl: 'https://www.facebook.com/acme/posts/9002',
+          canEditPost: true,
+          canDeletePost: true,
+          postText: 'Winter collection teaser',
+          postEditedAt: null,
+          postDeletedAt: null,
+          ...overrides,
+        }),
+      ],
+    });
+  const POST = (j) => `${BASE}/publish-jobs/${j.id}/destinations/d-real/post`;
+  const box = (dialog, name) => within(dialog).getByRole('checkbox', { name });
+
+  it('changes the text only after a real change and an explicit confirmation', async () => {
+    const j = realPost();
+    const after = {
+      ...j,
+      destinations: [
+        { ...j.destinations[0], postText: 'Spring sale', postEditedAt: '2026-11-24T10:00:00Z' },
+      ],
+    };
+    const mock = mockApi({
+      jobs: [j],
+      extra: { [`PATCH ${POST(j)}`]: () => jsonResponse(200, { publishJob: after }) },
+    });
+    renderPage();
+    const details = await openDetails(j);
+    await userEvent.click(
+      within(details).getByRole('button', { name: 'Edit the post on Acme Store' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Edit the post on Facebook' });
+    const text = within(dialog).getByRole('textbox', { name: 'New text' });
+    expect(text).toHaveValue('Winter collection teaser');
+    const save = within(dialog).getByRole('button', { name: 'Save on Facebook' });
+    expect(save).toBeDisabled();
+
+    await userEvent.clear(text);
+    await userEvent.type(text, 'Spring sale');
+    expect(save).toBeDisabled(); // not confirmed yet
+    await userEvent.click(box(dialog, /changes the real public post on Facebook/));
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+
+    await waitFor(() => expect(mock.count(`PATCH ${POST(j)}`)).toBe(1));
+    expect(bodyOf(mock.calls.find((c) => c.key === `PATCH ${POST(j)}`))).toEqual({
+      message: 'Spring sale',
+      confirmRealPost: true,
+    });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('The post on Acme Store was changed on Facebook'),
+    );
+  });
+
+  it('deletes only after an explicit confirmation, and shows the deletion afterwards', async () => {
+    const j = realPost();
+    const after = {
+      ...j,
+      destinations: [
+        {
+          ...j.destinations[0],
+          postDeletedAt: '2026-11-24T10:05:00Z',
+          canEditPost: false,
+          canDeletePost: false,
+          postText: null,
+        },
+      ],
+    };
+    const mock = mockApi({
+      jobs: [j],
+      extra: { [`DELETE ${POST(j)}`]: () => jsonResponse(200, { publishJob: after }) },
+    });
+    renderPage();
+    const details = await openDetails(j);
+    await userEvent.click(
+      within(details).getByRole('button', { name: 'Delete the post on Acme Store from Facebook' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Delete this post from Facebook?' });
+    expect(dialog).toHaveTextContent('This cannot be undone');
+    const confirm = within(dialog).getByRole('button', { name: 'Delete from Facebook' });
+    expect(confirm).toBeDisabled();
+    await userEvent.click(confirm);
+    expect(mock.count(`DELETE ${POST(j)}`)).toBe(0);
+
+    await userEvent.click(box(dialog, /deletes the real public post from Facebook/));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(mock.count(`DELETE ${POST(j)}`)).toBe(1));
+    expect(bodyOf(mock.calls.find((c) => c.key === `DELETE ${POST(j)}`))).toEqual({
+      confirmRealPost: true,
+    });
+    const back = await screen.findByRole('dialog', { name: 'Post details' });
+    expect(await within(back).findByText('Deleted from Facebook:')).toBeInTheDocument();
+    expect(within(back).queryByRole('link', { name: /View post/ })).toBeNull();
+    expect(within(back).queryByRole('button', { name: /Edit the post/ })).toBeNull();
+  });
+
+  it('offers nothing for a simulated post or to members who cannot publish', async () => {
+    const simulatedJob = realPost({ canEditPost: false, canDeletePost: false, simulated: true });
+    simulatedJob.simulated = true;
+    mockApi({ jobs: [simulatedJob] });
+    renderPage();
+    const details = await openDetails(simulatedJob);
+    expect(within(details).queryByRole('button', { name: /Edit the post/ })).toBeNull();
+    expect(within(details).queryByRole('button', { name: /Delete the post/ })).toBeNull();
+  });
+});
+
 describe('permissions', () => {
   it('shows viewers everything, without any action buttons', async () => {
     const j = partialJob();
@@ -664,6 +836,10 @@ describe('publish a draft', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Publish a draft' }));
     return screen.findByRole('dialog', { name: 'Publish a draft' });
   };
+  const confirmBox = (dialog) =>
+    within(dialog).findByRole('checkbox', { name: /publishes a real post on these accounts/ });
+  /** The workspace is in real publishing (the default status): the person confirms first. */
+  const confirmRealPost = async (dialog) => userEvent.click(await confirmBox(dialog));
 
   it('sends one request with an idempotency key, even on a double click', async () => {
     const created = job({ status: 'QUEUED', destinations: [destination({ state: 'QUEUED' })] });
@@ -698,6 +874,9 @@ describe('publish a draft', () => {
     expect(within(dialog).getByRole('button', { name: 'Publish' })).toBeDisabled();
 
     await userEvent.click(within(dialog).getByRole('radio', { name: /Winter collection teaser/ }));
+    // Real publishing: still disabled until the person confirms the real post.
+    expect(within(dialog).getByRole('button', { name: 'Publish' })).toBeDisabled();
+    await confirmRealPost(dialog);
     await userEvent.dblClick(within(dialog).getByRole('button', { name: 'Publish' }));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Sent to the publishing queue'));
@@ -706,6 +885,7 @@ describe('publish a draft', () => {
     expect(body).toEqual({
       contentPackageId: 'c00000000000000000000001',
       idempotencyKey: expect.stringMatching(/^[A-Za-z0-9]{16,100}$/),
+      confirmRealPost: true,
     });
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Publish a draft' })).not.toBeInTheDocument(),
@@ -758,6 +938,7 @@ describe('publish a draft', () => {
     renderPage();
     const dialog = await openDialog();
     await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    await confirmRealPost(dialog);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
     const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent('Instagram posts need at least one image or video.');
@@ -780,6 +961,7 @@ describe('publish a draft', () => {
     renderPage();
     const dialog = await openDialog();
     await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    await confirmRealPost(dialog);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
     const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent('This post was already published to some accounts.');
@@ -802,6 +984,7 @@ describe('publish a draft', () => {
     renderPage();
     const dialog = await openDialog();
     await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    await confirmRealPost(dialog);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'This post is already being published.',
@@ -809,6 +992,188 @@ describe('publish a draft', () => {
     expect(
       within(dialog).queryByRole('button', { name: 'Publish again anyway' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('in real publishing, shows the accounts, files and exact caption, and sends nothing until confirmed', async () => {
+    const mock = mockApi({
+      extra: {
+        [DRAFTS]: () =>
+          jsonResponse(200, {
+            items: [
+              draft({
+                hashtags: ['sale'],
+                hashtagPlacement: 'CAPTION',
+                platformCaptions: { INSTAGRAM_ACCOUNT: 'Insta teaser' },
+                media: [
+                  {
+                    mediaId: 'm1',
+                    altText: 'Coat on a hanger',
+                    media: { kind: 'IMAGE', fileName: 'coat.jpg', thumbnailUrl: '/media/coat.jpg' },
+                  },
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        [CREATE]: () => jsonResponse(201, { publishJob: job(), created: true }),
+      },
+    });
+    renderPage();
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+
+    const accounts = await within(dialog).findByRole('region', { name: 'Accounts' });
+    expect(within(accounts).getByText('Acme Store')).toBeInTheDocument();
+    expect(within(accounts).getByText('Acme Labs')).toBeInTheDocument();
+    const preview = within(dialog).getByRole('region', { name: 'What will be posted' });
+    expect(within(preview).getByRole('img', { name: 'Coat on a hanger' })).toHaveAttribute(
+      'src',
+      '/media/coat.jpg',
+    );
+    // Exactly what each platform receives (the hashtag added to the caption).
+    expect(within(preview).getByText(/Winter collection teaser/)).toHaveTextContent(
+      'Winter collection teaser #sale',
+    );
+    expect(within(preview).getByText(/Insta teaser/)).toHaveTextContent('Insta teaser #sale');
+    expect(
+      within(dialog).getByText(/published on Acme Store, Acme Labs as soon as you confirm/),
+    ).toBeInTheDocument();
+
+    const publish = within(dialog).getByRole('button', { name: 'Publish' });
+    expect(publish).toBeDisabled();
+    await userEvent.click(publish);
+    expect(mock.count(CREATE)).toBe(0);
+
+    await confirmRealPost(dialog);
+    expect(publish).toBeEnabled();
+    await userEvent.click(publish);
+    await waitFor(() => expect(mock.count(CREATE)).toBe(1));
+    expect(bodyOf(mock.calls.find((c) => c.key === CREATE)).confirmRealPost).toBe(true);
+  });
+
+  it('the confirmation belongs to one draft: choosing another clears it', async () => {
+    mockApi({
+      extra: {
+        [DRAFTS]: () =>
+          jsonResponse(200, {
+            items: [draft(), draft({ id: 'c00000000000000000000002', caption: 'Spring sale' })],
+            nextCursor: null,
+          }),
+      },
+    });
+    renderPage();
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    await confirmRealPost(dialog);
+    expect(within(dialog).getByRole('button', { name: 'Publish' })).toBeEnabled();
+
+    await userEvent.click(within(dialog).getByRole('radio', { name: /Spring sale/ }));
+    expect(await confirmBox(dialog)).not.toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Publish' })).toBeDisabled();
+  });
+
+  it('scheduling a real post needs the confirmation too', async () => {
+    const mock = mockApi({
+      extra: {
+        [DRAFTS]: () => jsonResponse(200, { items: [draft()], nextCursor: null }),
+        [CREATE]: () =>
+          jsonResponse(201, { publishJob: job({ status: 'SCHEDULED' }), created: true }),
+      },
+    });
+    renderPage();
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Schedule/ }));
+    expect(
+      await within(dialog).findByText(
+        /published on Acme Store, Acme Labs at the time chosen above/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Schedule' })).toBeDisabled();
+
+    await confirmRealPost(dialog);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Schedule' }));
+    await waitFor(() => expect(mock.count(CREATE)).toBe(1));
+    const body = bodyOf(mock.calls.find((c) => c.key === CREATE));
+    expect(body.scheduledAt).toEqual(expect.any(String));
+    expect(body.confirmRealPost).toBe(true);
+  });
+
+  it('in simulation asks no confirmation and sends none', async () => {
+    const mock = mockApi({
+      statusBody: status({ mode: 'SIMULATED' }),
+      extra: {
+        [DRAFTS]: () => jsonResponse(200, { items: [draft()], nextCursor: null }),
+        [CREATE]: () => jsonResponse(201, { publishJob: job({ simulated: true }), created: true }),
+      },
+    });
+    renderPage();
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    expect(await within(dialog).findByText('Acme Store')).toBeInTheDocument();
+    expect(within(dialog).queryByText('This creates a REAL public post.')).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Start simulation' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Simulation started'));
+    expect(bodyOf(mock.calls.find((c) => c.key === CREATE))).not.toHaveProperty('confirmRealPost');
+  });
+
+  it('cannot confirm a real post whose accounts cannot be shown', async () => {
+    const mock = mockApi({
+      extra: {
+        [DRAFTS]: () => jsonResponse(200, { items: [draft()], nextCursor: null }),
+        [ACCOUNTS]: () => apiError(500, 'INTERNAL_ERROR', 'boom'),
+      },
+    });
+    renderPage();
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    expect(
+      await within(dialog).findByText(/The accounts of this draft could not be loaded/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    const publish = within(dialog).getByRole('button', { name: 'Publish' });
+    expect(publish).toBeDisabled();
+    await userEvent.click(publish);
+    expect(mock.count(CREATE)).toBe(0);
+  });
+
+  it('when the server says the post would be real, asks for the confirmation and keeps the key', async () => {
+    let mode = 'SIMULATED';
+    const mock = mockApi({
+      extra: {
+        [STATUS]: () => jsonResponse(200, status({ mode })),
+        [DRAFTS]: () => jsonResponse(200, { items: [draft()], nextCursor: null }),
+        [CREATE]: ({ init }) => {
+          if (JSON.parse(init.body).confirmRealPost === true) {
+            return jsonResponse(201, { publishJob: job(), created: true });
+          }
+          mode = 'LIVE';
+          return apiError(
+            400,
+            'REAL_POST_CONFIRMATION_REQUIRED',
+            'Real publishing is on for this workspace, so this creates a real public post. Confirm that you want to publish it for real, then send it again. Nothing was created.',
+            { mode: 'LIVE' },
+          );
+        },
+      },
+    });
+    renderPage();
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Winter collection/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Start simulation' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Confirm that you want to publish it for real',
+    );
+    expect(await confirmBox(dialog)).not.toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Publish' })).toBeDisabled();
+
+    await confirmRealPost(dialog);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
+    await waitFor(() => expect(mock.count(CREATE)).toBe(2));
+    const [first, second] = mock.calls.filter((c) => c.key === CREATE).map(bodyOf);
+    expect(first).not.toHaveProperty('confirmRealPost');
+    expect(second.confirmRealPost).toBe(true);
+    expect(second.idempotencyKey).toBe(first.idempotencyKey);
   });
 
   it('explains where drafts come from when there are none', async () => {

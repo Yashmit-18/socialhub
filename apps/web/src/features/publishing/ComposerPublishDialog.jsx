@@ -6,7 +6,9 @@ import { Button } from '../../components/ui/Button.jsx';
 import { Spinner } from '../../components/ui/Feedback.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { useNow } from '../composer/hooks/useNow.js';
+import { PostPreview } from './PostPreview.jsx';
 import { PlatformIcon } from './PublishingBadges.jsx';
+import { RealPostConfirmation } from './RealPostConfirmation.jsx';
 import { WhenPicker } from './ScheduleFields.jsx';
 import { Notice, StatusBanner } from './StatusBanner.jsx';
 import { createdMessage, errorMessages, platformLabel, statusNotices } from './labels.js';
@@ -66,6 +68,8 @@ export function ComposerPublishDialog({
   hasFirstComment = false,
   hashtagsInFirstComment = false,
   mediaCount = 0,
+  media = [],
+  captions = [],
   prepare,
   onClose,
   onCreated,
@@ -85,6 +89,29 @@ export function ComposerPublishDialog({
 
   const mode = status.data?.mode;
   const simulated = mode === PUBLISHING_MODES.SIMULATED;
+  // Real publishing needs one more deliberate step: the person confirms, in this dialog, that a
+  // real public post is created on the accounts listed. The confirmation belongs to what it was
+  // given for: the workspace, the mode, the accounts, the files and the captions. It is cleared
+  // when any of them changes (also when the mode goes to simulation and back), and the dialog
+  // starts unconfirmed on every opening.
+  const live = mode === PUBLISHING_MODES.LIVE;
+  const subject = JSON.stringify([
+    accounts.map((account) => account.id),
+    media.map((item) => item.id),
+    captions.map((caption) => [caption.platform, caption.text]),
+  ]);
+  const [confirmation, setConfirmation] = useState({
+    confirmed: false,
+    workspaceId,
+    mode,
+    subject,
+  });
+  const stale =
+    confirmation.workspaceId !== workspaceId ||
+    confirmation.mode !== mode ||
+    confirmation.subject !== subject;
+  if (stale) setConfirmation({ confirmed: false, workspaceId, mode, subject });
+  const confirmedLive = live && confirmation.confirmed && !stale;
   const resolved = when === 'schedule' ? resolveSchedule(schedule, new Date(now)) : null;
   const notReady = accounts.filter((account) => !account.publishable);
   const serverBlocks = !status.data?.canPublish;
@@ -110,7 +137,12 @@ export function ComposerPublishDialog({
   const conflict = create.error?.status === 409 ? create.error : null;
   const alreadyPublished = conflict?.details?.reason === 'ALREADY_PUBLISHED';
   const conflictAccounts = conflict?.details?.accounts ?? [];
-  const canSubmit = !status.isPending && !serverBlocks && blocking.length === 0 && step === 'idle';
+  const canSubmit =
+    !status.isPending &&
+    !serverBlocks &&
+    blocking.length === 0 &&
+    step === 'idle' &&
+    (!live || confirmedLive);
 
   const submit = async (republish = false) => {
     if (busy.current || !canSubmit) return;
@@ -141,7 +173,11 @@ export function ComposerPublishDialog({
       try {
         const { publishJob, created } = await create.mutateAsync({
           ...request,
+          // Outside `request`: the key stays the same whether or not the post is confirmed.
           idempotencyKey: keyFor(request),
+          // Only when the person ticked "This creates a REAL public post". The server refuses
+          // a real post without it, also when this screen still believed it was simulated.
+          confirmRealPost: confirmedLive,
         });
         const message = createdMessage({
           simulated: publishJob?.simulated ?? simulated,
@@ -231,6 +267,8 @@ export function ComposerPublishDialog({
           </>
         )}
 
+        <PostPreview media={media} captions={captions} />
+
         <section aria-label="Accounts">
           <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">Sending to</h3>
           {accounts.length === 0 ? (
@@ -283,6 +321,16 @@ export function ComposerPublishDialog({
           workspaceTimeZone={workspaceTimeZone}
           simulated={simulated}
         />
+
+        {live && accounts.length > 0 && (
+          <RealPostConfirmation
+            accountNames={accounts.map((account) => account.name)}
+            scheduled={when === 'schedule'}
+            checked={confirmedLive}
+            disabled={step !== 'idle'}
+            onChange={(confirmed) => setConfirmation({ confirmed, workspaceId, mode, subject })}
+          />
+        )}
 
         <ProblemList title="Fix these before publishing" items={blocking} tone="danger" />
         <ProblemList

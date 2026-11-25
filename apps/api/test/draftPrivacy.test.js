@@ -336,7 +336,10 @@ describe('files of hidden drafts', () => {
     for (const member of [team.owner, team.admin, team.editor, team.viewer]) {
       const res = await as(member.token).get(mediaUrl(ws, `/${file.id}`));
       expect(res.status).toBe(200);
-      expect(res.body.media.url).toBe(file.url);
+      // The same file. The signed link's expiry counts from the second it was made, so links
+      // made a second apart differ in `expires` and `signature`: compare the file, not the link.
+      expect(res.body.media.url.split('?')[0]).toBe(file.url.split('?')[0]);
+      expect(res.body.media.url).toMatch(/[?&]expires=\d+&signature=[^&]+$/);
     }
   });
 

@@ -87,9 +87,10 @@ describe('CAPABILITY_MESSAGES', () => {
       expect(CAPABILITY_MESSAGES[key]).toMatch(/in this browser/);
       expect(CAPABILITY_MESSAGES[key]).not.toMatch(/API|not available yet/);
     }
-    // Real publishing really is not available: at most it is simulated.
-    expect(CAPABILITY_MESSAGES.publishing).toMatch(/Real publishing is not available yet/);
+    // Without team drafts the composer cannot publish at all, real or simulated.
+    expect(CAPABILITY_MESSAGES.publishing).toMatch(/nothing can be sent to Facebook or Instagram/);
     expect(CAPABILITY_MESSAGES.publishing).toMatch(/needs team drafts/);
+    expect(CAPABILITY_MESSAGES.publishing).not.toMatch(/not available yet/);
   });
 
   it('labels device-only fallbacks as staying in this browser', () => {
@@ -100,8 +101,8 @@ describe('CAPABILITY_MESSAGES', () => {
     );
   });
 
-  it('says nothing is sent to Facebook or Instagram', () => {
-    expect(CAPABILITY_MESSAGES.publishing).toMatch(/nothing is sent to Facebook or Instagram/);
+  it('says nothing can be sent to Facebook or Instagram without team drafts', () => {
+    expect(CAPABILITY_MESSAGES.publishing).toMatch(/nothing can be sent to Facebook or Instagram/);
   });
 });
 

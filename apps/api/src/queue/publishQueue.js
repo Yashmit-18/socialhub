@@ -40,6 +40,15 @@ export class QueueUnavailableError extends Error {
 
 const OPERATION_TIMEOUT_MS = 5000;
 
+/**
+ * Of the connections BullMQ lists for a queue (`getWorkers()`, parsed from CLIENT LIST, which
+ * covers every database of the Redis server), those on the same database as `client`.
+ */
+export function countOnDatabase(workers, client) {
+  const db = String(client?.options?.db ?? 0);
+  return workers.filter((worker) => worker.db === undefined || String(worker.db) === db).length;
+}
+
 function connect(url, { failFast, label }) {
   const client = new Redis(url, {
     // Required by BullMQ for the connections it blocks on.
@@ -153,9 +162,14 @@ export function createBullQueue({ redisUrl, name = PUBLISH_QUEUE_NAME }) {
       };
     },
 
-    /** Workers connected to this queue, in any process. */
+    /**
+     * Workers connected to this queue, in any process. Redis lists connections for the whole
+     * server (CLIENT LIST), so a SocialHub API using another database of the same Redis (a
+     * second installation, the verification scripts) would be counted too: only workers on this
+     * queue's own database count.
+     */
     async workerCount() {
-      return run(() => queue.getWorkersCount());
+      return run(async () => countOnDatabase(await queue.getWorkers(), client));
     },
 
     /**

@@ -111,9 +111,14 @@ export const facebookPageAdapter = Object.freeze({
       });
     }
 
+    // After Meta returned the id: read the post back (GET, best effort) for its real link.
+    const published = async (id) => ({
+      externalPostId: id,
+      externalUrl: await postPermalink({ root, id, accessToken, appSecret }),
+    });
+
     if (media.length === 0) {
-      const id = requireId((await post('/feed', { message: caption }, true))?.id, 'post');
-      return { externalPostId: id, externalUrl: `https://www.facebook.com/${id}` };
+      return published(requireId((await post('/feed', { message: caption }, true))?.id, 'post'));
     }
 
     if (media[0].kind === MEDIA_KINDS.VIDEO) {
@@ -139,8 +144,7 @@ export const facebookPageAdapter = Object.freeze({
         true,
       );
       // `post_id` is the feed post ("pageid_postid"); `id` is the photo itself.
-      const id = requireId(body?.post_id ?? body?.id, 'photo post');
-      return { externalPostId: id, externalUrl: `https://www.facebook.com/${id}` };
+      return published(requireId(body?.post_id ?? body?.id, 'photo post'));
     }
 
     const form = { message: caption };
@@ -156,10 +160,30 @@ export const facebookPageAdapter = Object.freeze({
         media_fbid: requireId(photo?.id, 'uploaded photo'),
       });
     }
-    const id = requireId((await post('/feed', form, true))?.id, 'post');
-    return { externalPostId: id, externalUrl: `https://www.facebook.com/${id}` };
+    return published(requireId((await post('/feed', form, true))?.id, 'post'));
   },
 });
+
+/**
+ * The published post's link, read back from Meta (GET /{post-id}?fields=permalink_url, read
+ * with the same Page token). This also shows the post can be read. Best effort: the post is
+ * already published (Meta returned its id), so a failed read changes nothing but the link,
+ * which then falls back to https://www.facebook.com/{post-id}.
+ */
+async function postPermalink({ root, id, accessToken, appSecret }) {
+  try {
+    const body = await metaRequest(`${root}/${encodeURIComponent(id)}`, {
+      query: { fields: 'permalink_url' },
+      accessToken,
+      appSecret,
+    });
+    const link = body?.permalink_url;
+    if (typeof link === 'string' && link.startsWith('https://')) return link;
+  } catch {
+    /* the link only */
+  }
+  return `https://www.facebook.com/${id}`;
+}
 
 /**
  * Waits (about a minute) for Facebook to finish processing an uploaded Page video. Reports it
@@ -211,4 +235,41 @@ async function confirmVideo({ root, videoId, accessToken, appSecret, saveProvide
     `Facebook is still processing the video (id ${videoId}). SocialHub will check again shortly; it is not shown as published until Facebook confirms it.`,
     { retryable: true, retryAfterMs: VIDEO_RECHECK_MS },
   );
+}
+
+/**
+ * Changes made to a post that is already published on a Facebook Page, with the Page token
+ * (pages_manage_posts):
+ *
+ *   edit the text   POST   /{post-id}  message   → { success: true }
+ *   delete          DELETE /{post-id}            → { success: true }
+ *
+ * Done only when Meta answered `success: true`. Any other answer, or none, leaves it unknown
+ * whether Facebook applied it: that is reported (OUTCOME_UNKNOWN) and nothing is recorded, so a
+ * person checks the Page. Tested against a simulated Meta only.
+ */
+export const facebookPostActions = Object.freeze({
+  async edit({ postId, message, accessToken }) {
+    return postAction({ postId, accessToken, method: 'POST', form: { message } }, 'changed');
+  },
+  async remove({ postId, accessToken }) {
+    return postAction({ postId, accessToken, method: 'DELETE' }, 'deleted');
+  },
+});
+
+async function postAction({ postId, accessToken, method, form }, done) {
+  const { appSecret } = facebookSettings();
+  const url = `${META_HOSTS.facebookGraph}/${metaSettings().graphVersion}/${encodeURIComponent(postId)}`;
+  let body;
+  try {
+    body = await metaRequest(url, { method, form, accessToken, appSecret });
+  } catch (err) {
+    throw fromMetaError(err, { platformName: PLATFORM, committing: true });
+  }
+  if (body?.success !== true) {
+    throw new PublishError(
+      E.OUTCOME_UNKNOWN,
+      `Facebook answered without confirming that the post was ${done}. Check the Page before trying again.`,
+    );
+  }
 }

@@ -30,9 +30,16 @@ import {
   createDraft,
   createTestQueue,
   giveTokens,
-  publish,
+  publish as publishRequest,
   publishUrl,
 } from './publishFixtures.js';
+
+/**
+ * These tests are about what happens to a CONFIRMED real post, so every request carries the
+ * person's confirmation. Requests without it are tested in publishing.confirmation.test.js.
+ */
+const publish = (token, workspaceId, body) =>
+  publishRequest(token, workspaceId, { confirmRealPost: true, ...body });
 
 /**
  * The REAL Facebook and Instagram adapters, driven against a SIMULATED Meta (a fetch
@@ -158,6 +165,22 @@ describe('real publishing is never on by default', () => {
     );
   });
 
+  it('real Meta analytics are off unless ANALYTICS_MODE=live, which is never implied', () => {
+    const base = {
+      JWT_ACCESS_SECRET: 'x'.repeat(40),
+      TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
+    };
+    expect(loadConfig(base).analytics.mode).toBe('DISABLED');
+    expect(loadConfig({ ...base, ANALYTICS_MODE: 'simulated' }).analytics.mode).toBe('SIMULATED');
+    expect(loadConfig({ ...base, ANALYTICS_MODE: 'live' }).analytics.mode).toBe('LIVE');
+    // Real publishing does not switch real analytics on, and vice versa.
+    expect(loadConfig({ ...base, PUBLISHING_MODE: 'live' }).analytics.mode).toBe('DISABLED');
+    expect(loadConfig({ ...base, ANALYTICS_MODE: 'live' }).publishing.mode).toBe('DISABLED');
+    for (const value of ['LIVE', 'real', 'enabled', 'true']) {
+      expect(() => loadConfig({ ...base, ANALYTICS_MODE: value })).toThrow(/ANALYTICS_MODE/);
+    }
+  });
+
   it('refuses the test overrides outside the test environment', () => {
     const script = `
       const s = await import('./src/modules/publishing/publishing.settings.js');
@@ -251,11 +274,16 @@ describe('Facebook Page adapter (simulated Meta)', () => {
       accounts: [pages[0]],
       hashtags: ['news'],
     });
+    // The post is read back (GET) for its real link once Meta returned its id.
+    meta.routes['GET /101'] = () => ({
+      id: '101',
+      permalink_url: 'https://www.facebook.com/acme/posts/pfbid0101',
+    });
     const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
     expect(res.body.publishJob).toMatchObject({ mode: 'LIVE', simulated: false });
     expect(await queue.deliver()).toEqual(['published']);
-    expect(meta.calls).toHaveLength(1);
-    const [call] = meta.calls;
+    expect(meta.calls).toHaveLength(2);
+    const [call, readBack] = meta.calls;
     expect(call).toMatchObject({
       method: 'POST',
       host: 'graph.facebook.com',
@@ -264,6 +292,9 @@ describe('Facebook Page adapter (simulated Meta)', () => {
     expect(call.form.message).toBe('Hello from the test\n\n#news');
     expect(call.query.access_token).toBe(`${TOKEN}-fb-user-1-page-0`);
     expect(call.query.appsecret_proof).toMatch(/^[a-f0-9]{64}$/);
+    expect(readBack).toMatchObject({ method: 'GET', path: '/101' });
+    expect(readBack.query.fields).toBe('permalink_url');
+    expect(readBack.query.access_token).toBe(`${TOKEN}-fb-user-1-page-0`);
 
     const job = (await as(team.owner.token).get(publishUrl(ws, `/${res.body.publishJob.id}`))).body
       .publishJob;
@@ -271,7 +302,7 @@ describe('Facebook Page adapter (simulated Meta)', () => {
       state: 'PUBLISHED',
       simulated: false,
       externalPostId: '101',
-      externalUrl: 'https://www.facebook.com/101',
+      externalUrl: 'https://www.facebook.com/acme/posts/pfbid0101',
     });
     expect(JSON.stringify(job)).not.toContain(TOKEN);
   });
@@ -686,7 +717,7 @@ describe('Facebook video: published only when Facebook confirms it', () => {
     meta.routes['GET /101'] = () => ({ json: { status: { video_status: 'ready' } } });
     const retry = await as(team.owner.token)
       .post(publishUrl(ws, `/${res.body.publishJob.id}/destinations/${destination._id}/retry`))
-      .send({ acknowledgeDuplicateRisk: true });
+      .send({ acknowledgeDuplicateRisk: true, confirmRealPost: true });
     expect(retry.status).toBe(200);
     expect(await queue.deliver()).toEqual(['published']);
     expect(meta.posts('/videos')).toHaveLength(1);

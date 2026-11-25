@@ -647,7 +647,7 @@ describe('ReadinessPanel', () => {
 
     expect(within(panel).getByRole('status')).toHaveTextContent('2 errors · 0 warnings');
     expect(panel).toHaveTextContent(
-      'These checks show what Facebook and Instagram require. Real publishing is not available yet: posts can only be simulated, so nothing is sent to Facebook or Instagram.',
+      'These checks show what Facebook and Instagram require. Whether Publish sends a real post or a simulation depends on the workspace’s publishing mode; a real post is always previewed and confirmed first.',
     );
     expect(panel).not.toHaveTextContent(/ready to publish/i);
   });

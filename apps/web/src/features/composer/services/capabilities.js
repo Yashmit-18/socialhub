@@ -44,15 +44,16 @@ export const CAPABILITY_MESSAGES = Object.freeze({
   serverPresets:
     'Shared presets are not switched on for this site. Presets are saved in this browser only.',
   publishing:
-    'Publishing from the composer needs team drafts, which are not switched on for this site. Real publishing is not available yet, so nothing is sent to Facebook or Instagram.',
+    'Publishing from the composer needs team drafts, which are not switched on for this site, so nothing can be sent to Facebook or Instagram from here.',
 });
 
 /**
- * True in this release whatever the server says: real posting to Meta is not switched on
- * (publishing runs in simulation at most). Shown wherever the composer talks about readiness.
+ * Shown wherever the composer talks about readiness. True in every mode: whether Publish
+ * simulates or sends a real post depends on the workspace, and a real post is always previewed
+ * and confirmed in the Publish dialog first.
  */
 export const REAL_PUBLISHING_NOTE =
-  'Real publishing is not available yet: posts can only be simulated, so nothing is sent to Facebook or Instagram.';
+  'Whether Publish sends a real post or a simulation depends on the workspace’s publishing mode; a real post is always previewed and confirmed first.';
 
 /** Thrown when code tries to use a capability that is switched off. No request is made. */
 export class CapabilityUnavailableError extends Error {

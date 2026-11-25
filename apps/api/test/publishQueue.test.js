@@ -25,7 +25,7 @@ vi.mock('bullmq', () => {
   return { Queue, Worker };
 });
 
-const { createBullQueue } = await import('../src/queue/publishQueue.js');
+const { countOnDatabase, createBullQueue } = await import('../src/queue/publishQueue.js');
 
 afterEach(() => {
   created.length = 0;
@@ -58,5 +58,21 @@ describe('publish queue construction', () => {
     } finally {
       await queue.close();
     }
+  });
+});
+
+describe('worker count', () => {
+  // CLIENT LIST covers the whole Redis server; another SocialHub API on another database of the
+  // same Redis must not be counted as a worker of this queue.
+  const workers = [{ db: '0' }, { db: '15' }, { db: '15' }];
+
+  it('counts only the workers on the queue connection’s own database', () => {
+    expect(countOnDatabase(workers, { options: { db: 15 } })).toBe(2);
+    expect(countOnDatabase(workers, { options: { db: 0 } })).toBe(1);
+    expect(countOnDatabase(workers, { options: {} })).toBe(1);
+  });
+
+  it('keeps a connection whose database Redis did not report', () => {
+    expect(countOnDatabase([{}, { db: '3' }], { options: { db: 0 } })).toBe(1);
   });
 });

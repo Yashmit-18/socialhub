@@ -121,6 +121,11 @@ Always derived from the destinations (`deriveJobStatus`), never set by hand.
   on jobs or destinations, never logged, and never returned by the API.
 - **Nothing is queued when Redis is down.** Creation answers `503 QUEUE_UNAVAILABLE` and
   writes nothing. There is no in-memory substitute for Redis.
+- **No real post without an explicit confirmation in the request.** A job that would be real
+  (the workspace's mode is LIVE) is only created when the request says
+  `confirmRealPost: true`. Otherwise it answers `400 REAL_POST_CONFIRMATION_REQUIRED`,
+  creates nothing and does not fall back to a simulation. The screens' checkbox is not the
+  enforcement; this check is.
 
 ## 3. Endpoints
 
@@ -138,6 +143,8 @@ All under `/api/v1/workspaces/:workspaceId`, with the usual error shape
 | POST   | `/publish-jobs/:jobId/cancel`                             | `content:publish` | Cancels every destination that is still waiting  |
 | POST   | `/publish-jobs/:jobId/destinations/:destinationId/cancel` | `content:publish` | Cancels one waiting destination                  |
 | POST   | `/publish-jobs/:jobId/destinations/:destinationId/retry`  | `content:publish` | Retries one failed destination                   |
+| PATCH  | `/publish-jobs/:jobId/destinations/:destinationId/post`   | `content:publish` | Changes the text of a real Facebook post         |
+| DELETE | `/publish-jobs/:jobId/destinations/:destinationId/post`   | `content:publish` | Deletes a real Facebook post from Facebook       |
 
 The public `GET /api/v1/health` only says whether the API and its database are up.
 Server-wide queue counts and worker numbers are on `GET /api/v1/health/details`, which answers
@@ -156,30 +163,33 @@ POST /api/v1/workspaces/:workspaceId/publish-jobs
   "socialAccountIds": ["6b01…", "6b01…"],
   "idempotencyKey": "b0d7c1f4a9e24c0d9a3f5e6b7c8d9e0f",
   "scheduledAt": "2026-12-01T09:00:00+05:30",
-  "republish": false
+  "republish": false,
+  "confirmRealPost": true
 }
 ```
 
-| Field              | Required | Notes                                                               |
-| ------------------ | -------- | ------------------------------------------------------------------- |
-| `contentPackageId` | yes      | A draft of this workspace                                           |
-| `socialAccountIds` | no       | 1–100 accounts. Defaults to the accounts saved on the draft         |
-| `idempotencyKey`   | yes      | 16–100 characters `A–Z a–z 0–9 _ -`. One key per publish action     |
-| `scheduledAt`      | no       | A future date-time, at most 90 days ahead. Omit to publish now      |
-| `republish`        | no       | `true` to send again to an account that already received this draft |
+| Field              | Required        | Notes                                                                                |
+| ------------------ | --------------- | ------------------------------------------------------------------------------------ |
+| `contentPackageId` | yes             | A draft of this workspace                                                            |
+| `socialAccountIds` | no              | 1–100 accounts. Defaults to the accounts saved on the draft                          |
+| `idempotencyKey`   | yes             | 16–100 characters `A–Z a–z 0–9 _ -`. One key per publish action                      |
+| `scheduledAt`      | no              | A future date-time, at most 90 days ahead. Omit to publish now                       |
+| `republish`        | no              | `true` to send again to an account that already received this draft                  |
+| `confirmRealPost`  | for a real post | `true` (a boolean) = the person confirmed a REAL public post. Ignored when simulated |
 
 Answers:
 
-| Status | Code                  | When                                                                                                     |
-| ------ | --------------------- | -------------------------------------------------------------------------------------------------------- |
-| 201    |                       | Created: `{ publishJob, created: true }`                                                                 |
-| 200    |                       | Same `idempotencyKey` as an existing job: `{ publishJob, created: false }`                               |
-| 403    | `FORBIDDEN`           | The member's role cannot publish                                                                         |
-| 404    | `NOT_FOUND`           | The draft does not exist in this workspace                                                               |
-| 409    | `CONFLICT`            | `details.reason`: `IN_PROGRESS`, `ALREADY_PUBLISHED` (with `details.accounts`), `IDEMPOTENCY_KEY_REUSED` |
-| 422    | `VALIDATION_ERROR`    | `details.fields.socialAccountIds`, `.content` or `.scheduledAt`                                          |
-| 503    | `PUBLISHING_DISABLED` | `PUBLISHING_MODE` is `disabled`                                                                          |
-| 503    | `QUEUE_UNAVAILABLE`   | Redis is not configured or not reachable. Nothing was written                                            |
+| Status | Code                              | When                                                                                                                      |
+| ------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 201    |                                   | Created: `{ publishJob, created: true }`                                                                                  |
+| 200    |                                   | Same `idempotencyKey` as an existing job: `{ publishJob, created: false }` (a real job only with `confirmRealPost: true`) |
+| 400    | `REAL_POST_CONFIRMATION_REQUIRED` | The job would be real and `confirmRealPost` is not `true`. Nothing was created, nothing simulated instead                 |
+| 403    | `FORBIDDEN`                       | The member's role cannot publish                                                                                          |
+| 404    | `NOT_FOUND`                       | The draft does not exist in this workspace                                                                                |
+| 409    | `CONFLICT`                        | `details.reason`: `IN_PROGRESS`, `ALREADY_PUBLISHED` (with `details.accounts`), `IDEMPOTENCY_KEY_REUSED`                  |
+| 422    | `VALIDATION_ERROR`                | `details.fields.socialAccountIds`, `.content` or `.scheduledAt`                                                           |
+| 503    | `PUBLISHING_DISABLED`             | `PUBLISHING_MODE` is `disabled`                                                                                           |
+| 503    | `QUEUE_UNAVAILABLE`               | Redis is not configured or not reachable. Nothing was written                                                             |
 
 Checks at creation: account access, account readiness (active login, ready to publish),
 verified media, platform rules (Instagram needs media, at most 10 files, caption ≤ 2,200
@@ -274,6 +284,34 @@ Error codes of a destination (`PUBLISH_ERROR_CODES`): `ACCOUNT_REMOVED`,
 `MEDIA_UNAVAILABLE`, `MEDIA_NOT_PUBLIC`, `LIVE_PUBLISHING_DISABLED`, `PERMISSION_DENIED`,
 `RATE_LIMITED`, `PLATFORM_UNAVAILABLE`, `PLATFORM_REJECTED`, `OUTCOME_UNKNOWN`,
 `INTERRUPTED`, `AUTHOR_NOT_AUTHORIZED`, `INTERNAL_ERROR`.
+
+### Edit or delete a published Facebook post
+
+```http
+PATCH  /api/v1/workspaces/:workspaceId/publish-jobs/:jobId/destinations/:destinationId/post
+       { "message": "New text", "confirmRealPost": true }
+DELETE /api/v1/workspaces/:workspaceId/publish-jobs/:jobId/destinations/:destinationId/post
+       { "confirmRealPost": true }
+```
+
+For a **real** (LIVE) destination on a **Facebook Page** that is `PUBLISHED`, has Meta's post
+id and was not deleted. Meta calls, with the Page token (`pages_manage_posts`):
+`POST /{post-id}` with `message`, and `DELETE /{post-id}`. Answer: `{ publishJob }`.
+
+- Needs `confirmRealPost: true` (`400 REAL_POST_CONFIRMATION_REQUIRED`, nothing sent), real
+  publishing still on for the workspace (`409` `MODE_CHANGED`), an account the member may use
+  whose login works (`409` `ACCOUNT_NEEDS_RECONNECT`, `ACCOUNT_REMOVED`).
+- `409` reasons: `NOT_REAL` (simulated), `NOT_FACEBOOK`, `NOT_PUBLISHED`, `POST_DELETED`,
+  `EDIT_NOT_SUPPORTED` (a video's text), `IN_PROGRESS` (another change to the post is being
+  sent; one at a time per post).
+- Recorded only when Meta answered `success: true`: the destination gets `postEditedAt` (and
+  the new text as `postText`) or `postDeletedAt`, and the activity log
+  `publish_destination.post_edited` / `post_deleted`. Any other answer, or none, is
+  `502` with Meta's mapped code (`OUTCOME_UNKNOWN`, `details.uncertain: true`,
+  `ACCOUNT_NEEDS_RECONNECT`, `PERMISSION_DENIED`, …) and nothing is recorded or sent again by
+  itself: the person checks the Page.
+- The job view gives each destination `canEditPost`, `canDeletePost`, `postText`,
+  `postEditedAt` and `postDeletedAt`. Tested against a simulated Meta only.
 
 ### Cancel and retry
 
@@ -490,6 +528,15 @@ BullMQ needs Redis 5 or newer and recommends 6.2 or newer.
    This only makes real publishing _available_; every workspace keeps publishing in simulation.
 2. **Workspace owner or admin:** **Settings › Publishing mode › Switch on real publishing**,
    tick the acknowledgement and enter their password (`PUT /publishing/mode`).
+
+Then every real post needs one more confirmation, for that post: the composer's **Publish**
+dialog and **Publishing › Publish a draft** show the accounts, the files and the exact caption,
+and the person ticks **This creates a REAL public post** before the button works. The request
+then carries `confirmRealPost: true`, and the API refuses a real job without it
+(`400 REAL_POST_CONFIRMATION_REQUIRED`), so the checkbox cannot be skipped by calling the API.
+Retrying a failed destination and moving a scheduled real post to another time act on a job
+that was confirmed when it was created, and need no new confirmation (a retry after an
+uncertain outcome still needs `acknowledgeDuplicateRisk`).
 
 Switching back (**Switch back to simulation**, or `PUBLISHING_MODE=simulated` on the server)
 takes effect immediately: new posts are simulated, and live posts still waiting are refused

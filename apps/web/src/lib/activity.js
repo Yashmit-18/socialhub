@@ -80,6 +80,20 @@ function describePublishing(entry, actor, m) {
       };
     case PUBLISH_ACTIVITY_ACTIONS.DESTINATION_RETRIED:
       return { icon: RefreshCw, tone: 'neutral', actor, text: `retried publishing to ${account}` };
+    case PUBLISH_ACTIVITY_ACTIONS.POST_EDITED:
+      return {
+        icon: StickyNote,
+        tone: 'neutral',
+        actor,
+        text: `changed the text of the post on ${account} on Facebook`,
+      };
+    case PUBLISH_ACTIVITY_ACTIONS.POST_DELETED:
+      return {
+        icon: Trash2,
+        tone: 'danger',
+        actor,
+        text: `deleted the post on ${account} from Facebook`,
+      };
     case PUBLISH_ACTIVITY_ACTIONS.DESTINATION_BLOCKED:
       return {
         icon: AlertTriangle,

@@ -14,8 +14,10 @@ import {
   PUBLISH_JOB_ORDERS,
   PUBLISH_JOB_STATUS,
   QUEUE_STATUS,
+  SOCIAL_PLATFORMS,
   UNCERTAIN_PUBLISH_ERROR_CODES,
   WORKSPACE_PUBLISHING_MODES,
+  composeCaption,
   deriveJobStatus,
   emptyDestinationCounts,
   hasPermission,
@@ -52,6 +54,8 @@ import {
   targetsAreVisible,
 } from '../contentPackages/contentAccess.js';
 import { accessibleAccountFilter } from '../socialAccounts/socialAccount.service.js';
+import { facebookPostActions } from './adapters/facebookPage.js';
+import { PublishError } from './publishError.js';
 import { enqueueDestination, syncJob } from './publishing.processor.js';
 import {
   isLivePublishingAvailable,
@@ -97,6 +101,32 @@ const queueError = (status) =>
   new AppError(503, PUBLISHING_API_ERRORS.QUEUE_UNAVAILABLE, QUEUE_MESSAGES[status], {
     queueStatus: status,
   });
+
+/**
+ * A REAL post is only created when the request itself says the person confirmed it
+ * (`confirmRealPost: true`). The screens ask for it with a checkbox, but this is the check that
+ * counts: a request without it (another client, a script, a screen that still believed the
+ * workspace was simulated) creates nothing and is never turned into a simulation instead.
+ */
+const REAL_POST_MESSAGES = {
+  create:
+    'Real publishing is on for this workspace, so this creates a real public post. Confirm that you want to publish it for real, then send it again. Nothing was created.',
+  retry:
+    'This is a real post, so retrying publishes it for real on this account. Confirm that you want that, then retry again. Nothing was sent.',
+  edit: 'This changes the text of a real public post on Facebook. Confirm that you want that, then send it again. Nothing was changed.',
+  delete:
+    'This deletes a real public post from Facebook, and it cannot be undone. Confirm that you want that, then send it again. Nothing was deleted.',
+};
+
+function assertRealPostConfirmed(input, action = 'create') {
+  if (input.confirmRealPost === true) return;
+  throw new AppError(
+    400,
+    PUBLISHING_API_ERRORS.REAL_POST_CONFIRMATION_REQUIRED,
+    REAL_POST_MESSAGES[action],
+    { mode: PUBLISHING_MODES.LIVE, action },
+  );
+}
 
 /** Throws unless a job could be queued right now. */
 function assertCanQueue() {
@@ -180,6 +210,36 @@ function destinationView(destination, job, canAct) {
     })),
     canRetry: canAct && destination.state === D.FAILED,
     canCancel: canAct && CANCELLABLE_DESTINATION_STATES.includes(destination.state),
+    ...postChanges(destination, job, canAct),
+  };
+}
+
+/**
+ * A real Facebook Page post that was published can be edited (its text) or deleted on Facebook
+ * afterwards. `postText` is the text SocialHub last sent, so an edit starts from it. Whether the
+ * workspace still allows real publishing is checked when it is sent (editPublishedPost).
+ */
+function postChanges(destination, job, canAct) {
+  const real = job.mode === PUBLISHING_MODES.LIVE;
+  const deleted = Boolean(destination.postDeletedAt);
+  const changeable =
+    canAct &&
+    real &&
+    !deleted &&
+    destination.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE &&
+    destination.state === D.PUBLISHED &&
+    Boolean(destination.externalPostId);
+  return {
+    postEditedAt: real ? (destination.postEditedAt ?? null) : null,
+    postDeletedAt: real ? (destination.postDeletedAt ?? null) : null,
+    // A Page post id is "{page-id}_{post-id}"; a video's id has no "_" and its text is edited
+    // differently, so only posts are offered for editing.
+    canEditPost: changeable && destination.externalPostId.includes('_'),
+    canDeletePost: changeable,
+    postText: changeable
+      ? (destination.editedText ??
+        composeCaption(job.content.toObject?.() ?? job.content, destination.platform))
+      : null,
   };
 }
 
@@ -361,6 +421,8 @@ export async function createJob(
         reason: 'IDEMPOTENCY_KEY_REUSED',
       });
     }
+    // Nothing new is created here, but an unconfirmed request is not answered with a real job.
+    if (existing.mode === PUBLISHING_MODES.LIVE) assertRealPostConfirmed(input);
     return { publishJob: await presentOne(workspace, membership, existing._id), created: false };
   };
 
@@ -373,6 +435,8 @@ export async function createJob(
   // Fixed for the job's whole life: LIVE only if the server offers it and this workspace chose it.
   const mode = workspacePublishingMode(workspace);
   const live = mode === PUBLISHING_MODES.LIVE;
+  // Publishing now and scheduling for later both create the job here, so both need it.
+  if (live) assertRealPostConfirmed(input);
 
   const pkg = mongoose.isValidObjectId(input.contentPackageId)
     ? await ContentPackage.findOne({
@@ -769,7 +833,7 @@ export async function retryDestination(
   actor,
   jobId,
   destinationId,
-  { acknowledgeDuplicateRisk },
+  { acknowledgeDuplicateRisk, confirmRealPost },
   context,
   { now = new Date() } = {},
 ) {
@@ -799,6 +863,9 @@ export async function retryDestination(
   }
   assertCanQueue();
   assertJobModeUsable(workspace, job, 'retried');
+  // A retry of a real destination sends a real public post again: the person confirms it, as
+  // for a new one. Checked after the duplicate-risk question, which it does not replace.
+  if (job.mode === PUBLISHING_MODES.LIVE) assertRealPostConfirmed({ confirmRealPost }, 'retry');
 
   let retried;
   try {
@@ -841,6 +908,196 @@ export async function retryDestination(
     context,
   }).catch((err) => logger.warn({ err }, 'Could not record a publishing activity entry'));
   return getJob(workspace, membership, job._id);
+}
+
+/* ------------------------------------------------- edit / delete a published post */
+
+/** How long an edit or delete in progress blocks another one on the same post. */
+const POST_ACTION_LOCK_MS = 2 * 60 * 1000;
+
+const postActionFailed = (error) =>
+  new AppError(502, error.code, error.message, { uncertain: error.uncertain });
+
+/**
+ * Everything checked before a published post may be changed on Facebook: a REAL Facebook Page
+ * post that is published and not deleted, a workspace that still allows real publishing, the
+ * person's explicit confirmation, and an account the person may use whose login still works.
+ * Returns the destination and the account (with its token, read here only to send this change).
+ */
+async function preparePostChange(workspace, membership, jobId, destinationId, input, action) {
+  const job = await loadJob(workspace, membership, jobId);
+  const { destination, accountExists } = await loadDestination(
+    workspace,
+    membership,
+    job,
+    destinationId,
+  );
+  if (job.mode !== PUBLISHING_MODES.LIVE) {
+    throw conflict('Only a real post can be changed on Facebook. This one was simulated.', {
+      reason: 'NOT_REAL',
+    });
+  }
+  if (destination.platform !== SOCIAL_PLATFORMS.FACEBOOK_PAGE) {
+    throw conflict('Only Facebook Page posts can be changed from SocialHub.', {
+      reason: 'NOT_FACEBOOK',
+    });
+  }
+  if (destination.postDeletedAt) {
+    throw conflict('This post was already deleted from Facebook.', { reason: 'POST_DELETED' });
+  }
+  if (destination.state !== D.PUBLISHED || !destination.externalPostId) {
+    throw conflict('Only a published post can be changed.', { reason: 'NOT_PUBLISHED' });
+  }
+  if (action === 'edit' && !destination.externalPostId.includes('_')) {
+    throw conflict('The text of a video cannot be changed from SocialHub yet.', {
+      reason: 'EDIT_NOT_SUPPORTED',
+    });
+  }
+  if (!accountExists) {
+    throw conflict('This account was removed from the workspace, so its post cannot be changed.', {
+      reason: 'ACCOUNT_REMOVED',
+    });
+  }
+  // A change on Facebook is a real Meta write: only while real publishing is still on.
+  assertJobModeUsable(workspace, job, action === 'edit' ? 'edited' : 'deleted');
+  assertRealPostConfirmed(input, action);
+
+  const account = await SocialAccount.findOne({
+    $and: [accessibleAccountFilter(membership), { _id: destination.socialAccount }],
+  }).select('+accessToken name connectionStatus connection');
+  if (!account) throw notFound('Publishing destination not found');
+  if (account.connectionStatus !== CONNECTION_STATUS.ACTIVE) {
+    throw conflict(
+      'The login for this account is no longer valid. Reconnect the account, then try again.',
+      { reason: 'ACCOUNT_NEEDS_RECONNECT' },
+    );
+  }
+  if (!facebookSettings()) {
+    throw conflict('The Meta app is not configured on this server.', {
+      reason: 'META_NOT_CONFIGURED',
+    });
+  }
+  return { job, destination, account };
+}
+
+/**
+ * Sends one change to Facebook while holding the post's lock, so two changes (a double click,
+ * two people) are never sent at once. Nothing is recorded unless Facebook confirmed it; an
+ * uncertain answer is reported as such and never repeated automatically.
+ */
+async function sendPostChange({ destination, account }, change, now) {
+  const locked = await PublishDestination.findOneAndUpdate(
+    {
+      _id: destination._id,
+      postDeletedAt: { $exists: false },
+      $or: [
+        { postActionAt: { $exists: false } },
+        { postActionAt: null },
+        { postActionAt: { $lt: new Date(now.getTime() - POST_ACTION_LOCK_MS) } },
+      ],
+    },
+    { $set: { postActionAt: now } },
+    { returnDocument: 'after' },
+  );
+  if (!locked) {
+    throw conflict('Another change to this post is being sent. Wait a moment, then reload.', {
+      reason: 'IN_PROGRESS',
+    });
+  }
+  try {
+    await change(account.getAccessToken());
+  } catch (err) {
+    await PublishDestination.updateOne({ _id: destination._id }, { $unset: { postActionAt: 1 } });
+    if (err instanceof PublishError) throw postActionFailed(err);
+    throw err;
+  }
+}
+
+export async function editPublishedPost(
+  workspace,
+  membership,
+  actor,
+  jobId,
+  destinationId,
+  input,
+  context,
+  { now = new Date() } = {},
+) {
+  const prepared = await preparePostChange(
+    workspace,
+    membership,
+    jobId,
+    destinationId,
+    input,
+    'edit',
+  );
+  const { destination } = prepared;
+  await sendPostChange(
+    prepared,
+    (accessToken) =>
+      facebookPostActions.edit({
+        postId: destination.externalPostId,
+        message: input.message,
+        accessToken,
+      }),
+    now,
+  );
+  await PublishDestination.updateOne(
+    { _id: destination._id },
+    {
+      $set: { editedText: input.message, postEditedAt: now, postEditedBy: actor._id },
+      $unset: { postActionAt: 1 },
+    },
+  );
+  await recordActivity({
+    workspace,
+    actor,
+    action: PUBLISH_ACTIVITY_ACTIONS.POST_EDITED,
+    target: { type: 'publish_job', id: prepared.job._id, label: destination.accountName },
+    metadata: { platform: destination.platform, simulated: false },
+    context,
+  }).catch((err) => logger.warn({ err }, 'Could not record a publishing activity entry'));
+  return { publishJob: await presentOne(workspace, membership, prepared.job._id) };
+}
+
+export async function deletePublishedPost(
+  workspace,
+  membership,
+  actor,
+  jobId,
+  destinationId,
+  input,
+  context,
+  { now = new Date() } = {},
+) {
+  const prepared = await preparePostChange(
+    workspace,
+    membership,
+    jobId,
+    destinationId,
+    input,
+    'delete',
+  );
+  const { destination } = prepared;
+  await sendPostChange(
+    prepared,
+    (accessToken) =>
+      facebookPostActions.remove({ postId: destination.externalPostId, accessToken }),
+    now,
+  );
+  await PublishDestination.updateOne(
+    { _id: destination._id },
+    { $set: { postDeletedAt: now, postDeletedBy: actor._id }, $unset: { postActionAt: 1 } },
+  );
+  await recordActivity({
+    workspace,
+    actor,
+    action: PUBLISH_ACTIVITY_ACTIONS.POST_DELETED,
+    target: { type: 'publish_job', id: prepared.job._id, label: destination.accountName },
+    metadata: { platform: destination.platform, simulated: false },
+    context,
+  }).catch((err) => logger.warn({ err }, 'Could not record a publishing activity entry'));
+  return { publishJob: await presentOne(workspace, membership, prepared.job._id) };
 }
 
 /* ------------------------------------------------------------------ reschedule */

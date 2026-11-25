@@ -1,4 +1,5 @@
-import { CalendarClock, ExternalLink, RotateCcw, X } from 'lucide-react';
+import { PUBLISHING_MODES } from '@socialhub/shared';
+import { CalendarClock, ExternalLink, Pencil, RotateCcw, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button.jsx';
@@ -13,6 +14,7 @@ import {
   PlatformIcon,
   SimulatedBadge,
 } from './PublishingBadges.jsx';
+import { RealPostConfirmation } from './RealPostConfirmation.jsx';
 import { Notice } from './StatusBanner.jsx';
 import {
   SIMULATED_NOTICE,
@@ -30,9 +32,81 @@ import {
   isActiveJob,
   useCancelDestination,
   useCancelJob,
+  useDeletePublishedPost,
+  useEditPublishedPost,
   usePublishJob,
   useRetryDestination,
 } from './usePublishing.js';
+
+/** The explicit "this changes the real post" checkbox of the edit and delete dialogs. */
+function RealChangeConfirmation({ text, checked, disabled, onChange }) {
+  return (
+    <label className="flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-sm text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
+      <input
+        type="checkbox"
+        className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>{text}</span>
+    </label>
+  );
+}
+
+/** Change the text of a real, published Facebook post on Facebook. */
+function EditPostDialog({ state, setState, mutation, onSave, onClose }) {
+  const original = state?.destination?.postText ?? '';
+  const text = state?.text ?? '';
+  const unchanged = text.trim() === original.trim();
+  const canSave = Boolean(state?.confirmed) && Boolean(text.trim()) && !unchanged;
+  return (
+    <Modal
+      open={Boolean(state)}
+      onClose={mutation.isPending ? undefined : onClose}
+      size="lg"
+      title="Edit the post on Facebook"
+      description={state ? `${state.destination.accountName} · Facebook Page` : undefined}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>
+            Cancel
+          </Button>
+          <Button
+            loading={mutation.isPending}
+            disabled={!canSave}
+            onClick={canSave ? onSave : undefined}
+          >
+            Save on Facebook
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+          New text
+          <textarea
+            className="mt-1.5 block min-h-40 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:ring-brand-500 dark:border-white/15 dark:bg-white/5 dark:text-white"
+            value={text}
+            disabled={mutation.isPending}
+            onChange={(event) => setState((current) => ({ ...current, text: event.target.value }))}
+          />
+        </label>
+        <p className="text-xs text-muted">
+          Only the text changes. Images and videos stay as they are. Facebook may show that the post
+          was edited.
+        </p>
+        <RealChangeConfirmation
+          text="I understand that this changes the real public post on Facebook."
+          checked={Boolean(state?.confirmed)}
+          disabled={mutation.isPending}
+          onChange={(confirmed) => setState((current) => ({ ...current, confirmed }))}
+        />
+        {mutation.error && <FormError message={mutation.error.message} />}
+      </div>
+    </Modal>
+  );
+}
 
 function Fact({ label, children }) {
   return (
@@ -67,14 +141,27 @@ function AttemptHistory({ attempts, simulated }) {
   );
 }
 
-function DestinationCard({ destination, jobSimulated, canAct, busy, onRetry, onCancel, timeZone }) {
+function DestinationCard({
+  destination,
+  jobSimulated,
+  canAct,
+  busy,
+  onRetry,
+  onCancel,
+  onEditPost,
+  onDeletePost,
+  timeZone,
+}) {
   const simulated = jobSimulated || destination.simulated;
   const published = destination.state === 'PUBLISHED';
-  const postUrl = simulated ? null : safeExternalUrl(destination.externalUrl);
+  const deleted = Boolean(destination.postDeletedAt);
+  const postUrl = simulated || deleted ? null : safeExternalUrl(destination.externalUrl);
   const postId = simulated ? null : destination.externalPostId;
   const { error } = destination;
   const showRetry = canAct && destination.canRetry;
   const showCancel = canAct && destination.canCancel;
+  const showEdit = canAct && destination.canEditPost;
+  const showDelete = canAct && destination.canDeletePost;
 
   return (
     <li className="rounded-xl border border-slate-200 p-4 dark:border-white/10">
@@ -116,6 +203,12 @@ function DestinationCard({ destination, jobSimulated, canAct, busy, onRetry, onC
           </Fact>
         )}
         {postId && <Fact label="Post ID:">{postId}</Fact>}
+        {!simulated && destination.postEditedAt && (
+          <Fact label="Text changed on Facebook:">{formatDateTime(destination.postEditedAt)}</Fact>
+        )}
+        {!simulated && deleted && (
+          <Fact label="Deleted from Facebook:">{formatDateTime(destination.postDeletedAt)}</Fact>
+        )}
       </dl>
 
       {simulated && published && (
@@ -159,8 +252,32 @@ function DestinationCard({ destination, jobSimulated, canAct, busy, onRetry, onC
 
       <AttemptHistory attempts={destination.attempts} simulated={simulated} />
 
-      {(showRetry || showCancel) && (
+      {(showRetry || showCancel || showEdit || showDelete) && (
         <div className="mt-3 flex flex-wrap gap-2">
+          {showEdit && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={Boolean(busy)}
+              onClick={() => onEditPost(destination)}
+              aria-label={`Edit the post on ${destination.accountName}`}
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              Edit text
+            </Button>
+          )}
+          {showDelete && (
+            <Button
+              variant="danger-outline"
+              size="sm"
+              disabled={Boolean(busy)}
+              onClick={() => onDeletePost(destination)}
+              aria-label={`Delete the post on ${destination.accountName} from Facebook`}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Delete from Facebook
+            </Button>
+          )}
           {showRetry && (
             <Button
               variant="secondary"
@@ -214,6 +331,57 @@ export function JobDetailsModal({
   const retry = useRetryDestination(workspaceId);
   const cancelDestination = useCancelDestination(workspaceId);
   const cancelJob = useCancelJob(workspaceId);
+  const editPost = useEditPublishedPost(workspaceId);
+  const deletePost = useDeletePublishedPost(workspaceId);
+  // Edit/delete of a published Facebook post: { destination, text?, confirmed }.
+  const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+
+  const closePostDialogs = () => {
+    setEditing(null);
+    setDeleting(null);
+    editPost.reset();
+    deletePost.reset();
+  };
+  const onEditPost = (destination) => {
+    editPost.reset();
+    setEditing({ destination, text: destination.postText ?? '', confirmed: false });
+  };
+  const onDeletePost = (destination) => {
+    deletePost.reset();
+    setDeleting({ destination, confirmed: false });
+  };
+  const saveEdit = () =>
+    editPost.mutate(
+      {
+        jobId,
+        destinationId: editing.destination.id,
+        message: editing.text.trim(),
+        confirmRealPost: Boolean(editing.confirmed),
+      },
+      {
+        onSuccess: () => {
+          toast.success(`The post on ${editing.destination.accountName} was changed on Facebook`);
+          closePostDialogs();
+        },
+      },
+    );
+  const confirmDelete = () =>
+    deletePost.mutate(
+      {
+        jobId,
+        destinationId: deleting.destination.id,
+        confirmRealPost: Boolean(deleting.confirmed),
+      },
+      {
+        onSuccess: () => {
+          toast.success(
+            `The post on ${deleting.destination.accountName} was deleted from Facebook`,
+          );
+          closePostDialogs();
+        },
+      },
+    );
 
   const closeConfirm = () => {
     setConfirm(null);
@@ -221,31 +389,48 @@ export function JobDetailsModal({
     cancelJob.reset();
   };
 
-  const sendRetry = (destination, acknowledgeDuplicateRisk) =>
+  // A real post sent again is a real public post again: the person confirms it in a dialog.
+  const realJob = job?.mode === PUBLISHING_MODES.LIVE || job?.simulated === false;
+
+  const sendRetry = (destination, { acknowledgeDuplicateRisk = false, confirmRealPost } = {}) =>
     retry.mutate(
-      { jobId, destinationId: destination.id, acknowledgeDuplicateRisk },
+      { jobId, destinationId: destination.id, acknowledgeDuplicateRisk, confirmRealPost },
       {
         onSuccess: () => {
           setConfirm(null);
           toast.success(`Trying ${destination.accountName} again`);
         },
         onError: (err) => {
-          if (acknowledgeDuplicateRisk) return; // shown inside the confirmation dialog
-          // The server knows best: it can ask for the confirmation even if the list did not.
-          if (err.status === 409 && err.details?.reason === 'DUPLICATE_RISK') {
+          // The server knows best: it can ask for a confirmation the screen did not ask for yet.
+          // The dialog then asks that question too (it keeps what was already confirmed).
+          const duplicateRisk = err.status === 409 && err.details?.reason === 'DUPLICATE_RISK';
+          const needsReal = err.code === 'REAL_POST_CONFIRMATION_REQUIRED';
+          if ((duplicateRisk && !confirm?.uncertain) || (needsReal && !confirm?.real)) {
             retry.reset();
-            setConfirm({ type: 'retry', destination });
-          } else {
+            setConfirm((current) => ({
+              type: 'retry',
+              destination,
+              uncertain: Boolean(current?.uncertain) || duplicateRisk,
+              real: Boolean(current?.real) || needsReal || realJob,
+              confirmed: Boolean(current?.confirmed),
+            }));
+          } else if (!confirm) {
             toast.error(err.message);
           }
+          // Otherwise the error is shown inside the confirmation dialog.
         },
       },
     );
 
   const onRetry = (destination) => {
-    if (destination.error?.uncertain) setConfirm({ type: 'retry', destination });
-    else sendRetry(destination, false);
+    const uncertain = Boolean(destination.error?.uncertain);
+    if (uncertain || realJob) {
+      setConfirm({ type: 'retry', destination, uncertain, real: realJob, confirmed: false });
+    } else {
+      sendRetry(destination);
+    }
   };
+  const retryConfirmMissing = Boolean(confirm?.real && !confirm?.confirmed);
 
   const onCancelDestination = (destination) =>
     cancelDestination.mutate(
@@ -282,7 +467,7 @@ export function JobDetailsModal({
   return (
     <>
       <Modal
-        open={Boolean(job) && !confirm}
+        open={Boolean(job) && !confirm && !editing && !deleting}
         onClose={onClose}
         size="lg"
         title="Post details"
@@ -355,6 +540,8 @@ export function JobDetailsModal({
                     busy={busyFor(destination)}
                     onRetry={onRetry}
                     onCancel={onCancelDestination}
+                    onEditPost={onEditPost}
+                    onDeletePost={onDeletePost}
                     timeZone={timeZone}
                   />
                 ))}
@@ -371,21 +558,42 @@ export function JobDetailsModal({
 
       <ConfirmDialog
         open={confirm?.type === 'retry'}
-        title="This post may already be published"
-        confirmLabel="Retry anyway"
+        title={
+          confirm?.uncertain ? 'This post may already be published' : 'Publish this post again?'
+        }
+        confirmLabel={confirm?.uncertain ? 'Retry anyway' : 'Retry'}
         loading={retry.isPending}
         error={retry.error}
-        onConfirm={() => sendRetry(confirm.destination, true)}
+        confirmDisabled={retryConfirmMissing}
+        onConfirm={() =>
+          sendRetry(confirm.destination, {
+            acknowledgeDuplicateRisk: Boolean(confirm.uncertain),
+            confirmRealPost: Boolean(confirm.real && confirm.confirmed),
+          })
+        }
         onClose={closeConfirm}
       >
-        <p className="text-sm text-muted">
-          We could not confirm what happened the last time we sent this post to{' '}
-          <span className="font-medium text-slate-800 dark:text-slate-100">
-            {confirm?.destination?.accountName}
-          </span>
-          . It may already be on the account, so trying again could post it twice. Check the account
-          first if you can.
-        </p>
+        <div className="space-y-3">
+          {confirm?.uncertain && (
+            <p className="text-sm text-muted">
+              We could not confirm what happened the last time we sent this post to{' '}
+              <span className="font-medium text-slate-800 dark:text-slate-100">
+                {confirm?.destination?.accountName}
+              </span>
+              . It may already be on the account, so trying again could post it twice. Check the
+              account first if you can.
+            </p>
+          )}
+          {confirm?.real && (
+            <RealPostConfirmation
+              accountNames={[confirm.destination.accountName]}
+              scheduled={false}
+              checked={Boolean(confirm.confirmed)}
+              disabled={retry.isPending}
+              onChange={(confirmed) => setConfirm((current) => ({ ...current, confirmed }))}
+            />
+          )}
+        </div>
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -401,6 +609,42 @@ export function JobDetailsModal({
           Accounts that are still waiting will not get this post. Anything already published or
           being sent right now is not affected.
         </p>
+      </ConfirmDialog>
+
+      <EditPostDialog
+        state={editing}
+        setState={setEditing}
+        mutation={editPost}
+        onSave={saveEdit}
+        onClose={closePostDialogs}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="Delete this post from Facebook?"
+        confirmLabel="Delete from Facebook"
+        loading={deletePost.isPending}
+        error={deletePost.error}
+        confirmDisabled={!deleting?.confirmed}
+        onConfirm={confirmDelete}
+        onClose={closePostDialogs}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            The post on{' '}
+            <span className="font-medium text-slate-800 dark:text-slate-100">
+              {deleting?.destination?.accountName}
+            </span>{' '}
+            is deleted from Facebook for everyone. This cannot be undone. SocialHub keeps this
+            record, marked as deleted.
+          </p>
+          <RealChangeConfirmation
+            text="I understand that this deletes the real public post from Facebook."
+            checked={Boolean(deleting?.confirmed)}
+            disabled={deletePost.isPending}
+            onChange={(confirmed) => setDeleting((current) => ({ ...current, confirmed }))}
+          />
+        </div>
       </ConfirmDialog>
     </>
   );

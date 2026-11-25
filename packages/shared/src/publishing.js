@@ -212,6 +212,11 @@ export const PUBLISHING_API_ERRORS = Object.freeze({
   PUBLISHING_DISABLED: 'PUBLISHING_DISABLED',
   /** Redis is not configured or not reachable, so nothing can be queued. */
   QUEUE_UNAVAILABLE: 'QUEUE_UNAVAILABLE',
+  /**
+   * The request would create a REAL post but does not carry `confirmRealPost: true`. Nothing
+   * was created, and the request was not turned into a simulation either.
+   */
+  REAL_POST_CONFIRMATION_REQUIRED: 'REAL_POST_CONFIRMATION_REQUIRED',
 });
 
 export const PUBLISH_ACTIVITY_ACTIONS = Object.freeze({
@@ -225,6 +230,33 @@ export const PUBLISH_ACTIVITY_ACTIONS = Object.freeze({
   DESTINATION_BLOCKED: 'publish_destination.blocked',
   /** An owner or admin switched the workspace between simulated and real publishing. */
   MODE_CHANGED: 'publishing.mode_changed',
+  /** The text of a real published Facebook post was changed on Facebook. */
+  POST_EDITED: 'publish_destination.post_edited',
+  /** A real published Facebook post was deleted from Facebook. */
+  POST_DELETED: 'publish_destination.post_deleted',
+});
+
+/** Longest text Facebook accepts for a Page post message (Graph API `message`). */
+export const FACEBOOK_POST_TEXT_MAX = 63_206;
+
+/**
+ * Change the text of a real, published Facebook Page post (POST /{post-id} on Meta). Like
+ * creating one, it needs `confirmRealPost: true` (REAL_POST_CONFIRMATION_REQUIRED without it).
+ */
+export const editPublishedPostSchema = z.strictObject({
+  message: z
+    .string({ error: 'Enter the new text' })
+    .trim()
+    .min(1, { error: 'Enter the new text' })
+    .max(FACEBOOK_POST_TEXT_MAX, {
+      error: `Facebook accepts at most ${FACEBOOK_POST_TEXT_MAX} characters`,
+    }),
+  confirmRealPost: z.boolean().default(false),
+});
+
+/** Delete a real, published Facebook Page post (DELETE /{post-id} on Meta). Cannot be undone. */
+export const deletePublishedPostSchema = z.strictObject({
+  confirmRealPost: z.boolean().default(false),
 });
 
 export const PUBLISHING_LIMITS = Object.freeze({
@@ -299,6 +331,12 @@ export const createPublishJobSchema = z.strictObject({
     .optional(),
   /** Needed to send a post again to an account it was already published to. */
   republish: z.boolean().default(false),
+  /**
+   * The person confirmed, for this request, that it creates a REAL public post. Required
+   * (`true`) whenever the job would be real (the workspace's mode is LIVE); without it nothing
+   * is created (REAL_POST_CONFIRMATION_REQUIRED). Ignored for simulated jobs.
+   */
+  confirmRealPost: z.boolean().default(false),
 });
 
 /** Orders of the job list. NEWEST: newest first (default). SCHEDULED: soonest scheduled time first. */
@@ -325,6 +363,12 @@ export const rescheduleJobSchema = z.strictObject({
 /** Retrying after an uncertain failure needs `acknowledgeDuplicateRisk: true`. */
 export const retryDestinationSchema = z.strictObject({
   acknowledgeDuplicateRisk: z.boolean().default(false),
+  /**
+   * Retrying a REAL destination sends a real public post again, so it needs the same explicit
+   * confirmation as creating one (REAL_POST_CONFIRMATION_REQUIRED without it). Ignored when
+   * the job is simulated.
+   */
+  confirmRealPost: z.boolean().default(false),
 });
 
 /**

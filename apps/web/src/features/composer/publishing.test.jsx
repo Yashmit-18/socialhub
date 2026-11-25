@@ -170,6 +170,31 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+describe('what the composer says Publish will do', () => {
+  it('says real publishing is on in a live workspace (never "not available")', async () => {
+    const api = server({ statusBody: status({ mode: 'LIVE', storage: { publicUrls: true } }) });
+    setupComposerApi({ accounts: accounts(), routes: api.routes });
+    renderComposer();
+    await compose();
+    const note = await screen.findByText('Real publishing is on.');
+    expect(note.closest('[role="note"]')).toHaveTextContent(
+      /sends a real post to the accounts you select, after you check the preview and confirm it/,
+    );
+    expect(screen.queryByText(/isn.t available/)).toBeNull();
+    expect(screen.queryByText(/Simulation mode\./)).toBeNull();
+  });
+
+  it('in simulation, says nothing is posted and how real publishing is switched on', async () => {
+    const api = server();
+    setupComposerApi({ accounts: accounts(), routes: api.routes });
+    renderComposer();
+    await compose();
+    const note = await screen.findByText('Simulation mode.');
+    expect(note.closest('[role="note"]')).toHaveTextContent(/nothing is posted to Facebook/);
+    expect(note.closest('[role="note"]')).toHaveTextContent(/switch on real publishing/);
+  });
+});
+
 describe('publishing from the composer (simulation mode)', () => {
   it('says it is a simulation, saves the draft, then creates the job for the chosen account', async () => {
     const api = server();

@@ -89,6 +89,17 @@ const publishDestinationSchema = new mongoose.Schema(
     warnings: { type: [String], default: [] },
     attempts: { type: [attemptSchema], default: [] },
     cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    /**
+     * Changes made to the published post on the platform afterwards (real Facebook posts only):
+     * the text now on Facebook after an edit, and when it was edited or deleted, and by whom.
+     */
+    editedText: { type: String },
+    postEditedAt: { type: Date },
+    postEditedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    postDeletedAt: { type: Date },
+    postDeletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    /** Set while an edit or delete is being sent to the platform: one at a time per post. */
+    postActionAt: { type: Date },
   },
   { timestamps: true },
 );

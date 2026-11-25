@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   PERMISSIONS,
   createPublishJobSchema,
+  deletePublishedPostSchema,
+  editPublishedPostSchema,
   objectIdSchema,
   publishJobQuerySchema,
   rescheduleJobSchema,
@@ -147,6 +149,45 @@ export function mountPublishingRoutes(scoped) {
           req.valid.params.jobId,
           req.valid.params.destinationId,
           req.valid.body ?? { acknowledgeDuplicateRisk: false },
+          clientContext(req),
+        ),
+      );
+    },
+  );
+
+  // A real published Facebook post: change its text, or delete it, on Facebook.
+  scoped.patch(
+    '/publish-jobs/:jobId/destinations/:destinationId/post',
+    publish,
+    validate({ params: destinationParams, body: editPublishedPostSchema }),
+    async (req, res) => {
+      res.json(
+        await publishing.editPublishedPost(
+          req.workspace,
+          req.membership,
+          req.user,
+          req.valid.params.jobId,
+          req.valid.params.destinationId,
+          req.valid.body,
+          clientContext(req),
+        ),
+      );
+    },
+  );
+
+  scoped.delete(
+    '/publish-jobs/:jobId/destinations/:destinationId/post',
+    publish,
+    validate({ params: destinationParams, body: deletePublishedPostSchema.optional() }),
+    async (req, res) => {
+      res.json(
+        await publishing.deletePublishedPost(
+          req.workspace,
+          req.membership,
+          req.user,
+          req.valid.params.jobId,
+          req.valid.params.destinationId,
+          req.valid.body ?? { confirmRealPost: false },
           clientContext(req),
         ),
       );

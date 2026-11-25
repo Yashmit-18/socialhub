@@ -2,7 +2,7 @@
  * Data hooks for the Publishing screen. Everything shown comes from these API calls; nothing
  * is assumed or changed locally before the server has answered.
  */
-import { ACTIVE_JOB_STATUSES, PUBLISH_JOB_STATUS } from '@socialhub/shared';
+import { ACTIVE_JOB_STATUSES, PUBLISHING_API_ERRORS, PUBLISH_JOB_STATUS } from '@socialhub/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 
@@ -164,22 +164,40 @@ function useRefreshJobs(workspaceId) {
 }
 
 /**
- * `mutate({ contentPackageId, idempotencyKey, socialAccountIds?, scheduledAt?, republish? })`
- * → `{ publishJob, created }`. Without `socialAccountIds` the draft's own accounts are used;
- * without `scheduledAt` (an ISO instant) the post is sent now.
+ * `mutate({ contentPackageId, idempotencyKey, socialAccountIds?, scheduledAt?, republish?,
+ * confirmRealPost? })` → `{ publishJob, created }`. Without `socialAccountIds` the draft's own
+ * accounts are used; without `scheduledAt` (an ISO instant) the post is sent now.
+ * `confirmRealPost` is sent only as `true`, when the person ticked "This creates a REAL public
+ * post"; the API refuses a real post without it (REAL_POST_CONFIRMATION_REQUIRED).
  */
 export function useCreatePublishJob(workspaceId) {
   const refresh = useRefreshJobs(workspaceId);
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ contentPackageId, idempotencyKey, socialAccountIds, scheduledAt, republish }) =>
+    mutationFn: ({
+      contentPackageId,
+      idempotencyKey,
+      socialAccountIds,
+      scheduledAt,
+      republish,
+      confirmRealPost,
+    }) =>
       api.post(`${base(workspaceId)}/publish-jobs`, {
         contentPackageId,
         idempotencyKey,
         ...(socialAccountIds?.length ? { socialAccountIds } : {}),
         ...(scheduledAt ? { scheduledAt } : {}),
         ...(republish ? { republish: true } : {}),
+        ...(confirmRealPost === true ? { confirmRealPost: true } : {}),
       }),
     onSuccess: (data) => refresh(data.publishJob),
+    onError: (error) => {
+      // The screen believed the post would not be real: read the workspace's mode again, so
+      // the dialog shows the real-post confirmation.
+      if (error?.code === PUBLISHING_API_ERRORS.REAL_POST_CONFIRMATION_REQUIRED) {
+        queryClient.invalidateQueries({ queryKey: publishingKeys.status(workspaceId) });
+      }
+    },
   });
 }
 
@@ -202,13 +220,51 @@ export function useCancelJob(workspaceId) {
 }
 
 /** `mutate({ jobId, destinationId, acknowledgeDuplicateRisk? })` */
+/**
+ * `mutate({ jobId, destinationId, acknowledgeDuplicateRisk?, confirmRealPost? })`. A real
+ * destination needs `confirmRealPost` (the person ticked "This creates a REAL public post");
+ * one whose last attempt had an uncertain outcome also needs `acknowledgeDuplicateRisk`.
+ */
 export function useRetryDestination(workspaceId) {
   const refresh = useRefreshJobs(workspaceId);
   return useMutation({
-    mutationFn: ({ jobId, destinationId, acknowledgeDuplicateRisk = false }) =>
-      api.post(
-        `${base(workspaceId)}/publish-jobs/${jobId}/destinations/${destinationId}/retry`,
-        acknowledgeDuplicateRisk ? { acknowledgeDuplicateRisk: true } : {},
+    mutationFn: ({ jobId, destinationId, acknowledgeDuplicateRisk = false, confirmRealPost }) =>
+      api.post(`${base(workspaceId)}/publish-jobs/${jobId}/destinations/${destinationId}/retry`, {
+        ...(acknowledgeDuplicateRisk ? { acknowledgeDuplicateRisk: true } : {}),
+        ...(confirmRealPost === true ? { confirmRealPost: true } : {}),
+      }),
+    onSuccess: (data) => refresh(data.publishJob),
+  });
+}
+
+const postPath = (workspaceId, jobId, destinationId) =>
+  `${base(workspaceId)}/publish-jobs/${jobId}/destinations/${destinationId}/post`;
+
+/**
+ * `mutate({ jobId, destinationId, message, confirmRealPost })` changes the text of a real,
+ * published Facebook post on Facebook. `confirmRealPost` is sent only as `true` (the person
+ * ticked the confirmation); the API refuses the change without it.
+ */
+export function useEditPublishedPost(workspaceId) {
+  const refresh = useRefreshJobs(workspaceId);
+  return useMutation({
+    mutationFn: ({ jobId, destinationId, message, confirmRealPost }) =>
+      api.patch(postPath(workspaceId, jobId, destinationId), {
+        message,
+        ...(confirmRealPost === true ? { confirmRealPost: true } : {}),
+      }),
+    onSuccess: (data) => refresh(data.publishJob),
+  });
+}
+
+/** `mutate({ jobId, destinationId, confirmRealPost })` deletes a real Facebook post. */
+export function useDeletePublishedPost(workspaceId) {
+  const refresh = useRefreshJobs(workspaceId);
+  return useMutation({
+    mutationFn: ({ jobId, destinationId, confirmRealPost }) =>
+      api.delete(
+        postPath(workspaceId, jobId, destinationId),
+        confirmRealPost === true ? { confirmRealPost: true } : {},
       ),
     onSuccess: (data) => refresh(data.publishJob),
   });

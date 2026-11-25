@@ -57,7 +57,15 @@ describe('creating and reading drafts', () => {
       createdBy: { id: team.owner.user.id, name: 'Olivia Owner' },
       updatedBy: { id: team.owner.user.id, name: 'Olivia Owner' },
     });
-    expect(draft.media[0].media.url).toBe(media.url);
+    // Signed file links expire counting from the second they are made, so two answers a second
+    // apart differ in `expires`/`signature`: compare the file, not the whole link.
+    const file = (link) => link.split('?')[0];
+    const sameDraft = (pkg) => ({
+      ...pkg,
+      media: pkg.media.map((m) => ({ ...m, media: { ...m.media, url: file(m.media.url) } })),
+    });
+    expect(file(draft.media[0].media.url)).toBe(file(media.url));
+    expect(draft.media[0].media.url).toMatch(/[?&]expires=\d+&signature=[^&]+$/);
 
     const stored = await ContentPackage.findById(draft.id);
     expect(stored.caption).toBe('Summer sale ☀️');
@@ -65,7 +73,7 @@ describe('creating and reading drafts', () => {
 
     const read = await as(team.owner.token).get(url(ws, `/${draft.id}`));
     expect(read.status).toBe(200);
-    expect(read.body.contentPackage).toEqual(draft);
+    expect(sameDraft(read.body.contentPackage)).toEqual(sameDraft(draft));
   });
 
   it('accepts an empty draft: nothing is required to save', async () => {

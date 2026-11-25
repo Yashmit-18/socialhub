@@ -106,7 +106,8 @@ describe('switching to live', () => {
     expect((await goLive(team.owner)).status).toBe(200);
     const first = await createDraft(team.owner.token, ws, { accounts: pages });
     expect(
-      (await publish(team.owner.token, ws, { contentPackageId: first.id })).body.publishJob.mode,
+      (await publish(team.owner.token, ws, { contentPackageId: first.id, confirmRealPost: true }))
+        .body.publishJob.mode,
     ).toBe('LIVE');
 
     const back = await as(team.admin.token).put(modeUrl(ws)).send({ mode: 'SIMULATED' });
