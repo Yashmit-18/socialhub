@@ -570,6 +570,27 @@ function discoveryWarnings(connection, candidates) {
         : 'No eligible Instagram professional account was found for this login.',
     );
   }
+  // Through Facebook Login, Instagram accounts come only from the Pages they are linked to.
+  // Say which Pages Meta reported without one, so a missing Instagram account is explained.
+  if (connection.provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN) {
+    const linked = new Set(
+      candidates
+        .filter((c) => c.platform === SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT)
+        .map((c) => c.linkedPage?.externalId),
+    );
+    const without = candidates.filter(
+      (c) => c.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE && !linked.has(c.externalId),
+    );
+    if (without.length > 0) {
+      warnings.push(
+        `Meta reports no Instagram professional account linked to ${without
+          .map((page) => `"${page.name.trim()}"`)
+          .join(
+            ', ',
+          )}. To add Instagram: switch the Instagram account to a Business or Creator account in the Instagram app, link it to the Facebook Page (Page settings › Linked accounts, or Meta Business Suite), then come back and choose "Refresh from Meta" (or Reconnect and allow the Instagram account). Personal Instagram accounts cannot be connected.`,
+      );
+    }
+  }
   return warnings;
 }
 
@@ -925,7 +946,7 @@ export function requireProviderConfigured(connection) {
   throw new AppError(
     409,
     ERROR_CODES.META_NOT_CONFIGURED,
-    `${name} Login is not configured on this server, so SocialHub cannot contact Meta for this login. Add the Meta app credentials (see META_SETUP_GUIDE.md) to enable synchronization.`,
+    `${name} Login is not configured on this server, so SocialHub cannot contact Meta for this login. Add the Meta app credentials (see docs/META_SETUP_GUIDE.md) to enable synchronization.`,
   );
 }
 

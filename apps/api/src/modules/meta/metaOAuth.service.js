@@ -38,6 +38,51 @@ import {
 export const OAUTH_COOKIE_PATH = '/api/v1/oauth';
 const COOKIE_PREFIX = 'sh_oauth_';
 
+/**
+ * A short id for one OAuth attempt in logs and diagnostics: the first 12 hex characters of
+ * the SHA-256 digest of its state. The state itself, the binding cookie, the authorization
+ * code and tokens are never logged.
+ */
+export const oauthAttemptId = (stateHash) => stateHash.slice(0, 12);
+
+/** What SocialHub asked Meta for, safe to log: the state is reduced to "present". */
+export function describeAuthorizationRequest(authorizationUrl) {
+  const url = new URL(authorizationUrl);
+  const params = url.searchParams;
+  return {
+    dialog: `${url.origin}${url.pathname}`,
+    clientId: params.get('client_id'),
+    redirectUri: params.get('redirect_uri'),
+    responseType: params.get('response_type'),
+    scopes: params.get('scope')?.split(',') ?? null,
+    loginConfiguration: params.has('config_id'),
+    authType: params.get('auth_type') ?? null,
+    statePresent: Boolean(params.get('state')),
+  };
+}
+
+const clip = (value, max) =>
+  typeof value === 'string' && value.length > 0 ? value.slice(0, max) : undefined;
+
+/**
+ * What a stored attempt's diagnostics mean, in words (used by `npm run meta:oauth-attempts`).
+ * An attempt without `callbackAt` never came back from Meta, so it stopped on Meta's side.
+ * Attempts started before these diagnostics existed have no callback data either.
+ */
+export function explainOAuthAttempt(attempt, now = new Date()) {
+  const success = [META_OAUTH_RESULTS.CONNECTED, META_OAUTH_RESULTS.RECONNECTED];
+  if (attempt.consumedAt && success.includes(attempt.callbackResult)) {
+    return `completed: ${attempt.callbackResult}`;
+  }
+  if (attempt.callbackAt) {
+    const meta = attempt.metaError ? ` (Meta error ${attempt.metaError})` : '';
+    return `came back to SocialHub and was refused: ${attempt.callbackResult}${meta}`;
+  }
+  if (attempt.consumedAt) return 'came back to SocialHub (no outcome recorded)';
+  if (new Date(attempt.expiresAt) > now) return 'waiting: the person is still at Meta';
+  return 'never came back from Meta: the flow stopped on Meta’s side (Facebook login, app access, or the dialog was closed)';
+}
+
 /** URL path segment <-> provider. */
 export const PROVIDER_SLUGS = Object.freeze({
   facebook: SOCIAL_PROVIDERS.FACEBOOK_LOGIN,
@@ -272,6 +317,22 @@ export async function startAuthorization({ workspace, user, provider, connection
           forceReauth: purpose === OAUTH_PURPOSES.RECONNECT,
         });
 
+  logger.info(
+    {
+      oauth: {
+        attempt: oauthAttemptId(stateHash),
+        stage: 'started',
+        provider,
+        purpose,
+        workspace: workspace.slug,
+        user: String(user._id),
+        expiresAt,
+        request: describeAuthorizationRequest(authorizationUrl),
+      },
+    },
+    'Meta OAuth started',
+  );
+
   return {
     authorizationUrl,
     expiresAt,
@@ -303,34 +364,102 @@ export async function completeAuthorization({ provider, query, cookies, context 
   const state = single(query.state);
   let cookieName = null;
   let workspaceSlug;
+  let attempt = null;
+  let stored = null;
+  let browserBinding = 'not_checked';
+  // Meta's own error on the redirect (for example access_denied / user_denied). Short codes
+  // only; untrusted input, so clipped.
+  const metaError = clip(single(query.error), 64);
+  const metaErrorReason = clip(single(query.error_reason), 64);
 
-  const fail = (reason) => ({
-    redirectUrl: resultUrl({
-      status: 'error',
-      reason,
-      provider: providerSlug,
-      workspace: workspaceSlug,
-    }),
-    cookieName,
-  });
+  /**
+   * Diagnostics for every callback: one log line and, when the state is known, the outcome on
+   * the stored attempt (also when the callback is refused before the state is used).
+   * `failedAt` names the check that refused it; it is absent on success.
+   */
+  const report = async (result, failedAt) => {
+    logger[failedAt ? 'warn' : 'info'](
+      {
+        oauth: {
+          attempt,
+          stage: 'callback',
+          provider,
+          result,
+          failedAt,
+          statePresent: Boolean(state),
+          stateKnown: Boolean(stored),
+          browserBinding,
+          metaError: metaError
+            ? {
+                error: metaError,
+                reason: metaErrorReason,
+                code: clip(single(query.error_code), 16),
+                description: clip(single(query.error_description), 200),
+              }
+            : undefined,
+        },
+      },
+      failedAt ? 'Meta OAuth callback refused' : 'Meta OAuth callback completed',
+    );
+    if (!stored) return;
+    // A replayed callback is counted, but does not overwrite how the attempt itself ended.
+    const keepResult = failedAt === 'state_replayed' && Boolean(stored.callbackResult);
+    try {
+      await OAuthState.updateOne(
+        { _id: stored._id },
+        {
+          $set: {
+            callbackAt: new Date(),
+            ...(!keepResult && { callbackResult: result }),
+            ...(metaError && {
+              metaError: [metaError, metaErrorReason].filter(Boolean).join('/'),
+            }),
+          },
+          $inc: { callbackCount: 1 },
+        },
+      );
+    } catch (err) {
+      logger.warn({ err, oauth: { attempt } }, 'Could not record OAuth callback diagnostics');
+    }
+  };
 
-  if (!state || state.length > 256) return fail(META_OAUTH_RESULTS.STATE_MISSING);
+  const fail = async (reason, failedAt) => {
+    await report(reason, failedAt);
+    return {
+      redirectUrl: resultUrl({
+        status: 'error',
+        reason,
+        provider: providerSlug,
+        workspace: workspaceSlug,
+      }),
+      cookieName,
+    };
+  };
+
+  if (!state || state.length > 256) return fail(META_OAUTH_RESULTS.STATE_MISSING, 'state');
   const stateHash = sha256(state);
+  attempt = oauthAttemptId(stateHash);
   cookieName = bindingCookieName(stateHash);
 
-  const stored = await OAuthState.findOne({ stateHash });
-  if (!stored) return fail(META_OAUTH_RESULTS.STATE_INVALID);
+  stored = await OAuthState.findOne({ stateHash });
+  if (!stored) return fail(META_OAUTH_RESULTS.STATE_INVALID, 'state');
   const workspace = await Workspace.findById(stored.workspace);
-  if (!workspace) return fail(META_OAUTH_RESULTS.STATE_INVALID);
+  if (!workspace) return fail(META_OAUTH_RESULTS.STATE_INVALID, 'state');
   workspaceSlug = workspace.slug;
 
-  if (stored.consumedAt) return fail(META_OAUTH_RESULTS.STATE_ALREADY_USED);
-  if (stored.expiresAt <= new Date()) return fail(META_OAUTH_RESULTS.STATE_EXPIRED);
-  if (stored.provider !== provider) return fail(META_OAUTH_RESULTS.STATE_INVALID);
+  if (stored.consumedAt) return fail(META_OAUTH_RESULTS.STATE_ALREADY_USED, 'state_replayed');
+  if (stored.expiresAt <= new Date())
+    return fail(META_OAUTH_RESULTS.STATE_EXPIRED, 'state_expired');
+  if (stored.provider !== provider) return fail(META_OAUTH_RESULTS.STATE_INVALID, 'state');
 
   const binding = single(cookies?.[cookieName]);
-  if (!binding || !safeEqual(sha256(binding), stored.browserBindingHash)) {
-    return fail(META_OAUTH_RESULTS.BROWSER_MISMATCH);
+  browserBinding = !binding
+    ? 'missing'
+    : safeEqual(sha256(binding), stored.browserBindingHash)
+      ? 'matched'
+      : 'mismatched';
+  if (browserBinding !== 'matched') {
+    return fail(META_OAUTH_RESULTS.BROWSER_MISMATCH, 'browser_binding');
   }
 
   // Single use, even under concurrent callbacks.
@@ -338,7 +467,7 @@ export async function completeAuthorization({ provider, query, cookies, context 
     { _id: stored._id, consumedAt: null },
     { consumedAt: new Date() },
   );
-  if (!claimed) return fail(META_OAUTH_RESULTS.STATE_ALREADY_USED);
+  if (!claimed) return fail(META_OAUTH_RESULTS.STATE_ALREADY_USED, 'state_replayed');
 
   // The person's access may have changed while they were at Meta.
   const [user, membership] = await Promise.all([
@@ -351,20 +480,22 @@ export async function completeAuthorization({ provider, query, cookies, context 
     !membership ||
     !hasPermission(membership.role, PERMISSIONS.SOCIAL_CONNECTIONS_MANAGE)
   ) {
-    return fail(META_OAUTH_RESULTS.FORBIDDEN);
+    return fail(META_OAUTH_RESULTS.FORBIDDEN, 'permission_recheck');
   }
 
-  const metaError = single(query.error);
-  if (metaError) {
+  if (single(query.error)) {
     return fail(
-      metaError === 'access_denied'
+      single(query.error) === 'access_denied'
         ? META_OAUTH_RESULTS.USER_CANCELLED
         : META_OAUTH_RESULTS.AUTHORIZATION_FAILED,
+      'meta_authorization',
     );
   }
   const code = single(query.code);
-  if (!code) return fail(META_OAUTH_RESULTS.CODE_MISSING);
-  if (!isProviderConfigured(provider)) return fail(META_OAUTH_RESULTS.NOT_CONFIGURED);
+  if (!code) return fail(META_OAUTH_RESULTS.CODE_MISSING, 'code');
+  if (!isProviderConfigured(provider)) {
+    return fail(META_OAUTH_RESULTS.NOT_CONFIGURED, 'configuration');
+  }
 
   let identity;
   try {
@@ -373,11 +504,17 @@ export async function completeAuthorization({ provider, query, cookies, context 
         ? await authorizeFacebookIdentity(code)
         : await authorizeInstagramIdentity(code, instagramSettings().scopes);
   } catch (err) {
-    if (err instanceof NotEligibleError) return fail(META_OAUTH_RESULTS.NOT_ELIGIBLE);
-    if (err instanceof MetaApiError) {
-      logger.warn({ meta: err.toLog(), provider }, 'Meta token exchange failed');
-      return fail(META_OAUTH_RESULTS.TOKEN_EXCHANGE_FAILED);
+    if (err instanceof NotEligibleError) {
+      return fail(META_OAUTH_RESULTS.NOT_ELIGIBLE, 'token_exchange');
     }
+    if (err instanceof MetaApiError) {
+      logger.warn(
+        { meta: err.toLog(), provider, oauth: { attempt } },
+        'Meta token exchange failed',
+      );
+      return fail(META_OAUTH_RESULTS.TOKEN_EXCHANGE_FAILED, 'token_exchange');
+    }
+    await report('UNEXPECTED_ERROR', 'internal');
     throw err;
   }
 
@@ -391,14 +528,19 @@ export async function completeAuthorization({ provider, query, cookies, context 
       context,
     });
   } catch (err) {
-    if (err instanceof IdentityMismatchError) return fail(META_OAUTH_RESULTS.IDENTITY_MISMATCH);
+    if (err instanceof IdentityMismatchError) {
+      return fail(META_OAUTH_RESULTS.IDENTITY_MISMATCH, 'identity');
+    }
+    await report('UNEXPECTED_ERROR', 'internal');
     throw err;
   }
 
+  const outcome = saved.isNew ? META_OAUTH_RESULTS.CONNECTED : META_OAUTH_RESULTS.RECONNECTED;
+  await report(outcome);
   return {
     redirectUrl: resultUrl({
       status: 'success',
-      reason: saved.isNew ? META_OAUTH_RESULTS.CONNECTED : META_OAUTH_RESULTS.RECONNECTED,
+      reason: outcome,
       provider: providerSlug,
       workspace: workspaceSlug,
       connection: String(saved.connection._id),

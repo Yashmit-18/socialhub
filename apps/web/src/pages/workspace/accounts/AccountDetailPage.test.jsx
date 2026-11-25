@@ -838,9 +838,7 @@ describe('account detail — Instagram accounts', () => {
     const health = card('Health and publishing readiness');
     expect(within(health).getByText('Publishing permissions OK')).toBeInTheDocument();
     expect(
-      within(health).getByText(
-        'SocialHub has the permissions this account needs for publishing. Real publishing is not available yet.',
-      ),
+      within(health).getByText('SocialHub has the permissions this account needs for publishing.'),
     ).toBeInTheDocument();
     expect(within(health).getByText('Not applicable')).toBeInTheDocument();
     const info = card('Account information');

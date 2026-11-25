@@ -840,7 +840,7 @@ describe('Social accounts overview: needs attention and sync', () => {
 
   it('reports every login of Sync all, including skipped ones, and reconnects from there', async () => {
     const configMessage =
-      'Instagram Login is not configured on this server, so SocialHub cannot contact Meta for this login. Add the Meta app credentials (see META_SETUP_GUIDE.md) to enable synchronization.';
+      'Instagram Login is not configured on this server, so SocialHub cannot contact Meta for this login. Add the Meta app credentials (see docs/META_SETUP_GUIDE.md) to enable synchronization.';
     const mock = setup('OWNER', {
       'GET /integrations/meta': () => jsonResponse(200, integration(true, false)),
       'GET /workspaces/w1/social-connections': () =>

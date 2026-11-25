@@ -119,6 +119,9 @@ export async function dataDeletionStatus(confirmationCode) {
     confirmationCode: request.confirmationCode,
     status: request.status,
     completedAt: request.completedAt,
-    message: 'All data SocialHub held for this Meta account has been deleted.',
+    // Exactly what deleteConnectionAndAccounts removes, and what it keeps (the public
+    // data-deletion page says the same): never more than what was deleted.
+    message:
+      'SocialHub deleted the Facebook or Instagram logins, accounts, access tokens and insights obtained through this Meta account. Activity log entries and publishing history that mention these accounts by name are kept until their workspace is deleted.',
   };
 }

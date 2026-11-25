@@ -47,7 +47,7 @@ export function MetaSetupNotice({ integration, className, compact = false }) {
         </p>
         {!compact && (
           <p className="mt-1.5 text-xs text-amber-800/80 dark:text-amber-300/80">
-            Setup steps: META_SETUP_GUIDE.md in the SocialHub repository.
+            Setup steps: docs/META_SETUP_GUIDE.md in the SocialHub repository.
           </p>
         )}
       </div>

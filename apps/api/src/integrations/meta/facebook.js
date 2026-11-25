@@ -134,8 +134,24 @@ const PAGE_FIELDS = [
   'tasks',
   'access_token',
   'picture.width(200).height(200)',
-  'instagram_business_account{id,username,name,profile_picture_url}',
-].join(',');
+];
+const INSTAGRAM_FIELD = 'instagram_business_account{id,username,name,profile_picture_url}';
+
+/**
+ * Whether this server's Facebook Login asks for Instagram access (`instagram_basic`). With a
+ * login configuration the configuration decides, so the linked Instagram account is requested.
+ */
+export function facebookLoginIncludesInstagram(fb = facebookSettings()) {
+  if (!fb) return false;
+  return Boolean(fb.loginConfigId) || fb.scopes.includes('instagram_basic');
+}
+
+/** The Page fields read from /me/accounts: the linked Instagram account only when asked for. */
+export function managedPageFields(fb = facebookSettings()) {
+  return [...PAGE_FIELDS, ...(facebookLoginIncludesInstagram(fb) ? [INSTAGRAM_FIELD] : [])].join(
+    ',',
+  );
+}
 
 /**
  * Every Page the identity has a role on, following cursor pagination. One identity commonly
@@ -147,7 +163,7 @@ export async function fetchManagedPages(accessToken) {
   let after;
   for (let i = 0; i < MAX_PAGE_REQUESTS; i += 1) {
     const body = await metaRequest(graphUrl('/me/accounts'), {
-      query: { fields: PAGE_FIELDS, limit: 100, after },
+      query: { fields: managedPageFields(fb), limit: 100, after },
       accessToken,
       appSecret: fb.appSecret,
     });

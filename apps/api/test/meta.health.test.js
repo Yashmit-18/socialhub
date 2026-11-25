@@ -351,6 +351,10 @@ describe('Meta data deletion callback', () => {
       confirmationCode: res.body.confirmation_code,
       status: 'COMPLETED',
     });
+    // Says what was deleted and what is kept, never "all data" (Meta reviewers can open it).
+    expect(status.body.message).toMatch(/logins, accounts, access tokens and insights/);
+    expect(status.body.message).toMatch(/publishing history .* are kept until their workspace/);
+    expect(status.body.message).not.toMatch(/All data/i);
   });
 
   it('returns 404 for unknown confirmation codes', async () => {

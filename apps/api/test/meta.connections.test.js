@@ -109,6 +109,44 @@ describe('Page discovery and selection', () => {
     expect(bodyText(res)).not.toMatch(/pagetoken_|fb_long_|access_token/);
   });
 
+  it('explains which Pages Meta reports without a linked Instagram professional account', async () => {
+    const { owner, workspace } = await ownerSetup();
+    fake.addFacebookUser({
+      id: '100',
+      pages: [
+        { id: '5001', name: 'Yashmit talks ' },
+        {
+          id: '5002',
+          name: 'Acme Careers',
+          instagram: { id: '17841400000000010', username: 'acme', name: 'Acme' },
+        },
+      ],
+    });
+    const { connectionId } = await connectFacebook(fake, owner.token, workspace.id, '100');
+    const res = await discovery(owner.token, workspace.id, connectionId);
+    const instagram = res.body.warnings.filter((w) => /Instagram professional account/.test(w));
+    expect(instagram).toHaveLength(1);
+    expect(instagram[0]).toMatch(/no Instagram professional account linked to "Yashmit talks"\./);
+    expect(instagram[0]).not.toMatch(/Acme Careers/);
+    expect(instagram[0]).toMatch(/Business or Creator/);
+    expect(instagram[0]).toMatch(/Personal Instagram accounts cannot be connected/);
+    // Only the linked account is offered; nothing is invented for the other Page.
+    expect(
+      res.body.candidates.filter((c) => c.platform === 'INSTAGRAM_ACCOUNT').map((c) => c.username),
+    ).toEqual(['acme']);
+  });
+
+  it('adds no Instagram warning when every Page has its Instagram account', async () => {
+    const { owner, workspace } = await ownerSetup();
+    fake.addFacebookUser({
+      id: '100',
+      pages: [{ id: '5002', name: 'Acme', instagram: { id: '17841400000000010', username: 'a' } }],
+    });
+    const { connectionId } = await connectFacebook(fake, owner.token, workspace.id, '100');
+    const res = await discovery(owner.token, workspace.id, connectionId);
+    expect(res.body.warnings.some((w) => /Instagram professional account/.test(w))).toBe(false);
+  });
+
   it('adds only the selected destinations, each with its own encrypted Page token', async () => {
     const { owner, workspace } = await ownerSetup();
     fake.addFacebookUser({

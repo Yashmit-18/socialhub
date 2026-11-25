@@ -275,24 +275,36 @@ describe('Meta configuration checks', () => {
   });
 
   it('requires HTTPS in production and the required scopes', () => {
-    const cfg = loadConfig({
+    const production = {
       ...env,
       NODE_ENV: 'production',
-      APP_URL: 'http://app.example.com',
-      CLIENT_ORIGIN: 'http://app.example.com',
       META_FACEBOOK_SCOPES: 'pages_manage_posts',
       INSTAGRAM_APP_ID: '456',
       INSTAGRAM_APP_SECRET: 'i'.repeat(32),
       INSTAGRAM_SCOPES: 'instagram_business_content_publish',
+    };
+    // A public http:// address is refused outright in production (config/env.js).
+    expect(() =>
+      loadConfig({
+        ...production,
+        APP_URL: 'http://app.example.com',
+        CLIENT_ORIGIN: 'http://app.example.com',
+      }),
+    ).toThrow(/must use https:\/\/ in production/);
+
+    const cfg = loadConfig({
+      ...production,
+      APP_URL: 'https://app.example.com',
+      CLIENT_ORIGIN: 'https://app.example.com',
     });
     expect(ids(cfg)).toEqual(
       expect.arrayContaining([
-        'error:PUBLIC_URL_NOT_HTTPS',
         'error:FACEBOOK_REQUIRED_SCOPE_MISSING',
         'error:INSTAGRAM_REQUIRED_SCOPE_MISSING',
         'info:LOGIN_CONFIG_RECOMMENDED',
       ]),
     );
+    expect(ids(cfg)).not.toContain('error:PUBLIC_URL_NOT_HTTPS');
     const status = metaIntegrationStatus(cfg);
     expect(status.facebook.ready).toBe(false);
     expect(status.instagram.ready).toBe(false);

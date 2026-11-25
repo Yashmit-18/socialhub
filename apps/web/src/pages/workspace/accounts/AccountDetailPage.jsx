@@ -95,10 +95,8 @@ const seesEveryAccount = (membership) =>
   membership?.accountAccess?.mode === ACCOUNT_ACCESS_MODES.ALL;
 
 const READY_TEXT = {
-  pageRole:
-    'SocialHub has the permissions and Page role this account needs for publishing. Real publishing is not available yet.',
-  instagramLogin:
-    'SocialHub has the permissions this account needs for publishing. Real publishing is not available yet.',
+  pageRole: 'SocialHub has the permissions and Page role this account needs for publishing.',
+  instagramLogin: 'SocialHub has the permissions this account needs for publishing.',
 };
 
 /** Team access state of one member, as the API reports it. */

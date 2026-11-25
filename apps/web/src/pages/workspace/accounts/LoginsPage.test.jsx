@@ -691,6 +691,51 @@ describe('Logins tab', () => {
     expect(JSON.parse(call.init.body)).toEqual({ provider: 'FACEBOOK_LOGIN' });
   });
 
+  it('without Instagram Login, Connect Instagram goes through Facebook Login (Page-linked accounts)', async () => {
+    const mock = setup('OWNER', {
+      'GET /integrations/meta': () =>
+        jsonResponse(200, { facebook: { configured: true }, instagram: { configured: false } }),
+      'GET /workspaces/w1/social-connections': () => jsonResponse(200, { items: [] }),
+      'POST /workspaces/w1/meta/authorizations': () =>
+        jsonResponse(201, { authorizationUrl: 'https://www.facebook.com/v27.0/dialog/oauth?s=2' }),
+    });
+    renderApp(PATH);
+
+    const heading = await screen.findByRole('heading', { name: 'No logins connected yet' }, LOAD);
+    const empty = heading.closest('section');
+    const instagram = within(empty).getByRole('button', { name: /Connect Instagram/ });
+    expect(instagram).toHaveAttribute(
+      'title',
+      expect.stringMatching(/linked to your Facebook Pages/),
+    );
+    await userEvent.click(instagram);
+    await waitFor(() =>
+      expect(redirectTo).toHaveBeenCalledWith('https://www.facebook.com/v27.0/dialog/oauth?s=2'),
+    );
+    const call = mock.calls.find((c) => c.key === 'POST /workspaces/w1/meta/authorizations');
+    // Facebook Login is the configured route; Instagram Login is never started unconfigured.
+    expect(JSON.parse(call.init.body)).toEqual({ provider: 'FACEBOOK_LOGIN' });
+  });
+
+  it('offers no Connect Instagram when Facebook Login does not ask for Instagram (Facebook-only)', async () => {
+    setup('OWNER', {
+      'GET /integrations/meta': () =>
+        jsonResponse(200, {
+          facebook: {
+            configured: true,
+            scopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
+          },
+          instagram: { configured: false },
+        }),
+      'GET /workspaces/w1/social-connections': () => jsonResponse(200, { items: [] }),
+    });
+    renderApp(PATH);
+    const heading = await screen.findByRole('heading', { name: 'No logins connected yet' }, LOAD);
+    const empty = heading.closest('section');
+    expect(within(empty).getByRole('button', { name: /Connect Facebook/ })).toBeInTheDocument();
+    expect(within(empty).queryByRole('button', { name: /Connect Instagram/ })).toBeNull();
+  });
+
   it('says connecting is unavailable until Meta setup is complete', async () => {
     setup('OWNER', {
       'GET /integrations/meta': () => jsonResponse(200, NOT_CONFIGURED),

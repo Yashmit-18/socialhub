@@ -18,6 +18,17 @@ const oauthStateSchema = new mongoose.Schema(
     connection: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialConnection' },
     expiresAt: { type: Date, required: true },
     consumedAt: { type: Date },
+    /**
+     * Diagnostics: when Meta last sent a browser back to the callback with this state, and
+     * how that callback ended (a META_OAUTH_RESULTS code), also when it was refused before the
+     * state was used. A state without `callbackAt` never came back from Meta: the flow
+     * stopped at Meta (or the person closed the dialog).
+     */
+    callbackAt: { type: Date },
+    callbackResult: { type: String },
+    callbackCount: { type: Number },
+    /** Meta's own error code on the callback (`error` / `error_reason`), e.g. access_denied. */
+    metaError: { type: String },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
