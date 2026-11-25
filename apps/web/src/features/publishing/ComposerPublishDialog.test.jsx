@@ -297,3 +297,84 @@ describe('ComposerPublishDialog: the confirmation reaches the server', () => {
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
   });
 });
+
+describe('ComposerPublishDialog: sharing in Facebook Groups', () => {
+  const CREATE = `POST ${BASE}/publish-jobs`;
+  const AUTO = `POST ${BASE}/group-shares/auto`;
+  const GROUPS = `GET ${BASE}/facebook-groups`;
+  const DRAFT_ID = 'c00000000000000000000001';
+  const groupsOf = (pages) => () =>
+    jsonResponse(200, {
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 1,
+      pages: 1,
+      facets: { categories: {}, tags: [], status: {}, pages },
+    });
+
+  it('offers it for a real post to Pages in groups, and sets it up once the job exists', async () => {
+    const { toast } = await import('sonner');
+    const createdJob = job({ id: 'j-groups' });
+    const mock = renderDialog({
+      mode: 'LIVE',
+      prepare: vi.fn().mockResolvedValue(DRAFT_ID),
+      routes: {
+        [GROUPS]: groupsOf({ [account(1).id]: 3 }),
+        [CREATE]: () => jsonResponse(201, { publishJob: createdJob, created: true }),
+        [AUTO]: () =>
+          jsonResponse(201, { share: {}, created: true, tasksCreated: 0, pagesWaiting: 1 }),
+      },
+    });
+    const option = await screen.findByRole('checkbox', { name: /Also share in Facebook Groups/ });
+    expect(option).toBeChecked();
+    expect(screen.getByText(/This Page is in 3 groups/)).toBeInTheDocument();
+    expect(screen.getByText(/Facebook doesn’t let apps post in groups/)).toBeInTheDocument();
+
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: /publishes a real post on these accounts/ }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Publish now' }));
+    await waitFor(() => expect(mock.count(AUTO)).toBe(1));
+    expect(JSON.parse(mock.calls.find((c) => c.key === AUTO).init.body)).toEqual({
+      publishJobId: 'j-groups',
+    });
+    // The publishing request itself is unchanged.
+    expect(JSON.parse(mock.calls.find((c) => c.key === CREATE).init.body)).not.toHaveProperty(
+      'shareInGroups',
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Group sharing is set up', expect.anything()),
+    );
+  });
+
+  it('does nothing for groups when the person unticks it, in simulation or without groups', async () => {
+    const mock = renderDialog({
+      mode: 'LIVE',
+      prepare: vi.fn().mockResolvedValue(DRAFT_ID),
+      routes: {
+        [GROUPS]: groupsOf({ [account(1).id]: 2 }),
+        [CREATE]: () => jsonResponse(201, { publishJob: job(), created: true }),
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: /Also share in Facebook Groups/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: /publishes a real post on these accounts/ }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Publish now' }));
+    await waitFor(() => expect(mock.count(CREATE)).toBe(1));
+    expect(mock.count(AUTO)).toBe(0);
+  });
+
+  it('is not offered in simulation or when the Pages are in no group', async () => {
+    const simulated = renderDialog({
+      mode: 'SIMULATED',
+      routes: { [GROUPS]: groupsOf({ [account(1).id]: 2 }) },
+    });
+    await waitFor(() => expect(sendButton()).toBeEnabled());
+    expect(screen.queryByText(/Also share in Facebook Groups/)).toBeNull();
+    expect(simulated.count(GROUPS)).toBe(0);
+  });
+});

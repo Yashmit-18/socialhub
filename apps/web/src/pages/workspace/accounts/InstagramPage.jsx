@@ -20,8 +20,13 @@ const COLUMNS = [
   'status',
   'lastSync',
 ];
-// Instagram accounts arrive through a Facebook Page (Facebook Login) or directly (Instagram Login).
-const PROVIDERS = [SOCIAL_PROVIDERS.FACEBOOK_LOGIN, SOCIAL_PROVIDERS.INSTAGRAM_LOGIN];
+// Instagram accounts arrive through a Facebook Page (Facebook Login) or directly (Instagram
+// Unified Login or Instagram Login).
+const PROVIDERS = [
+  SOCIAL_PROVIDERS.FACEBOOK_LOGIN,
+  SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,
+  SOCIAL_PROVIDERS.INSTAGRAM_LOGIN,
+];
 
 const COPY = {
   icon: InstagramIcon,
@@ -31,11 +36,11 @@ const COPY = {
   searchPlaceholder: 'Search by name, @username, ID or login',
   emptyTitle: 'No Instagram accounts yet',
   emptyConnect:
-    'Connect a Facebook login to add the Instagram accounts linked to your Pages, or connect an Instagram professional account directly with Instagram Login.',
+    'Connect a Facebook login to add the Instagram accounts linked to your Pages, or connect an Instagram professional account directly (no Facebook Page needed).',
   emptyChoose:
     'Your connected logins have no Instagram accounts in this workspace yet. Open a login on the Logins tab to choose which of its accounts to add.',
   emptySetup:
-    'Instagram connections are not configured on this server yet. Once a server administrator adds the Meta app credentials you can connect accounts through Facebook Login or Instagram Login.',
+    'Instagram connections are not configured on this server yet. Once a server administrator adds the Meta app settings you can connect accounts directly or through Facebook Login.',
   emptyShared:
     'No Instagram accounts have been shared with you in this workspace yet. Workspace owners and admins decide who can access each account.',
   filteredTitle: 'No Instagram accounts match these filters',

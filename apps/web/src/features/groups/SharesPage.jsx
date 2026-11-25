@@ -450,6 +450,7 @@ export default function SharesPage() {
                     <p className="mt-0.5 line-clamp-1 text-xs text-muted">{share.message}</p>
                     <p className="mt-0.5 text-xs text-muted">
                       By {share.createdBy?.name ?? 'a former member'} · {timeAgo(share.createdAt)}
+                      {share.auto && ' · from a published post'}
                     </p>
                   </div>
                   <Progress counts={share.counts} />

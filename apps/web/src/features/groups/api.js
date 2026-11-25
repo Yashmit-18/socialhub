@@ -2,9 +2,11 @@
  * Data hooks for Facebook Group distribution (Phase 6). Every key starts with
  * groupKeys.all(workspaceId), so one invalidation refreshes the directory, shares and tasks.
  */
+import { SOCIAL_PLATFORMS } from '@socialhub/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { api } from '../../lib/api.js';
-import { keys } from '../../lib/queries.js';
+import { keys, useSocialAccounts } from '../../lib/queries.js';
 
 export const groupKeys = {
   all: (ws) => ['workspace', ws, 'groups'],
@@ -104,6 +106,34 @@ export const useUpdateGroup = (ws) =>
   );
 export const useDeleteGroup = (ws) =>
   useGroupMutation(ws, (groupId) => api.delete(`${base(ws)}/facebook-groups/${groupId}`));
+/** `{ urls, categoryId?, pageIds? }` → `{ added, existing, invalid }` */
+export const useBulkAddGroups = (ws) =>
+  useGroupMutation(ws, (body) => api.post(`${base(ws)}/facebook-groups/bulk`, body));
+
+/**
+ * How many active groups each Facebook Page is a member of: `{ [socialAccountId]: count }`.
+ * Read from the directory's facets (one row is enough).
+ */
+export function useGroupCountsByPage(ws, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: groupKeys.list(ws, { limit: 1, purpose: 'page-counts' }),
+    queryFn: () =>
+      api
+        .get(`${base(ws)}/facebook-groups`, { query: { limit: 1 } })
+        .then((data) => data.facets?.pages ?? {}),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Auto share for a real post: `{ publishJobId }` → `{ share, created, tasksCreated,
+ * pagesWaiting }`. Tasks for a Page's groups are created when its post is live on Facebook.
+ */
+export const useAutoShare = (ws) =>
+  useGroupMutation(ws, (publishJobId) =>
+    api.post(`${base(ws)}/group-shares/auto`, { publishJobId }),
+  );
 
 /** Resolves to `{ share, created, skipped: [{ groupId, name, reason, nextShareAllowedAt? }] }`. */
 export const useCreateShare = (ws) =>
@@ -139,4 +169,15 @@ export function skipReasonText(skip) {
     default:
       return skip.reason;
   }
+}
+
+/** The workspace's Facebook Pages as `{ id, name }`, sorted by name. */
+export function useFacebookPages() {
+  const { workspace } = useWorkspace();
+  const accounts = useSocialAccounts(workspace.id);
+  const pages = (accounts.data ?? [])
+    .filter((account) => account.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE)
+    .map((account) => ({ id: account.id, name: account.name, pictureUrl: account.pictureUrl }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { pages, isPending: accounts.isPending, error: accounts.error };
 }

@@ -155,7 +155,7 @@ describe('job list', () => {
       },
     });
     renderPage();
-    expect(screen.getByRole('heading', { name: 'Publishing' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Posts' })).toBeInTheDocument();
     expect(await screen.findByText('Loading posts…')).toBeInTheDocument();
     release();
 
@@ -211,13 +211,14 @@ describe('job list', () => {
     expect(router.state.location.search).toBe('?tab=failed');
     expect(screen.getByRole('button', { name: /^Failed/ })).toHaveAttribute('aria-pressed', 'true');
 
-    // "Queue" is two statuses, so two requests.
-    await userEvent.click(screen.getByRole('button', { name: /^Queue/ }));
-    await waitFor(() => {
-      expect(listStatuses(mock)).toContain('QUEUED');
-      expect(listStatuses(mock)).toContain('SCHEDULED');
-    });
-    expect(router.state.location.search).toBe('?tab=queue');
+    await userEvent.click(screen.getByRole('button', { name: /^Published/ }));
+    await waitFor(() => expect(listStatuses(mock)).toContain('PUBLISHED'));
+    expect(router.state.location.search).toBe('?tab=published');
+    // Tabs for usually-empty states (queue, processing, partial, cancelled) stay out of the way
+    // while they hold nothing; the queue's two statuses are tested with ?tab=queue below.
+    for (const name of [/^Queue/, /^Processing/, /^Partially published/, /^Cancelled/]) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
 
     await userEvent.click(screen.getByRole('button', { name: /^All/ }));
     expect(router.state.location.search).toBe('');

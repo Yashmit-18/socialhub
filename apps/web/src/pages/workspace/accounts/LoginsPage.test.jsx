@@ -736,6 +736,157 @@ describe('Logins tab', () => {
     expect(within(empty).queryByRole('button', { name: /Connect Instagram/ })).toBeNull();
   });
 
+  describe('Instagram Unified Login', () => {
+    const FACEBOOK_ONLY = {
+      configured: true,
+      missing: [],
+      scopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
+    };
+    const unifiedLogin = (overrides = {}) =>
+      soloCreator({
+        id: 'c9',
+        provider: 'INSTAGRAM_UNIFIED_LOGIN',
+        displayName: '@acme.studio, @acme.shop',
+        grantedScopes: ['instagram_basic', 'instagram_content_publish'],
+        tokenExpiresAt: null,
+        expiringSoonAt: null,
+        attention: [],
+        needsAttention: false,
+        accountCount: 2,
+        accountCounts: { facebookPages: 0, instagramAccounts: 2, needsAttention: 0 },
+        ...overrides,
+      });
+
+    it('Connect Instagram starts Unified Login when it is configured, even with a Facebook-only login', async () => {
+      const mock = setup('OWNER', {
+        'GET /integrations/meta': () =>
+          jsonResponse(200, {
+            facebook: FACEBOOK_ONLY,
+            instagram: { configured: false, missing: ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'] },
+            instagramUnified: { configured: true, ready: true, missing: [] },
+          }),
+        'GET /workspaces/w1/social-connections': () => jsonResponse(200, { items: [] }),
+        'POST /workspaces/w1/meta/authorizations': () =>
+          jsonResponse(201, {
+            authorizationUrl: 'https://www.facebook.com/dialog/oauth?config_id=3333333333',
+          }),
+      });
+      renderApp(PATH);
+
+      const heading = await screen.findByRole('heading', { name: 'No logins connected yet' }, LOAD);
+      const empty = heading.closest('section');
+      const instagram = within(empty).getByRole('button', { name: /Connect Instagram/ });
+      expect(instagram).toHaveAttribute(
+        'title',
+        expect.stringMatching(/No Facebook Page is needed/),
+      );
+      // Instagram is set up, so no setup notice; the legacy Instagram Login is not required.
+      expect(screen.queryByRole('region', { name: /not configured|setup required/i })).toBeNull();
+
+      await userEvent.click(instagram);
+      await waitFor(() =>
+        expect(redirectTo).toHaveBeenCalledWith(
+          'https://www.facebook.com/dialog/oauth?config_id=3333333333',
+        ),
+      );
+      const call = mock.calls.find((c) => c.key === 'POST /workspaces/w1/meta/authorizations');
+      expect(JSON.parse(call.init.body)).toEqual({ provider: 'INSTAGRAM_UNIFIED_LOGIN' });
+    });
+
+    it('names exactly the missing setting when Unified Login is not configured, and Facebook keeps working', async () => {
+      setup('OWNER', {
+        'GET /integrations/meta': () =>
+          jsonResponse(200, {
+            facebook: FACEBOOK_ONLY,
+            instagram: { configured: false, missing: ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'] },
+            instagramUnified: {
+              configured: false,
+              missing: ['META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID'],
+            },
+          }),
+        'GET /workspaces/w1/social-connections': () => jsonResponse(200, { items: [] }),
+      });
+      renderApp(PATH);
+
+      const notice = await screen.findByRole(
+        'region',
+        { name: 'Instagram Unified Login is not configured' },
+        LOAD,
+      );
+      expect(notice).toHaveTextContent(
+        'Instagram Unified Login (META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID)',
+      );
+      expect(notice).toHaveTextContent(/It is not an app ID/);
+      expect(notice).toHaveTextContent(/Facebook connections keep working/);
+      // The legacy Instagram Login credentials are not presented as what is needed.
+      expect(notice).not.toHaveTextContent(/INSTAGRAM_APP_ID/);
+      const heading = screen.getByRole('heading', { name: 'No logins connected yet' });
+      const empty = heading.closest('section');
+      expect(within(empty).getByRole('button', { name: /Connect Facebook/ })).toBeEnabled();
+      expect(within(empty).queryByRole('button', { name: /Connect Instagram/ })).toBeNull();
+    });
+
+    it('lists a Unified Login, reconnects it with its own provider, and blocks it when unconfigured', async () => {
+      const mock = setup('OWNER', {
+        'GET /integrations/meta': () =>
+          jsonResponse(200, {
+            facebook: FACEBOOK_ONLY,
+            instagram: { configured: false },
+            instagramUnified: { configured: true, missing: [] },
+          }),
+        'GET /workspaces/w1/social-connections': () =>
+          jsonResponse(200, { items: [alice(), unifiedLogin()] }),
+        'POST /workspaces/w1/meta/authorizations': () =>
+          jsonResponse(201, { authorizationUrl: 'https://www.facebook.com/dialog/oauth?r=1' }),
+      });
+      renderApp(PATH);
+
+      const unifiedCard = await findCard('@acme.studio, @acme.shop');
+      expect(unifiedCard).toHaveTextContent('2 Instagram accounts');
+      expect(unifiedCard).not.toHaveTextContent(/Facebook Page/);
+      expect(
+        screen.getByRole('option', { name: 'Instagram (Unified Login) (1)' }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        within(unifiedCard).getByRole('button', {
+          name: 'More actions for @acme.studio, @acme.shop',
+        }),
+      );
+      await userEvent.click(
+        screen.getByRole('menuitem', { name: 'Reconnect / update permissions' }),
+      );
+      await waitFor(() => expect(redirectTo).toHaveBeenCalled());
+      const call = mock.calls.find((c) => c.key === 'POST /workspaces/w1/meta/authorizations');
+      expect(JSON.parse(call.init.body)).toEqual({
+        provider: 'INSTAGRAM_UNIFIED_LOGIN',
+        connectionId: 'c9',
+      });
+    });
+
+    it('disables sync for a Unified Login while its configuration is missing', async () => {
+      setup('OWNER', {
+        'GET /integrations/meta': () =>
+          jsonResponse(200, {
+            facebook: FACEBOOK_ONLY,
+            instagram: { configured: false },
+            instagramUnified: {
+              configured: false,
+              missing: ['META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID'],
+            },
+          }),
+        'GET /workspaces/w1/social-connections': () =>
+          jsonResponse(200, { items: [alice(), unifiedLogin()] }),
+      });
+      renderApp(PATH);
+      const unifiedCard = await findCard('@acme.studio, @acme.shop');
+      expect(within(unifiedCard).getByRole('button', { name: 'Sync now' })).toBeDisabled();
+      expect(
+        within(unifiedCard).getByText(/until Instagram Unified Login is configured/),
+      ).toBeInTheDocument();
+      expect(within(card('Alice')).getByRole('button', { name: 'Sync now' })).toBeEnabled();
+    });
+  });
+
   it('says connecting is unavailable until Meta setup is complete', async () => {
     setup('OWNER', {
       'GET /integrations/meta': () => jsonResponse(200, NOT_CONFIGURED),

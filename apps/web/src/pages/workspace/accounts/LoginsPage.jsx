@@ -52,6 +52,9 @@ import {
   loginAccountTotal,
   loginDestinationsText,
   loginWantsReconnect,
+  PROVIDER_FILTER_LABELS,
+  anyLoginConfigured,
+  loginFlowName,
 } from '../../../lib/meta.js';
 import { useMetaIntegration, useSocialConnections } from '../../../lib/queries.js';
 import { cn, formatDate, timeAgo } from '../../../lib/utils.js';
@@ -65,7 +68,11 @@ const NO_FILTERS = { q: '', provider: '', status: '' };
 /** While the server reports a sync as running, the list is re-read this often. */
 const SYNC_POLL_MS = 5000;
 
-const PROVIDERS = [SOCIAL_PROVIDERS.FACEBOOK_LOGIN, SOCIAL_PROVIDERS.INSTAGRAM_LOGIN];
+const PROVIDERS = [
+  SOCIAL_PROVIDERS.FACEBOOK_LOGIN,
+  SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,
+  SOCIAL_PROVIDERS.INSTAGRAM_LOGIN,
+];
 
 const LOGIN_POINTS = [
   'One Facebook login can bring many Facebook Pages, together with the Instagram accounts linked to them. You choose which ones to add.',
@@ -283,7 +290,7 @@ function LoginCard({
   const reconnectFirst = loginWantsReconnect(connection);
   const setupReason = providerReady
     ? null
-    : `Sync and reconnect are unavailable until ${provider} Login is configured on this server.`;
+    : `Sync and reconnect are unavailable until ${loginFlowName(connection.provider)} is configured on this server.`;
   const syncReason =
     setupReason ??
     (disconnected
@@ -565,7 +572,7 @@ function LoginsSkeleton() {
 
 function NoLogins({ integration, start }) {
   const data = integration.data;
-  const canConnect = Boolean(data?.facebook?.configured || data?.instagram?.configured);
+  const canConnect = anyLoginConfigured(data);
   let action;
   if (canConnect) {
     action = (
@@ -648,7 +655,7 @@ function LoginsManager({ workspace }) {
     ['', 'All providers'],
     ...PROVIDERS.map((p) => [
       p,
-      `${providerLabel(p)} (${list.filter((c) => c.provider === p && byQuery(c) && byStatus(c)).length})`,
+      `${PROVIDER_FILTER_LABELS[p] ?? providerLabel(p)} (${list.filter((c) => c.provider === p && byQuery(c) && byStatus(c)).length})`,
     ]),
   ];
   const statusOptions = [

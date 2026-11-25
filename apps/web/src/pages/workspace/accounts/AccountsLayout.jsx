@@ -53,13 +53,13 @@ export default function AccountsLayout() {
 
       <nav
         aria-label="Social account sections"
-        className="-mt-3 mb-6 overflow-x-auto border-b border-slate-200/80 dark:border-white/10"
+        className="-mt-3 mb-6 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-white/10"
       >
         <ul ref={tabsRef} className="relative flex min-w-max gap-1">
           <li
             ref={underlineRef}
             aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-gradient-to-r from-brand-500 via-violet-500 to-fuchsia-500 opacity-0 shadow-[0_0_12px_rgb(139_92_246/0.7)] data-[ready]:transition-[transform,width,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo"
+            className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-brand-600 opacity-0 data-[ready]:transition-[transform,width,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo"
           />
           {tabs.map((tab) => (
             <li key={tab.to}>

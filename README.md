@@ -1087,37 +1087,55 @@ Hierarchy rules:
 
 ## Project history
 
-| Date       | Phase                                             | Status                                                                                                                                                    |
-| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-11-19 | 1: Foundation                                     | Complete                                                                                                                                                  |
-| 2026-11-20 | 2: Meta OAuth integration                         | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app                                                   |
-| 2026-11-20 | 2: Real-world verification preparation            | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                                                                |
-| 2026-11-20 | 3: Social account management                      | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified                                                       |
-| 2026-11-20 | 4 (frontend): Universal Post Composer             | Frontend implemented                                                                                                                                      |
-| 2026-11-21 | 4 (backend): Composer drafts, media, presets      | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                                                                |
-| 2026-11-21 | Combined follower totals                          | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                                                             |
-| 2026-11-21 | Cross-phase integration audit                     | All automated checks pass; no real Meta app or real S3 bucket used                                                                                        |
-| 2026-11-21 | Local media storage on `F:\Social Hub Data`       | Configured and verified with real uploads on the drive (25 live checks)                                                                                   |
-| 2026-11-21 | 5: Publishing engine                              | Implemented and tested in simulation; **not complete**: queue not yet run on a real Redis, real publishing disabled                                       |
-| 2026-11-21 | Public landing page                               | Implemented; checked in headless Chrome at desktop and phone widths; publishing shown as in development                                                   |
-| 2026-11-21 | Account organisation                              | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls                                           |
-| 2026-11-21 | Followers on the Overview; class merging fix      | Implemented and tested; follower counts still only read from the simulated Meta                                                                           |
-| 2026-11-21 | Draft privacy; 5: scheduling and composer Publish | Implemented and tested with mocks and the test-only queue; **Phase 5 not complete**: Redis still not installed                                            |
-| 2026-11-23 | 6: Facebook Group distribution                    | Implemented and tested (directory, categories, tags, shares, manual tasks, duplicate and frequency rules); never contacts Facebook                        |
-| 2026-11-23 | 5: Real Redis verification                        | Verified on Memurai 4.1.2 in simulation (queue 22/22, end to end 47/47, restarts 9/9 and 9/9); 4 problems found and fixed; real publishing still disabled |
-| 2026-11-23 | 7: Analytics & Publishing Intelligence            | Implemented and tested; sync verified on a real Redis with demo data (34/34); **Meta insights not enabled and never run against Meta**                    |
-| 2026-11-23 | Stabilization audit of Phases 5 and 7             | Cross-phase audit; no critical issues; 9 problems fixed with tests; still uncommitted, awaiting approval                                                  |
-| 2026-11-23 | Pre-live security and reliability hardening       | Send-time authorization, job privacy, private queue status, safer recovery and shutdown; tested; still uncommitted, awaiting approval                     |
-| 2026-11-23 | 8: Real Facebook and Instagram publishing         | Behind two switches (server `live`, workspace owner/admin + password); tested with a simulated Meta only; **not yet run on real accounts**                |
-| 2026-11-23 | Upload fix and signed media links                 | Root cause found and fixed (absolute upload links blocked by the page's CSP); signed, expiring file links; tested; browser upload to be confirmed by hand |
-| 2026-11-24 | Windows one-click launcher (Quick Tunnel)         | start/stop scripts; tunnel URL captured and written to .env; stops only what it started; tested on this PC                                                |
-| 2026-11-24 | Real Facebook publishing: readiness               | Server back to simulated, no real post; Page token and permissions verified; image link public (Meta's own fetch unproven); dialog preview + confirmation |
-| 2026-11-24 | Real-post confirmation enforced by the API        | `confirmRealPost` required for every real job (now or scheduled, any client); composer + Publish a draft ask for it; no real post made                    |
-| 2026-11-24 | Facebook + Instagram integration hardening        | Retry of a real post confirmed; FB post link read back; IG link explained; worker count per Redis db; ANALYTICS_MODE=live (opt-in)                        |
-| 2026-11-24 | Real Facebook publishing verified                 | Owner published 3 posts from the composer to 2 Pages; each Meta post ID stored and confirmed by a read-only GET (is_published); Instagram not yet         |
-| 2026-11-24 | Audit: App Review prep, diagnostics, fixes        | App Review guide; OAuth diagnostics (meta:oauth-attempts); dead tunnels replaced; composer live-mode text; invite links redacted; source maps private     |
-| 2026-11-24 | Backups, key rotation, production checks          | db:backup/verify/restore (empty targets only); secrets:rotate-key; production refuses http/insecure cookies; FB-only login scopes; PC no longer sleeps    |
-| 2026-11-24 | Edit and delete real Facebook posts               | Text edit + delete on Facebook from the post details; explicit confirmation enforced by the API; recorded only on Meta success; simulated Meta only       |
+| Date       | Phase                                             | Status                                                                                                                                                                           |
+| ---------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-19 | 1: Foundation                                     | Complete                                                                                                                                                                         |
+| 2026-11-20 | 2: Meta OAuth integration                         | Implemented and tested against the simulated Meta; **not complete** until verified with a real Meta app                                                                          |
+| 2026-11-20 | 2: Real-world verification preparation            | Evidence checker and runbook ready; verification **blocked** (no Meta app credentials yet)                                                                                       |
+| 2026-11-20 | 3: Social account management                      | Implemented and tested with controlled data and the simulated Meta; real-Meta sync not yet verified                                                                              |
+| 2026-11-20 | 4 (frontend): Universal Post Composer             | Frontend implemented                                                                                                                                                             |
+| 2026-11-21 | 4 (backend): Composer drafts, media, presets      | Implemented and tested; S3 storage not yet run against a real bucket; publishing not built                                                                                       |
+| 2026-11-21 | Combined follower totals                          | Implemented and tested against the simulated Meta; counts never read from a real Meta app yet                                                                                    |
+| 2026-11-21 | Cross-phase integration audit                     | All automated checks pass; no real Meta app or real S3 bucket used                                                                                                               |
+| 2026-11-21 | Local media storage on `F:\Social Hub Data`       | Configured and verified with real uploads on the drive (25 live checks)                                                                                                          |
+| 2026-11-21 | 5: Publishing engine                              | Implemented and tested in simulation; **not complete**: queue not yet run on a real Redis, real publishing disabled                                                              |
+| 2026-11-21 | Public landing page                               | Implemented; checked in headless Chrome at desktop and phone widths; publishing shown as in development                                                                          |
+| 2026-11-21 | Account organisation                              | Implemented and tested (labels, stars, notes, All accounts tab, CSV export); SocialHub data only, no Meta calls                                                                  |
+| 2026-11-21 | Followers on the Overview; class merging fix      | Implemented and tested; follower counts still only read from the simulated Meta                                                                                                  |
+| 2026-11-21 | Draft privacy; 5: scheduling and composer Publish | Implemented and tested with mocks and the test-only queue; **Phase 5 not complete**: Redis still not installed                                                                   |
+| 2026-11-23 | 6: Facebook Group distribution                    | Implemented and tested (directory, categories, tags, shares, manual tasks, duplicate and frequency rules); never contacts Facebook                                               |
+| 2026-11-23 | 5: Real Redis verification                        | Verified on Memurai 4.1.2 in simulation (queue 22/22, end to end 47/47, restarts 9/9 and 9/9); 4 problems found and fixed; real publishing still disabled                        |
+| 2026-11-23 | 7: Analytics & Publishing Intelligence            | Implemented and tested; sync verified on a real Redis with demo data (34/34); **Meta insights not enabled and never run against Meta**                                           |
+| 2026-11-23 | Stabilization audit of Phases 5 and 7             | Cross-phase audit; no critical issues; 9 problems fixed with tests; still uncommitted, awaiting approval                                                                         |
+| 2026-11-23 | Pre-live security and reliability hardening       | Send-time authorization, job privacy, private queue status, safer recovery and shutdown; tested; still uncommitted, awaiting approval                                            |
+| 2026-11-23 | 8: Real Facebook and Instagram publishing         | Behind two switches (server `live`, workspace owner/admin + password); tested with a simulated Meta only; **not yet run on real accounts**                                       |
+| 2026-11-23 | Upload fix and signed media links                 | Root cause found and fixed (absolute upload links blocked by the page's CSP); signed, expiring file links; tested; browser upload to be confirmed by hand                        |
+| 2026-11-24 | Windows one-click launcher (Quick Tunnel)         | start/stop scripts; tunnel URL captured and written to .env; stops only what it started; tested on this PC                                                                       |
+| 2026-11-24 | Real Facebook publishing: readiness               | Server back to simulated, no real post; Page token and permissions verified; image link public (Meta's own fetch unproven); dialog preview + confirmation                        |
+| 2026-11-24 | Real-post confirmation enforced by the API        | `confirmRealPost` required for every real job (now or scheduled, any client); composer + Publish a draft ask for it; no real post made                                           |
+| 2026-11-24 | Facebook + Instagram integration hardening        | Retry of a real post confirmed; FB post link read back; IG link explained; worker count per Redis db; ANALYTICS_MODE=live (opt-in)                                               |
+| 2026-11-24 | Real Facebook publishing verified                 | Owner published 3 posts from the composer to 2 Pages; each Meta post ID stored and confirmed by a read-only GET (is_published); Instagram not yet                                |
+| 2026-11-24 | Audit: App Review prep, diagnostics, fixes        | App Review guide; OAuth diagnostics (meta:oauth-attempts); dead tunnels replaced; composer live-mode text; invite links redacted; source maps private                            |
+| 2026-11-24 | Backups, key rotation, production checks          | db:backup/verify/restore (empty targets only); secrets:rotate-key; production refuses http/insecure cookies; FB-only login scopes; PC no longer sleeps                           |
+| 2026-11-24 | Edit and delete real Facebook posts               | Text edit + delete on Facebook from the post details; explicit confirmation enforced by the API; recorded only on Meta success; simulated Meta only                              |
+| 2026-11-25 | Simpler UI and automatic group sharing tasks      | Calmer design and fewer steps; real Page posts get one sharing task per group the Page is in. Posting in groups stays manual (no Meta API). Tested against a simulated Meta only |
+
+### Simpler UI and automatic group sharing tasks (2026-11-25)
+
+- **Group sharing, as automatic as Meta allows.** Each group lists which of the workspace's
+  Facebook Pages are members of it ("Your Pages in this group", or **Add many** for up to 100
+  pasted links). The publish dialog offers "Also share in Facebook Groups" for real posts.
+  When a Page's post goes live, the worker creates one sharing task per group that Page is in,
+  with the caption and the link to the live Page post. A person still posts in each group
+  (Copy text, Open group, Mark as shared), because Meta removed the Groups API in v19.0.
+  Simulated, failed and not-yet-live posts create no tasks. See docs/GROUP_SHARING.md.
+- **Simpler, calmer interface.** Neutral greys, flat buttons and cards, no background glow or
+  grid. The sidebar is one list plus a Workspace section, with a count on Group sharing.
+  "Publishing" is now "Posts" and shows only the status tabs in use. The Overview leads with
+  the three-step workflow (create, track, share in groups). The composer is one "Your post"
+  card (caption and media) with hashtags, first comment and keywords under "More options".
+- **Not verified:** auto share has never run against the real Graph API or a real post. It
+  reads only what the publishing worker stored.
 
 ### Upload fix and signed media links (2026-11-23)
 

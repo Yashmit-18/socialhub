@@ -620,6 +620,32 @@ describe('idempotency and duplicate prevention', () => {
     expect(queue.entries).toHaveLength(2);
   });
 
+  it('answers a request whose twin created the job mid-way with that job, not a conflict', async () => {
+    const draft = await createDraft(team.owner.token, ws, { accounts: pages });
+    const body = { contentPackageId: draft.id, idempotencyKey: newKey() };
+    const first = await as(team.owner.token).post(publishUrl(ws)).send(body);
+    expect(first.status).toBe(201);
+    // The twin's first lookup misses (it ran before the job existed); it then meets the job's
+    // destinations in the duplicate check, which must hand the job back.
+    const lookup = vi.spyOn(PublishJob, 'findOne').mockResolvedValueOnce(null);
+    try {
+      const twin = await as(team.owner.token).post(publishUrl(ws)).send(body);
+      expect(twin.status).toBe(200);
+      expect(twin.body.created).toBe(false);
+      expect(twin.body.publishJob.id).toBe(first.body.publishJob.id);
+    } finally {
+      lookup.mockRestore();
+    }
+    // A different request for the same post is still refused.
+    const other = await as(team.owner.token)
+      .post(publishUrl(ws))
+      .send({ ...body, idempotencyKey: newKey() });
+    expect(other.status).toBe(409);
+    expect(other.body.error.details.reason).toBe('IN_PROGRESS');
+    expect(await PublishJob.countDocuments()).toBe(1);
+    expect(queue.entries).toHaveLength(2);
+  });
+
   it('refuses a key that was already used for a different post', async () => {
     const one = await createDraft(team.owner.token, ws, { accounts: pages });
     const two = await createDraft(team.owner.token, ws, { accounts: pages });

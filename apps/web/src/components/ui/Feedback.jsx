@@ -49,12 +49,11 @@ export function EmptyState({ icon: Icon, title, description, action, className, 
   return (
     <div className={cn('flex flex-col items-center px-6 py-12 text-center', className)}>
       {Icon && (
-        <div className="relative mb-5" aria-hidden="true">
-          <div className="absolute -inset-3 rounded-[1.4rem] border border-dashed border-brand-500/25 dark:border-brand-400/20" />
-          <div className="absolute inset-0 rounded-2xl bg-brand-500/30 blur-xl" />
-          <div className="relative flex h-12 w-12 animate-float items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/30 ring-1 ring-white/25 ring-inset">
-            <Icon className="h-6 w-6" aria-hidden="true" />
-          </div>
+        <div
+          className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-brand-100 bg-brand-50 text-brand-600 dark:border-brand-400/15 dark:bg-brand-400/10 dark:text-brand-300"
+          aria-hidden="true"
+        >
+          <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
       )}
       <h3 className="text-base font-semibold text-slate-900 dark:text-white">{title}</h3>

@@ -26,9 +26,29 @@ export const INVITATION_STATUS = Object.freeze({
 export const SOCIAL_PROVIDERS = Object.freeze({
   /** Facebook Login — yields Facebook Pages and Instagram accounts linked to those Pages. */
   FACEBOOK_LOGIN: 'FACEBOOK_LOGIN',
-  /** Instagram API with Instagram Login — yields the professional account itself. */
+  /**
+   * Instagram API with Instagram Login (Business Login for Instagram, separate Instagram app
+   * id/secret, graph.instagram.com) — yields the professional account itself.
+   */
   INSTAGRAM_LOGIN: 'INSTAGRAM_LOGIN',
+  /**
+   * Instagram API with Unified Login: Facebook Login for Business with a configuration
+   * (config_id) that issues a Business Integration System User token, owned by the client's
+   * business portfolio, under the Meta app id. Yields every Instagram professional account
+   * the client assigned to the app (graph.facebook.com). No Facebook Page is needed.
+   */
+  INSTAGRAM_UNIFIED_LOGIN: 'INSTAGRAM_UNIFIED_LOGIN',
 });
+
+/** Logins that connect Instagram professional accounts directly, without a Facebook Page. */
+export const INSTAGRAM_DIRECT_PROVIDERS = Object.freeze([
+  SOCIAL_PROVIDERS.INSTAGRAM_LOGIN,
+  SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,
+]);
+
+/** True for a login that yields Instagram accounts only (never Facebook Pages). */
+export const isInstagramDirectProvider = (provider) =>
+  INSTAGRAM_DIRECT_PROVIDERS.includes(provider);
 
 /** A publishing destination. */
 export const SOCIAL_PLATFORMS = Object.freeze({
@@ -143,6 +163,15 @@ export const META_PERMISSIONS = Object.freeze({
     REQUIRED: Object.freeze(['instagram_business_basic']),
     PUBLISHING: Object.freeze(['instagram_business_content_publish']),
   }),
+  /**
+   * Instagram API with Unified Login. The permissions are chosen in the login configuration
+   * in the App Dashboard (config_id replaces `scope`). Listing the assigned Instagram accounts
+   * needs instagram_basic; content publishing needs instagram_basic + instagram_content_publish.
+   */
+  INSTAGRAM_UNIFIED: Object.freeze({
+    REQUIRED: Object.freeze(['instagram_basic']),
+    PUBLISHING: Object.freeze(['instagram_basic', 'instagram_content_publish']),
+  }),
 });
 
 /**
@@ -174,6 +203,10 @@ export const META_OAUTH_RESULTS = Object.freeze({
   IDENTITY_MISMATCH: 'IDENTITY_MISMATCH',
   NOT_ELIGIBLE: 'NOT_ELIGIBLE',
   NOT_CONFIGURED: 'NOT_CONFIGURED',
+  /** Unified Login: the authorization shared no Instagram professional account with the app. */
+  NO_INSTAGRAM_ACCOUNTS: 'NO_INSTAGRAM_ACCOUNTS',
+  /** The token was issued, but Meta refused to list the accounts it gives access to. */
+  ACCOUNT_DISCOVERY_FAILED: 'ACCOUNT_DISCOVERY_FAILED',
 });
 
 /** What started a connection synchronization (recorded in sync history). */

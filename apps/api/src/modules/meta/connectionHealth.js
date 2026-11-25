@@ -13,6 +13,7 @@ import {
   SOCIAL_PROVIDERS,
   SYNC_OUTCOMES,
 } from '@socialhub/shared';
+import { facebookLoginIncludesInstagram } from '../../integrations/meta/facebook.js';
 import { META_ERROR_KINDS } from '../../integrations/meta/http.js';
 
 const DAY_MS = 86_400_000;
@@ -69,6 +70,8 @@ export function reasonForStatus(status) {
 
 export function publishingScopes(provider, platform) {
   if (provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) return META_PERMISSIONS.INSTAGRAM.PUBLISHING;
+  if (provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN)
+    return META_PERMISSIONS.INSTAGRAM_UNIFIED.PUBLISHING;
   return platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE
     ? META_PERMISSIONS.FACEBOOK.PAGE_PUBLISHING
     : META_PERMISSIONS.FACEBOOK.INSTAGRAM_PUBLISHING;
@@ -85,13 +88,22 @@ export function scopeReport(connection) {
       publishing: missing(META_PERMISSIONS.INSTAGRAM.PUBLISHING),
     };
   }
+  if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN) {
+    return {
+      required: missing(META_PERMISSIONS.INSTAGRAM_UNIFIED.REQUIRED),
+      recommended: [],
+      publishing: missing(META_PERMISSIONS.INSTAGRAM_UNIFIED.PUBLISHING),
+    };
+  }
+  // Instagram publishing permissions are only expected from a Facebook login when this
+  // server's Facebook Login asks for Instagram (a Facebook-only login never lists them).
   return {
     required: missing(META_PERMISSIONS.FACEBOOK.REQUIRED),
     recommended: missing(META_PERMISSIONS.FACEBOOK.RECOMMENDED),
     publishing: missing([
       ...new Set([
         ...META_PERMISSIONS.FACEBOOK.PAGE_PUBLISHING,
-        ...META_PERMISSIONS.FACEBOOK.INSTAGRAM_PUBLISHING,
+        ...(facebookLoginIncludesInstagram() ? META_PERMISSIONS.FACEBOOK.INSTAGRAM_PUBLISHING : []),
       ]),
     ]),
   };

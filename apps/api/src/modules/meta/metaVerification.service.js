@@ -20,11 +20,13 @@ import {
   PUBLISHING_STATUS,
   SOCIAL_PLATFORMS,
   SOCIAL_PROVIDERS,
+  isInstagramDirectProvider,
 } from '@socialhub/shared';
 import { config } from '../../config/env.js';
 import * as facebook from '../../integrations/meta/facebook.js';
 import { MetaApiError } from '../../integrations/meta/http.js';
 import * as instagram from '../../integrations/meta/instagram.js';
+import * as instagramUnified from '../../integrations/meta/instagramUnified.js';
 import {
   ActivityLog,
   Membership,
@@ -100,6 +102,29 @@ async function liveFacebookEvidence(connection, token) {
   }
 }
 
+/** Unified Login: the system-user token must be valid for this app and reach its accounts. */
+async function liveUnifiedEvidence(token) {
+  try {
+    const debug = await facebook.debugToken(token);
+    const accounts = debug.isValid
+      ? await instagramUnified.fetchAssignedInstagramAccounts(token)
+      : [];
+    return {
+      ok: debug.isValid && debug.appId === config.meta.facebook.appId && accounts.length > 0,
+      debug,
+      accounts,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof MetaApiError
+          ? `${err.kind} (${err.code ?? 'no code'}): ${err.message}`
+          : err.message,
+    };
+  }
+}
+
 async function liveInstagramEvidence(token) {
   try {
     const profile = await instagram.fetchInstagramProfile(token);
@@ -125,12 +150,14 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
   const results = [];
   const status = metaIntegrationStatus();
   const errors = status.checks.filter((c) => c.level === 'error');
-  const anyConfigured = status.facebook.configured || status.instagram.configured;
+  const anyConfigured =
+    status.facebook.configured || status.instagram.configured || status.instagramUnified.configured;
 
   /* ------------------------------------------------------- 1–3 configuration */
-  const missing = [];
-  if (!status.facebook.configured) missing.push('META_APP_ID', 'META_APP_SECRET');
-  if (!status.instagram.configured) missing.push('INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET');
+  const missing = new Set();
+  if (!status.facebook.configured) missing.add('META_APP_ID').add('META_APP_SECRET');
+  for (const name of status.instagramUnified.missing) missing.add(name);
+  if (!status.instagram.configured) missing.add('INSTAGRAM_APP_ID').add('INSTAGRAM_APP_SECRET');
   results.push(
     result(
       1,
@@ -138,8 +165,9 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
       !anyConfigured ? STATUS.BLOCKED : errors.length ? STATUS.FAIL : STATUS.PASS,
       [
         `Facebook Login: ${status.facebook.configured ? 'configured' : 'not configured'}`,
+        `Instagram (Unified Login): ${status.instagramUnified.configured ? 'configured' : 'not configured'}`,
         `Instagram Login: ${status.instagram.configured ? 'configured' : 'not configured (optional)'}`,
-        ...(missing.length ? [`Not set: ${missing.join(', ')}`] : []),
+        ...(missing.size ? [`Not set: ${[...missing].join(', ')}`] : []),
         ...errors.map((c) => `${c.id}: ${c.message}`),
       ],
     ),
@@ -150,13 +178,13 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
       'Meta configuration endpoint (GET /api/v1/integrations/meta)',
       !anyConfigured
         ? STATUS.BLOCKED
-        : status.facebook.ready || status.instagram.ready
+        : status.facebook.ready || status.instagram.ready || status.instagramUnified.ready
           ? errors.length
             ? STATUS.FAIL
             : STATUS.PASS
           : STATUS.FAIL,
       [
-        `facebook.ready=${status.facebook.ready} instagram.ready=${status.instagram.ready}`,
+        `facebook.ready=${status.facebook.ready} instagramUnified.ready=${status.instagramUnified.ready} instagram.ready=${status.instagram.ready}`,
         ...status.checks.map((c) => `[${c.level}] ${c.id}`),
       ],
     ),
@@ -173,6 +201,11 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
         `API_PUBLIC_URL resolves to ${status.publicApiUrl}`,
         ...(status.facebook.configured
           ? [`Facebook redirect URI to register: ${status.facebook.redirectUri}`]
+          : []),
+        ...(status.instagramUnified.configured
+          ? [
+              `Instagram Unified Login redirect URL to save in configuration ${status.instagramUnified.configId}: ${status.instagramUnified.redirectUri}`,
+            ]
           : []),
         ...(status.instagram.configured
           ? [`Instagram redirect URI to register: ${status.instagram.redirectUri}`]
@@ -198,7 +231,7 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
   const connById = new Map(connections.map((c) => [id(c), c]));
   const wsName = new Map(workspaces.map((w) => [id(w), w.slug]));
   const fbConns = connections.filter((c) => c.provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN);
-  const igConns = connections.filter((c) => c.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN);
+  const igConns = connections.filter((c) => isInstagramDirectProvider(c.provider));
   const pages = accounts.filter((a) => a.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE);
   const igAccounts = accounts.filter((a) => a.platform === SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT);
   const label = (c) =>
@@ -214,6 +247,11 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
         liveByConn.set(id(c), await liveFacebookEvidence(c, c.getAccessToken()));
       } else if (c.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN && config.meta.instagram) {
         liveByConn.set(id(c), await liveInstagramEvidence(c.getAccessToken()));
+      } else if (
+        c.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN &&
+        config.meta.instagramUnified
+      ) {
+        liveByConn.set(id(c), await liveUnifiedEvidence(c.getAccessToken()));
       }
     }
   }
@@ -377,11 +415,23 @@ export async function verifyMetaIntegration({ workspaceSlug, logs = [], live = f
   {
     const evidence = igAccounts.map((a) => {
       const c = connById.get(id(a.connection));
-      return `Instagram "${a.name}"${a.username ? ` @${a.username}` : ''} via ${c?.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN ? 'Instagram Login' : `Page ${a.linkedFacebookPageExternalId ?? '?'}`} (type ${a.instagramAccountType ?? 'not exposed by Meta'})`;
+      const via =
+        c?.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN
+          ? 'Instagram Login'
+          : c?.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN
+            ? 'Instagram Unified Login'
+            : `Page ${a.linkedFacebookPageExternalId ?? '?'}`;
+      return `Instagram "${a.name}"${a.username ? ` @${a.username}` : ''} via ${via} (type ${a.instagramAccountType ?? 'not exposed by Meta'})`;
     });
     for (const c of igConns) {
       const lv = liveByConn.get(id(c));
-      if (lv)
+      if (lv && c.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN)
+        evidence.push(
+          lv.error
+            ? `${label(c)}: live check failed: ${lv.error}`
+            : `${label(c)}: live debug_token is_valid=${lv.debug.isValid} type=${lv.debug.type ?? 'not reported'} expires=${lv.debug.expiresAt?.toISOString() ?? 'never'}; ${lv.accounts.length} assigned Instagram account(s)`,
+        );
+      else if (lv)
         evidence.push(
           `${label(c)}: live /me ${lv.ok ? `OK (account type ${lv.profile.accountType ?? 'unknown'})` : `failed: ${lv.error}`}`,
         );

@@ -18,9 +18,14 @@ import {
   hasFullAccountAccess,
   hasPermission,
   canManageMember,
+  isInstagramDirectProvider,
 } from '@socialhub/shared';
 import { notFound } from '../../lib/errors.js';
-import { instagramSettings, facebookSettings } from '../../integrations/meta/settings.js';
+import {
+  facebookSettings,
+  instagramSettings,
+  instagramUnifiedSettings,
+} from '../../integrations/meta/settings.js';
 import {
   ActivityLog,
   Membership,
@@ -407,7 +412,7 @@ export async function summarizeAccounts(scopes, { now = new Date() } = {}) {
     connections = {
       total: docs.length,
       facebook: docs.filter((c) => c.provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN).length,
-      instagram: docs.filter((c) => c.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN).length,
+      instagram: docs.filter((c) => isInstagramDirectProvider(c.provider)).length,
       active: count(CONNECTION_STATUS.ACTIVE),
       expired: count(CONNECTION_STATUS.EXPIRED),
       revoked: count(CONNECTION_STATUS.REVOKED),
@@ -424,7 +429,8 @@ export async function summarizeAccounts(scopes, { now = new Date() } = {}) {
     connections,
     meta: {
       facebookConfigured: Boolean(facebookSettings()),
-      instagramConfigured: Boolean(instagramSettings()),
+      // Either Instagram flow connects accounts directly (Unified Login is the recommended one).
+      instagramConfigured: Boolean(instagramUnifiedSettings() || instagramSettings()),
     },
     truncated,
   };
@@ -484,6 +490,8 @@ async function recentSyncRuns(connectionId, limit) {
 
 function requestedScopes(provider) {
   if (provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) return instagramSettings()?.scopes ?? null;
+  // Unified Login: the configuration in the App Dashboard holds the permissions.
+  if (provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN) return null;
   const fb = facebookSettings();
   if (!fb) return null;
   return fb.loginConfigId ? null : fb.scopes;

@@ -15,7 +15,11 @@ import { config } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { randomToken, sha256 } from '../../lib/crypto.js';
 import { AppError, badRequest, notFound } from '../../lib/errors.js';
-import { facebookSettings, instagramSettings } from '../../integrations/meta/settings.js';
+import {
+  facebookSettings,
+  instagramSettings,
+  providerSettings,
+} from '../../integrations/meta/settings.js';
 import { SignedRequestError, parseSignedRequest } from '../../integrations/meta/signedRequest.js';
 import { MetaDataDeletionRequest, SocialAccount, SocialConnection } from '../../models/index.js';
 import {
@@ -25,20 +29,20 @@ import {
 } from './metaConnection.service.js';
 
 /**
- * Secrets a callback may be signed with. Facebook callbacks use the Meta app secret. Meta
- * does not document which secret signs Instagram Login callbacks, so both of SocialHub's
- * own secrets are accepted there (each proves the request came from Meta for this app).
+ * Secrets a callback may be signed with. Facebook callbacks (and Unified Login, which runs
+ * under the Meta app) use the Meta app secret. Meta does not document which secret signs
+ * Instagram Login callbacks, so both of SocialHub's own secrets are accepted there (each
+ * proves the request came from Meta for this app).
  */
 function secretsFor(provider) {
   const fb = facebookSettings()?.appSecret;
   const ig = instagramSettings()?.appSecret;
-  return (provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN ? [fb] : [ig, fb]).filter(Boolean);
+  return (provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN ? [ig, fb] : [fb]).filter(Boolean);
 }
 
 function verify(provider, signedRequest) {
   const secrets = secretsFor(provider);
-  const configured =
-    provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN ? facebookSettings() : instagramSettings();
+  const configured = providerSettings(provider);
   if (!configured || secrets.length === 0) {
     throw new AppError(404, ERROR_CODES.META_NOT_CONFIGURED, 'Not configured');
   }
@@ -66,7 +70,24 @@ async function connectionsForCallback(provider, userId, extraFilter = {}) {
     }).distinct('connection');
     if (ids.length > 0) or.push({ _id: { $in: ids } });
   }
-  return SocialConnection.find({ provider, $or: or, ...extraFilter });
+  const found = await SocialConnection.find({ provider, $or: or, ...extraFilter });
+  // Unified Login runs through Facebook Login for Business, which reports to the Facebook
+  // callbacks. Meta does not document which id it sends for a business integration system
+  // user, so a Facebook callback also matches Unified Login connections by that system user
+  // (Meta ids are unique across object types, so this cannot hit someone else).
+  if (
+    provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN ||
+    provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN
+  ) {
+    const unified = await SocialConnection.find({
+      provider: SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,
+      metaSystemUserId: userId,
+      _id: { $nin: found.map((c) => c._id) },
+      ...extraFilter,
+    });
+    found.push(...unified);
+  }
+  return found;
 }
 
 export async function handleDeauthorize(provider, signedRequest) {

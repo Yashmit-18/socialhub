@@ -211,7 +211,7 @@ export function CommandPalette({ workspace, can, isDark, onToggleTheme, onClose 
                 >
                   {selected && (
                     <span
-                      className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-gradient-to-b from-brand-500 to-fuchsia-500"
+                      className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-brand-500"
                       aria-hidden="true"
                     />
                   )}
@@ -228,7 +228,7 @@ export function CommandPalette({ workspace, can, isDark, onToggleTheme, onClose 
                       className={cn(
                         'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors',
                         selected
-                          ? 'bg-gradient-to-br from-brand-500 to-fuchsia-500 text-white shadow-sm shadow-brand-500/30'
+                          ? 'bg-brand-600 text-white'
                           : 'bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-400',
                       )}
                       aria-hidden="true"

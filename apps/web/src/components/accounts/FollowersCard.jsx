@@ -68,14 +68,10 @@ export function FollowersCard({ followers, accounts, loading, emptyAction, class
 
   return (
     <Card className={cn('relative overflow-hidden p-5', className)}>
-      <div
-        className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 opacity-[0.12] blur-2xl"
-        aria-hidden="true"
-      />
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-sm">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-400/10 dark:text-brand-300">
               <Users className="h-[18px] w-[18px]" aria-hidden="true" />
             </span>
             <h2 className="text-sm font-medium text-muted">Combined followers</h2>

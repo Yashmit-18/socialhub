@@ -4,7 +4,6 @@ import {
   CONNECTION_STATUS,
   PERMISSIONS,
   PUBLISHING_STATUS,
-  SOCIAL_PROVIDERS,
   hasPermission,
 } from '@socialhub/shared';
 import {
@@ -60,6 +59,9 @@ import {
   PUBLISHING_TONE,
   READINESS_HINTS,
   needsReconnect,
+  anyLoginConfigured,
+  loginFlowName,
+  providerConfigKey,
 } from '../../../lib/meta.js';
 import {
   useAccountLabels,
@@ -134,10 +136,7 @@ const formatCount = (value) =>
 const plural = (count, word, many = `${word}s`) =>
   `${NUMBER.format(count)} ${count === 1 ? word : many}`;
 
-const providerKey = (provider) =>
-  provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN ? 'instagram' : 'facebook';
-
-const providerName = (provider) => `${PROVIDER_LABELS[provider] ?? 'Meta'} Login`;
+const providerName = (provider) => loginFlowName(provider);
 
 /** The login's own problems as the API reported them. */
 function loginProblems(login) {
@@ -193,8 +192,7 @@ function ScopeToggle({ value, onChange }) {
 function SyncAllControl({ integration, sync }) {
   const reasonId = useId();
   // Unknown (still loading) is not treated as "not configured": the server decides.
-  const unavailable =
-    Boolean(integration) && !integration.facebook?.configured && !integration.instagram?.configured;
+  const unavailable = Boolean(integration) && !anyLoginConfigured(integration);
   const busy = sync.pending.syncAll;
   return (
     <div className="flex flex-col items-start gap-1.5 sm:ml-auto sm:flex-row sm:items-center sm:gap-3">
@@ -219,35 +217,24 @@ function SyncAllControl({ integration, sync }) {
 
 /* --------------------------------------------------------------------------- stats */
 
-function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
+/** A figure with a quiet icon. (`accent` from the stats list is no longer drawn.) */
+function StatCard({ label, value, icon: Icon, hint, loading }) {
   return (
-    <Card interactive className="group relative h-full overflow-hidden p-5">
-      <div
-        className={cn(
-          'absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-[0.14] blur-2xl transition-[opacity,transform] duration-700 ease-out-expo group-hover:scale-125 group-hover:opacity-25',
-          accent,
-        )}
-        aria-hidden="true"
-      />
-      <div className="relative flex items-center justify-between gap-3">
+    <Card className="h-full p-5">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-muted">{label}</p>
-        <span
-          className={cn(
-            'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-lg ring-1 ring-white/20 transition-transform duration-500 ease-spring ring-inset group-hover:scale-110 group-hover:-rotate-6',
-            accent,
-          )}
-        >
-          <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-300">
+          <Icon className="h-4 w-4" aria-hidden="true" />
         </span>
       </div>
       {loading ? (
         <Skeleton className="mt-3 h-8 w-16" />
       ) : (
-        <p className="relative mt-2 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">
+        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">
           <AnimatedNumber value={value} format={formatCount} />
         </p>
       )}
-      {hint && !loading && <p className="relative mt-1 text-xs text-muted">{hint}</p>}
+      {hint && !loading && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </Card>
   );
 }
@@ -526,7 +513,7 @@ function LoginAttentionRow({ login, slug, integration, sync }) {
     login.status === CONNECTION_STATUS.ACTIVE && codes.has(ACCOUNT_ATTENTION.SYNC_FAILED);
   // Unknown (integration still loading or failed) is left to the server to decide.
   const configured = integration
-    ? Boolean(integration[providerKey(login.provider)]?.configured)
+    ? Boolean(integration[providerConfigKey(login.provider)]?.configured)
     : true;
   const syncing = sync.pending.syncConnectionId === login.id;
   const reconnecting = sync.pending.reconnectConnectionId === login.id;
@@ -799,9 +786,7 @@ function NoAccounts({ allScope, canManage, accessMode, connections, integration,
       />
     );
   }
-  const configured = integration
-    ? Boolean(integration.facebook?.configured || integration.instagram?.configured)
-    : null;
+  const configured = integration ? anyLoginConfigured(integration) : null;
   if (configured === false) {
     return (
       <EmptyState

@@ -8,6 +8,7 @@ import {
   Archive,
   ArchiveRestore,
   FolderTree,
+  ListPlus,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -30,6 +31,8 @@ import { Pagination } from '../../components/ui/Pagination.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { formatDate, timeAgo } from '../../lib/utils.js';
 import {
+  useBulkAddGroups,
+  useFacebookPages,
   useCreateCategory,
   useCreateGroup,
   useDeleteCategory,
@@ -39,6 +42,7 @@ import {
   useRenameCategory,
   useUpdateGroup,
 } from './api.js';
+import { PagePicker } from './PagePicker.jsx';
 import { ExternalAnchor } from './TasksPage.jsx';
 
 const PAGE_SIZE = 25;
@@ -89,6 +93,7 @@ export function GroupFormDialog({ group, categories, onClose }) {
     minDaysBetweenShares: group?.minDaysBetweenShares ?? '',
     notes: group?.notes ?? '',
   });
+  const [pageIds, setPageIds] = useState(() => (group?.pages ?? []).map((page) => page.id));
   const [touched, setTouched] = useState(false);
   const set = (key) => (e) => {
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -129,6 +134,7 @@ export function GroupFormDialog({ group, categories, onClose }) {
       memberCount: members,
       minDaysBetweenShares: cooldown,
       notes: form.notes.trim(),
+      pageIds,
     };
     mutation.mutate(group ? { groupId: group.id, ...body } : body, {
       onSuccess: ({ group: saved }) => {
@@ -175,6 +181,15 @@ export function GroupFormDialog({ group, categories, onClose }) {
             onChange={set('url')}
           />
         </TextField>
+        <PagePicker
+          id="group-pages"
+          value={pageIds}
+          onChange={(next) => {
+            setPageIds(next);
+            if (mutation.error) mutation.reset();
+          }}
+        />
+        {server.pageIds && <FormError message={server.pageIds} />}
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField id="group-category" label="Category">
             <select
@@ -240,6 +255,139 @@ export function GroupFormDialog({ group, categories, onClose }) {
         )}
         {mutation.error?.details?.fields?.url && <FormError message={mutation.error.message} />}
       </form>
+    </Modal>
+  );
+}
+
+/** Adds many groups at once from pasted links, one per line, named after their links. */
+export function BulkAddDialog({ categories, onClose }) {
+  const { workspace } = useWorkspace();
+  const bulk = useBulkAddGroups(workspace.id);
+  const [text, setText] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [pageIds, setPageIds] = useState([]);
+  const [result, setResult] = useState(null);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const valid = lines.filter((line) => parseFacebookGroupUrl(line));
+  const tooMany = lines.length > GROUP_LIMITS.BULK_GROUPS_MAX;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (valid.length === 0 || tooMany) return;
+    bulk.mutate(
+      { urls: lines, categoryId: categoryId || null, pageIds },
+      {
+        onSuccess: (data) => {
+          setResult(data);
+          if (data.added.length) {
+            toast.success(
+              `${data.added.length} ${data.added.length === 1 ? 'group' : 'groups'} added`,
+            );
+          }
+        },
+      },
+    );
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add many groups"
+      description="Paste Facebook Group links, one per line. Each group is named after its link; you can rename it later."
+      footer={
+        result ? (
+          <Button onClick={onClose}>Done</Button>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="bulk-group-form"
+              loading={bulk.isPending}
+              disabled={valid.length === 0 || tooMany}
+            >
+              {valid.length > 0
+                ? `Add ${valid.length} ${valid.length === 1 ? 'group' : 'groups'}`
+                : 'Add groups'}
+            </Button>
+          </>
+        )
+      }
+    >
+      {result ? (
+        <div className="space-y-3 text-sm" role="status">
+          <p>
+            <span className="font-semibold">{result.added.length}</span> added
+            {result.existing.length > 0 && (
+              <>
+                , <span className="font-semibold">{result.existing.length}</span> already in your
+                list{pageIds.length > 0 && ' (your Pages were added to them)'}
+              </>
+            )}
+            .
+          </p>
+          {result.invalid.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+              <p className="font-medium">These lines are not Facebook Group links:</p>
+              <ul className="mt-1 list-disc pl-5 text-xs break-all">
+                {result.invalid.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      ) : (
+        <form id="bulk-group-form" onSubmit={submit} noValidate className="space-y-4">
+          <TextField
+            id="bulk-links"
+            label="Group links"
+            hint={
+              lines.length === 0
+                ? `Up to ${GROUP_LIMITS.BULK_GROUPS_MAX} links.`
+                : `${valid.length} of ${lines.length} ${lines.length === 1 ? 'line is a group link' : 'lines are group links'}.`
+            }
+            error={tooMany ? `Paste at most ${GROUP_LIMITS.BULK_GROUPS_MAX} links at a time` : null}
+          >
+            <textarea
+              id="bulk-links"
+              rows={6}
+              className={inputClass}
+              placeholder={
+                'https://www.facebook.com/groups/first-group\nhttps://www.facebook.com/groups/second-group'
+              }
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (bulk.error) bulk.reset();
+              }}
+            />
+          </TextField>
+          <PagePicker id="bulk-pages" value={pageIds} onChange={setPageIds} />
+          <TextField id="bulk-category" label="Category">
+            <select
+              id="bulk-category"
+              className={inputClass}
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+            >
+              <option value="">No category</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </TextField>
+          <FormError message={bulk.error?.message} />
+        </form>
+      )}
     </Modal>
   );
 }
@@ -400,6 +548,7 @@ export default function DirectoryPage() {
     q: '',
     category: '',
     tag: '',
+    pageId: '',
     status: 'ACTIVE',
     sort: 'name',
     page: 1,
@@ -410,7 +559,9 @@ export default function DirectoryPage() {
   const updateGroup = useUpdateGroup(workspace.id);
   const deleteGroup = useDeleteGroup(workspace.id);
   const [editing, setEditing] = useState(null); // null | 'new' | group
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const { pages: facebookPages } = useFacebookPages();
   const [deleting, setDeleting] = useState(null);
   const data = groups.data;
   const facets = data?.facets;
@@ -466,6 +617,20 @@ export default function DirectoryPage() {
                 ['none', `No category${facets ? ` (${facets.categories.none ?? 0})` : ''}`],
               ]}
             />
+            {facebookPages.length > 0 && (
+              <FilterSelect
+                label="Filter by Page"
+                value={filters.pageId}
+                onChange={(pageId) => update({ pageId })}
+                options={[
+                  ['', 'All Pages'],
+                  ...facebookPages.map((page) => [
+                    page.id,
+                    `${page.name}${facets?.pages ? ` (${facets.pages[page.id] ?? 0})` : ''}`,
+                  ]),
+                ]}
+              />
+            )}
             {facets?.tags?.length > 0 && (
               <FilterSelect
                 label="Filter by tag"
@@ -488,6 +653,9 @@ export default function DirectoryPage() {
               <div className="flex flex-wrap gap-2 lg:ml-auto">
                 <Button variant="secondary" size="sm" onClick={() => setCategoriesOpen(true)}>
                   <FolderTree className="h-3.5 w-3.5" aria-hidden="true" /> Categories
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setBulkOpen(true)}>
+                  <ListPlus className="h-3.5 w-3.5" aria-hidden="true" /> Add many
                 </Button>
                 <Button size="sm" onClick={() => setEditing('new')}>
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add group
@@ -512,13 +680,13 @@ export default function DirectoryPage() {
           <EmptyState
             icon={UsersRound}
             title={
-              data.total === 0 && !filters.q && !filters.category && !filters.tag
+              data.total === 0 && !filters.q && !filters.category && !filters.tag && !filters.pageId
                 ? 'No groups yet'
                 : 'No groups match these filters'
             }
             description={
               canManage
-                ? 'Add the Facebook Groups your team shares in. You can sort them with categories and tags.'
+                ? 'Add the Facebook Groups your Pages are in. Posts to those Pages then get a sharing task for each group.'
                 : 'Owners and admins add the groups your team shares in.'
             }
             action={
@@ -539,6 +707,9 @@ export default function DirectoryPage() {
                     Group
                   </th>
                   <th scope="col" className="hidden py-2.5 pr-4 font-semibold md:table-cell">
+                    Your Pages
+                  </th>
+                  <th scope="col" className="hidden py-2.5 pr-4 font-semibold xl:table-cell">
                     Category
                   </th>
                   <th scope="col" className="hidden py-2.5 pr-4 font-semibold lg:table-cell">
@@ -579,7 +750,23 @@ export default function DirectoryPage() {
                         )}
                       </span>
                     </td>
-                    <td className="hidden py-3 pr-4 text-xs md:table-cell">
+                    <td className="hidden py-3 pr-4 md:table-cell">
+                      {group.pages?.length ? (
+                        <span className="flex flex-wrap gap-1">
+                          {group.pages.map((page) => (
+                            <span
+                              key={page.id}
+                              className="rounded-md bg-[#1877F2]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#1464d8] dark:bg-[#1877F2]/20 dark:text-[#8ab8ff]"
+                            >
+                              {page.name}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted">None</span>
+                      )}
+                    </td>
+                    <td className="hidden py-3 pr-4 text-xs xl:table-cell">
                       {group.category?.name ?? <span className="text-muted">—</span>}
                     </td>
                     <td className="hidden py-3 pr-4 lg:table-cell">
@@ -694,6 +881,7 @@ export default function DirectoryPage() {
           onClose={() => setEditing(null)}
         />
       )}
+      {bulkOpen && <BulkAddDialog categories={categoryList} onClose={() => setBulkOpen(false)} />}
       {categoriesOpen && (
         <CategoriesDialog categories={categoryList} onClose={() => setCategoriesOpen(false)} />
       )}

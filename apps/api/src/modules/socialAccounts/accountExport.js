@@ -12,6 +12,7 @@ const PLATFORM = {
 const PROVIDER = {
   [SOCIAL_PROVIDERS.FACEBOOK_LOGIN]: 'Facebook Login',
   [SOCIAL_PROVIDERS.INSTAGRAM_LOGIN]: 'Instagram Login',
+  [SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN]: 'Instagram Unified Login',
 };
 const titleCase = (value) =>
   typeof value === 'string' && value

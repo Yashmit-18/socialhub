@@ -282,7 +282,7 @@ export function MediaDropzone({
                   'relative flex h-12 w-12 items-center justify-center rounded-2xl transition-transform duration-200',
                   blocked
                     ? 'bg-slate-200 text-slate-400 dark:bg-white/5 dark:text-slate-500'
-                    : 'bg-gradient-to-br from-brand-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/25',
+                    : 'border border-slate-200 bg-white text-slate-500 shadow-card dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300',
                   active && '-rotate-3 scale-110',
                 )}
               >

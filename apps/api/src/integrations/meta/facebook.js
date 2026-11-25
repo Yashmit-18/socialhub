@@ -113,6 +113,8 @@ export async function debugToken(inputToken) {
   return {
     isValid: data.is_valid === true,
     appId: data.app_id ? String(data.app_id) : null,
+    /** Token type as Meta reports it (e.g. USER, PAGE, SYSTEM_USER), null when absent. */
+    type: typeof data.type === 'string' ? data.type : null,
     userId: data.user_id ? String(data.user_id) : null,
     expiresAt: dateFromEpoch(data.expires_at),
     dataAccessExpiresAt: dateFromEpoch(data.data_access_expires_at),

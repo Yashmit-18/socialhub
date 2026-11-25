@@ -512,6 +512,69 @@ describe('Instagram adapter (simulated Meta)', () => {
     expect(meta.calls[0].query.appsecret_proof).toBeUndefined();
   });
 
+  it('uses graph.facebook.com with appsecret_proof for accounts connected with Unified Login', async () => {
+    await SocialConnection.updateMany({}, { $set: { provider: 'INSTAGRAM_UNIFIED_LOGIN' } });
+    setMetaSettingsForTests({
+      instagramUnified: {
+        appId: process.env.META_APP_ID,
+        appSecret: process.env.META_APP_SECRET,
+        configId: '3333333333',
+        redirectUri: 'http://localhost:4000/api/v1/oauth/instagram-unified/callback',
+      },
+    });
+    meta.routes['GET /*'] = (call) =>
+      call.query.fields === 'permalink'
+        ? { permalink: 'https://www.instagram.com/p/unified/' }
+        : { status_code: 'FINISHED' };
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'image' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['published']);
+    expect(meta.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'GET /fb-user-1-ig-0/content_publishing_limit',
+      'POST /fb-user-1-ig-0/media',
+      'GET /101',
+      'POST /fb-user-1-ig-0/media_publish',
+      'GET /102',
+    ]);
+    expect(meta.calls.every((c) => c.host === 'graph.facebook.com')).toBe(true);
+    expect(meta.calls.every((c) => c.query.appsecret_proof)).toBe(true);
+    expect(meta.posts('/media')[0].form.image_url).toMatch(/^https:\/\/cdn\.example\.test\//);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination).toMatchObject({
+      state: 'PUBLISHED',
+      externalPostId: '102',
+      externalUrl: 'https://www.instagram.com/p/unified/',
+    });
+  });
+
+  it('refuses an expired Unified Login token without calling Meta', async () => {
+    await SocialConnection.updateMany(
+      {},
+      {
+        $set: {
+          provider: 'INSTAGRAM_UNIFIED_LOGIN',
+          tokenExpiresAt: new Date(Date.now() - 60_000),
+        },
+      },
+    );
+    setMetaSettingsForTests({
+      instagramUnified: {
+        appId: process.env.META_APP_ID,
+        appSecret: process.env.META_APP_SECRET,
+        configId: '3333333333',
+        redirectUri: 'http://localhost:4000/api/v1/oauth/instagram-unified/callback',
+      },
+    });
+    const draft = await createDraft(team.owner.token, ws, { accounts: instagram, media: 'image' });
+    usePublicStorage();
+    const res = await publish(team.owner.token, ws, { contentPackageId: draft.id });
+    expect(await queue.deliver()).toEqual(['failed']);
+    const [destination] = await stored(res.body.publishJob.id);
+    expect(destination.error.code).toBe('ACCOUNT_NEEDS_RECONNECT');
+    expect(meta.calls).toHaveLength(0);
+  });
+
   it('resumes with the saved container on a retry instead of creating another one', async () => {
     let ready = false;
     meta.routes['GET /*'] = () => ({ status_code: ready ? 'FINISHED' : 'IN_PROGRESS' });

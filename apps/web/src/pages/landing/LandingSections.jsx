@@ -152,7 +152,7 @@ export function StatsBand() {
       <div className={CONTAINER}>
         <Reveal
           variant="blur"
-          className="lp-card relative grid grid-cols-2 divide-(--lp-border) overflow-hidden lg:grid-cols-4 lg:divide-x"
+          className="lp-card lp-ink-card lp-on-ink relative grid grid-cols-2 divide-(--lp-border) overflow-hidden lg:grid-cols-4 lg:divide-x"
         >
           <span
             aria-hidden="true"
@@ -208,7 +208,7 @@ export function HowItWorksSection() {
     <section
       id="how-it-works"
       aria-labelledby="how-title"
-      className="relative scroll-mt-24 py-24 sm:py-32"
+      className="lp-band relative scroll-mt-24 py-24 sm:py-32"
     >
       <div aria-hidden="true" className="lp-section-glow top-20" />
       <div className={cn(CONTAINER, 'relative')}>
@@ -428,7 +428,7 @@ export function ComposerSection() {
     <section
       id="composer"
       aria-labelledby="composer-title"
-      className="relative scroll-mt-24 py-24 sm:py-32"
+      className="lp-band relative scroll-mt-24 py-24 sm:py-32"
     >
       <div aria-hidden="true" className="lp-section-glow top-32" />
       <div
@@ -603,7 +603,7 @@ export function SecuritySection() {
     <section
       id="security"
       aria-labelledby="security-title"
-      className="relative scroll-mt-24 py-24 sm:py-32"
+      className="lp-band relative scroll-mt-24 py-24 sm:py-32"
     >
       <div aria-hidden="true" className="lp-section-glow top-24" />
       <div className={cn(CONTAINER, 'relative')}>
@@ -760,7 +760,7 @@ export function RoadmapSection() {
     <section
       id="roadmap"
       aria-labelledby="roadmap-title"
-      className="relative scroll-mt-24 py-24 sm:py-32"
+      className="lp-band relative scroll-mt-24 py-24 sm:py-32"
     >
       <div className={CONTAINER}>
         <SectionHeading

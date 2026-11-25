@@ -8,35 +8,32 @@ import { cn } from '../../lib/utils.js';
 
 /**
  * Facebook Group sharing (Phase 6): header, the manual-workflow notice and the section tabs
- * (sharing tasks, shares, group directory).
+ * (sharing tasks "Tasks", shares "By post", the group directory "Groups").
  */
 export default function GroupsLayout() {
   const { workspace } = useWorkspace();
   const base = `/w/${workspace.slug}/groups`;
   const tabs = [
-    { to: base, label: 'Sharing tasks', end: true },
-    { to: `${base}/shares`, label: 'Shares' },
-    { to: `${base}/directory`, label: 'Group directory' },
+    { to: base, label: 'Tasks', end: true },
+    { to: `${base}/shares`, label: 'By post' },
+    { to: `${base}/directory`, label: 'Groups' },
   ];
   return (
     <>
       <PageHeader
         title="Group sharing"
-        description="Share posts in Facebook Groups by hand, with a directory of your groups, one task per group and a record of what was posted where."
+        description="Your posts, ready to share in the Facebook Groups your Pages are in."
       />
-      <p className="-mt-4 mb-6 flex items-start gap-2.5 rounded-2xl border border-sky-200/80 bg-sky-50/70 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/[0.07] dark:text-sky-200">
-        <Info
-          className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300"
-          aria-hidden="true"
-        />
+      <p className="-mt-4 mb-6 flex items-start gap-2.5 text-sm text-muted">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <span>
-          SocialHub never posts to, joins or reads Facebook Groups. Each task gives you the text,
-          the link and the group: you post it yourself on Facebook, then mark the task as shared.
+          Facebook doesn’t let apps post in groups, so you share each one yourself: copy the text,
+          open the group, post it, then mark it as shared.
         </span>
       </p>
       <nav
         aria-label="Group sharing sections"
-        className="mb-6 overflow-x-auto border-b border-slate-200/80 dark:border-white/10"
+        className="mb-6 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-white/10"
       >
         <ul className="flex min-w-max gap-1">
           {tabs.map((tab) => (

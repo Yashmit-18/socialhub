@@ -4,11 +4,10 @@ import {
   ANALYTICS_SYNC_STATUS,
   CONNECTION_STATUS,
   DESTINATION_STATES,
-  SOCIAL_PROVIDERS,
   sourceForMode,
 } from '@socialhub/shared';
 import { logger } from '../../config/logger.js';
-import { facebookSettings, instagramSettings } from '../../integrations/meta/settings.js';
+import { facebookSettings, providerSettings } from '../../integrations/meta/settings.js';
 import { randomToken } from '../../lib/crypto.js';
 import { AccountInsight } from '../../models/AccountInsight.js';
 import { AnalyticsSyncRun } from '../../models/AnalyticsSyncRun.js';
@@ -98,10 +97,9 @@ async function syncOnce(run) {
   // The token is read here, at the last moment, only for Meta, and only in this process.
   let accessToken = null;
   if (!adapter.simulated) {
-    const configured =
-      connection?.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN
-        ? instagramSettings()
-        : facebookSettings();
+    const configured = connection?.provider
+      ? providerSettings(connection.provider)
+      : facebookSettings();
     if (!configured) {
       throw new AnalyticsError(
         E.LIVE_ANALYTICS_DISABLED,

@@ -22,16 +22,23 @@ import { config } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { randomToken, safeEqual, sha256 } from '../../lib/crypto.js';
 import { AppError, notFound, validationError } from '../../lib/errors.js';
-import { instagramSettings, metaSettings } from '../../integrations/meta/settings.js';
+import {
+  PROVIDER_NAMES,
+  instagramSettings,
+  metaSettings,
+} from '../../integrations/meta/settings.js';
 import * as facebook from '../../integrations/meta/facebook.js';
 import { MetaApiError } from '../../integrations/meta/http.js';
 import * as instagram from '../../integrations/meta/instagram.js';
+import * as instagramUnified from '../../integrations/meta/instagramUnified.js';
 import { Membership, OAuthState, SocialConnection, User, Workspace } from '../../models/index.js';
 import {
   IdentityMismatchError,
   NotEligibleError,
   authorizeFacebookIdentity,
   authorizeInstagramIdentity,
+  authorizeInstagramUnifiedIdentity,
+  providerConfigured,
   saveAuthorizedConnection,
 } from './metaConnection.service.js';
 
@@ -87,14 +94,11 @@ export function explainOAuthAttempt(attempt, now = new Date()) {
 export const PROVIDER_SLUGS = Object.freeze({
   facebook: SOCIAL_PROVIDERS.FACEBOOK_LOGIN,
   instagram: SOCIAL_PROVIDERS.INSTAGRAM_LOGIN,
+  'instagram-unified': SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,
 });
 const SLUG_BY_PROVIDER = Object.fromEntries(Object.entries(PROVIDER_SLUGS).map(([k, v]) => [v, k]));
 
-export function isProviderConfigured(provider) {
-  return provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN
-    ? facebook.isFacebookConfigured()
-    : instagram.isInstagramConfigured();
-}
+export const isProviderConfigured = providerConfigured;
 
 /** The live configuration, with the Meta settings as currently in effect. */
 const currentConfig = () => ({ ...config, meta: metaSettings() });
@@ -108,13 +112,34 @@ const hostOf = (url) => {
 };
 
 /**
+ * Environment variables still needed for a flow (names only, never values). Empty when the
+ * flow is configured.
+ */
+export function missingSettings(cfg = currentConfig()) {
+  const meta = cfg.meta;
+  return {
+    facebook: meta.facebook ? [] : ['META_APP_ID', 'META_APP_SECRET'],
+    instagram: meta.instagram ? [] : ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'],
+    instagramUnified: meta.instagramUnified
+      ? []
+      : [
+          ...(meta.facebook ? [] : ['META_APP_ID', 'META_APP_SECRET']),
+          ...(meta.instagramUnifiedConfigId ? [] : ['META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID']),
+        ],
+  };
+}
+
+/**
  * Pure configuration review for the admin "Meta configuration" panel. Each check is
- * `{ id, level: 'error' | 'warning' | 'info', provider: 'facebook' | 'instagram' | null, message }`.
+ * `{ id, level: 'error' | 'warning' | 'info', provider: 'facebook' | 'instagram' |
+ * 'instagramUnified' | null, message }`.
  * `error` means connecting will fail; `warning` means something Meta or publishing will need.
  */
 export function metaConfigChecks(cfg = currentConfig()) {
   const fb = cfg.meta.facebook;
   const ig = cfg.meta.instagram;
+  const unified = cfg.meta.instagramUnified;
+  const missing = missingSettings(cfg);
   const checks = [];
   const add = (id, level, provider, message) => checks.push({ id, level, provider, message });
 
@@ -125,17 +150,27 @@ export function metaConfigChecks(cfg = currentConfig()) {
       'facebook',
       'Facebook Login is disabled. Set META_APP_ID and META_APP_SECRET to enable it.',
     );
-  if (!ig)
+  if (!unified)
+    add(
+      'INSTAGRAM_UNIFIED_NOT_CONFIGURED',
+      'info',
+      'instagramUnified',
+      `Instagram (Unified Login) is disabled. Set ${missing.instagramUnified.join(', ')} to enable it. META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID is the Configuration ID of the Unified Login configuration in the App Dashboard, not an app ID.`,
+    );
+  // The older Instagram Login flow is optional once Unified Login is set up.
+  if (!ig && !unified)
     add(
       'INSTAGRAM_NOT_CONFIGURED',
       'info',
       'instagram',
       'Instagram Login is disabled. Set INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET to enable it.',
     );
-  if (!fb && !ig) return checks;
+  if (!fb && !ig && !unified) return checks;
 
-  const providers = [fb && 'facebook', ig && 'instagram'].filter(Boolean);
-  const scope = providers.length === 2 ? null : providers[0];
+  const providers = [fb && 'facebook', ig && 'instagram', unified && 'instagramUnified'].filter(
+    Boolean,
+  );
+  const scope = providers.length === 1 ? providers[0] : null;
 
   if (new URL(cfg.publicApiUrl).protocol !== 'https:') {
     add(
@@ -184,10 +219,13 @@ export function metaConfigChecks(cfg = currentConfig()) {
           'facebook',
           `META_FACEBOOK_SCOPES must include ${required.join(', ')}.`,
         );
+      // The Instagram permissions only matter here while Facebook Login is the route to
+      // Instagram; with Unified Login (or Instagram Login) a Facebook-only login is complete.
+      const instagramViaFacebook = !unified && !ig;
       const publishing = missing([
         ...new Set([
           ...META_PERMISSIONS.FACEBOOK.PAGE_PUBLISHING,
-          ...META_PERMISSIONS.FACEBOOK.INSTAGRAM_PUBLISHING,
+          ...(instagramViaFacebook ? META_PERMISSIONS.FACEBOOK.INSTAGRAM_PUBLISHING : []),
         ]),
       ]);
       if (publishing.length)
@@ -217,6 +255,20 @@ export function metaConfigChecks(cfg = currentConfig()) {
         `Not requested (needed for publishing later): ${publishing.join(', ')}.`,
       );
   }
+  if (unified) {
+    add(
+      'INSTAGRAM_UNIFIED_REDIRECT_URL',
+      'info',
+      'instagramUnified',
+      `The Redirect URL saved in the Unified Login configuration ${unified.configId} must be exactly ${unified.redirectUri}. Meta refuses the login when it differs (it changes with API_PUBLIC_URL).`,
+    );
+    add(
+      'INSTAGRAM_UNIFIED_PERMISSIONS',
+      'info',
+      'instagramUnified',
+      `Unified Login takes its permissions from the configuration in the App Dashboard, not from SocialHub. SocialHub uses ${META_PERMISSIONS.INSTAGRAM_UNIFIED.PUBLISHING.join(' and ')}; it does not use the others.`,
+    );
+  }
   return checks;
 }
 
@@ -224,17 +276,37 @@ export function metaConfigChecks(cfg = currentConfig()) {
 export function metaIntegrationStatus(cfg = currentConfig()) {
   const fb = cfg.meta.facebook;
   const ig = cfg.meta.instagram;
+  const unified = cfg.meta.instagramUnified;
   const base = `${cfg.publicApiUrl}/api/v1/meta`;
   const checks = metaConfigChecks(cfg);
+  const missing = missingSettings(cfg);
   const blocked = (provider) =>
     checks.some((c) => c.level === 'error' && (c.provider === provider || c.provider === null));
   return {
     graphApiVersion: cfg.meta.graphVersion,
     publicApiUrl: cfg.publicApiUrl,
     appUrl: cfg.appUrl,
+    /**
+     * Instagram API with Unified Login (the recommended Instagram setup). `configured` only
+     * means the settings are present: Meta checks the configuration id and its saved redirect
+     * URL when someone signs in, so a first real connection is the actual verification.
+     */
+    instagramUnified: {
+      configured: Boolean(unified),
+      ready: Boolean(unified) && !blocked('instagramUnified'),
+      missing: missing.instagramUnified,
+      configId: unified?.configId ?? cfg.meta.instagramUnifiedConfigId ?? null,
+      permissionsFromConfiguration: true,
+      usedPermissions: [...META_PERMISSIONS.INSTAGRAM_UNIFIED.PUBLISHING],
+      redirectUri: `${cfg.publicApiUrl}/api/v1/oauth/instagram-unified/callback`,
+      // Facebook Login for Business uses the Facebook Login callbacks of the app.
+      deauthorizeCallbackUrl: `${base}/facebook/deauthorize`,
+      dataDeletionCallbackUrl: `${base}/facebook/data-deletion`,
+    },
     facebook: {
       configured: Boolean(fb),
       ready: Boolean(fb) && !blocked('facebook'),
+      missing: missing.facebook,
       scopes: fb?.loginConfigId ? null : (fb?.scopes ?? null),
       usesLoginConfiguration: Boolean(fb?.loginConfigId),
       redirectUri: `${cfg.publicApiUrl}/api/v1/oauth/facebook/callback`,
@@ -244,6 +316,7 @@ export function metaIntegrationStatus(cfg = currentConfig()) {
     instagram: {
       configured: Boolean(ig),
       ready: Boolean(ig) && !blocked('instagram'),
+      missing: missing.instagram,
       scopes: ig?.scopes ?? null,
       redirectUri: `${cfg.publicApiUrl}/api/v1/oauth/instagram/callback`,
       deauthorizeCallbackUrl: `${base}/instagram/deauthorize`,
@@ -270,10 +343,15 @@ export function bindingCookieOptions() {
 
 export async function startAuthorization({ workspace, user, provider, connectionId }) {
   if (!isProviderConfigured(provider)) {
+    const missing =
+      provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN
+        ? missingSettings().instagramUnified
+        : undefined;
     throw new AppError(
       409,
       ERROR_CODES.META_NOT_CONFIGURED,
-      `${provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN ? 'Facebook' : 'Instagram'} Login is not configured on this server.`,
+      `${PROVIDER_NAMES[provider] ?? 'This login'} is not configured on this server.${missing?.length ? ` Missing: ${missing.join(', ')}.` : ''}`,
+      missing ? { missing } : undefined,
     );
   }
 
@@ -305,17 +383,22 @@ export async function startAuthorization({ workspace, user, provider, connection
     expiresAt,
   });
 
-  const authorizationUrl =
-    provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN
-      ? facebook.facebookAuthorizationUrl({
-          state,
-          rerequest:
-            purpose === OAUTH_PURPOSES.RECONNECT || (connection?.declinedScopes?.length ?? 0) > 0,
-        })
-      : instagram.instagramAuthorizationUrl({
-          state,
-          forceReauth: purpose === OAUTH_PURPOSES.RECONNECT,
-        });
+  let authorizationUrl;
+  if (provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN) {
+    authorizationUrl = facebook.facebookAuthorizationUrl({
+      state,
+      rerequest:
+        purpose === OAUTH_PURPOSES.RECONNECT || (connection?.declinedScopes?.length ?? 0) > 0,
+    });
+  } else if (provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN) {
+    // The configuration decides permissions and assets; the dialog always asks to sign in.
+    authorizationUrl = instagramUnified.instagramUnifiedAuthorizationUrl({ state });
+  } else {
+    authorizationUrl = instagram.instagramAuthorizationUrl({
+      state,
+      forceReauth: purpose === OAUTH_PURPOSES.RECONNECT,
+    });
+  }
 
   logger.info(
     {
@@ -499,20 +582,29 @@ export async function completeAuthorization({ provider, query, cookies, context 
 
   let identity;
   try {
-    identity =
-      provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN
-        ? await authorizeFacebookIdentity(code)
-        : await authorizeInstagramIdentity(code, instagramSettings().scopes);
+    if (provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN) {
+      identity = await authorizeFacebookIdentity(code);
+    } else if (provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN) {
+      identity = await authorizeInstagramUnifiedIdentity(code);
+    } else {
+      identity = await authorizeInstagramIdentity(code, instagramSettings().scopes);
+    }
   } catch (err) {
     if (err instanceof NotEligibleError) {
-      return fail(META_OAUTH_RESULTS.NOT_ELIGIBLE, 'token_exchange');
+      return fail(err.result ?? META_OAUTH_RESULTS.NOT_ELIGIBLE, 'token_exchange');
     }
     if (err instanceof MetaApiError) {
       logger.warn(
-        { meta: err.toLog(), provider, oauth: { attempt } },
+        { meta: err.toLog(), provider, oauth: { attempt, stage: err.stage } },
         'Meta token exchange failed',
       );
-      return fail(META_OAUTH_RESULTS.TOKEN_EXCHANGE_FAILED, 'token_exchange');
+      // The token was issued but its accounts could not be listed: say so, nothing is saved.
+      return fail(
+        err.stage === 'accounts'
+          ? META_OAUTH_RESULTS.ACCOUNT_DISCOVERY_FAILED
+          : META_OAUTH_RESULTS.TOKEN_EXCHANGE_FAILED,
+        'token_exchange',
+      );
     }
     await report('UNEXPECTED_ERROR', 'internal');
     throw err;

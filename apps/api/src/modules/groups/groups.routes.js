@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   PERMISSIONS,
+  autoGroupShareSchema,
+  facebookGroupBulkCreateSchema,
   facebookGroupCreateSchema,
   facebookGroupQuerySchema,
   facebookGroupUpdateSchema,
@@ -25,12 +27,13 @@ const params = (name) => z.object({ [name]: objectIdSchema });
  * Facebook Group distribution (Phase 6), mounted on the workspace router (membership is
  * already enforced). Everyone with content:read sees the directory, shares and tasks;
  * groups:manage maintains the directory and creates shares; sharing_tasks:complete works on
- * tasks. Nothing here contacts Facebook.
+ * tasks; content:publish turns a real post into an auto share. Nothing here contacts Facebook.
  */
 export function mountGroupRoutes(scoped) {
   const read = requirePermission(PERMISSIONS.CONTENT_READ);
   const manage = requirePermission(PERMISSIONS.GROUPS_MANAGE);
   const complete = requirePermission(PERMISSIONS.SHARING_TASKS_COMPLETE);
+  const publish = requirePermission(PERMISSIONS.CONTENT_PUBLISH);
 
   /* ------------------------------------------------------------- categories */
 
@@ -84,6 +87,21 @@ export function mountGroupRoutes(scoped) {
         .json(
           await directory.createGroup(req.workspace, req.user, req.valid.body, clientContext(req)),
         );
+    },
+  );
+  scoped.post(
+    '/facebook-groups/bulk',
+    manage,
+    validate({ body: facebookGroupBulkCreateSchema }),
+    async (req, res) => {
+      res.json(
+        await directory.bulkCreateGroups(
+          req.workspace,
+          req.user,
+          req.valid.body,
+          clientContext(req),
+        ),
+      );
     },
   );
   scoped.get(
@@ -146,6 +164,22 @@ export function mountGroupRoutes(scoped) {
         .json(
           await sharing.createShare(req.workspace, req.user, req.valid.body, clientContext(req)),
         );
+    },
+  );
+  // The person who published a real post asks for its group tasks (see sharing.service.js).
+  scoped.post(
+    '/group-shares/auto',
+    publish,
+    validate({ body: autoGroupShareSchema }),
+    async (req, res) => {
+      const result = await sharing.createAutoShare(
+        req.workspace,
+        req.membership,
+        req.user,
+        req.valid.body,
+        clientContext(req),
+      );
+      res.status(result.created ? 201 : 200).json(result);
     },
   );
   scoped.get(

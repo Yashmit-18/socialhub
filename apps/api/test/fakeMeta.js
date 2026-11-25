@@ -14,6 +14,17 @@ export const IG_APP_ID = process.env.INSTAGRAM_APP_ID;
 export const IG_APP_SECRET = process.env.INSTAGRAM_APP_SECRET;
 export const FB_REDIRECT_URI = `${process.env.API_PUBLIC_URL}/api/v1/oauth/facebook/callback`;
 export const IG_REDIRECT_URI = `${process.env.API_PUBLIC_URL}/api/v1/oauth/instagram/callback`;
+/** Instagram API with Unified Login runs under the Meta app id/secret with a configuration. */
+export const UNIFIED_CONFIG_ID = '3333333333';
+export const UNIFIED_REDIRECT_URI = `${process.env.API_PUBLIC_URL}/api/v1/oauth/instagram-unified/callback`;
+/** Settings to pass to setMetaSettingsForTests({ instagramUnified }) to switch the flow on. */
+export const UNIFIED_SETTINGS = Object.freeze({
+  appId: process.env.META_APP_ID,
+  appSecret: process.env.META_APP_SECRET,
+  configId: UNIFIED_CONFIG_ID,
+  redirectUri: UNIFIED_REDIRECT_URI,
+});
+export const ALL_UNIFIED_SCOPES = ['instagram_basic', 'instagram_content_publish'];
 
 export const ALL_FB_SCOPES = [
   'pages_show_list',
@@ -49,6 +60,10 @@ export class FakeMeta {
     this.fbUsers = new Map();
     this.pages = new Map();
     this.igUsers = new Map();
+    /** Unified Login: client business portfolios, keyed by client_business_id. */
+    this.businesses = new Map();
+    /** Forced failures: "METHOD /route" -> () => Response (route without the version). */
+    this.failures = new Map();
     this.codes = new Map();
     this.tokens = new Map();
     this.calls = [];
@@ -152,6 +167,39 @@ export class FakeMeta {
     return user;
   }
 
+  /**
+   * A client business portfolio that onboards through Instagram Unified Login. Each
+   * authorization issues a Business Integration System User token for `systemUserId` that
+   * reaches the `instagramAccounts` the client assigned. `tokenTtlMs` null = never expires.
+   */
+  addBusiness({
+    id,
+    systemUserId = `su_${id}`,
+    name = 'SocialHub system user',
+    instagramAccounts = [],
+    granted = ALL_UNIFIED_SCOPES,
+    tokenTtlMs = null,
+  }) {
+    const business = {
+      id,
+      systemUserId,
+      name,
+      instagramAccounts: instagramAccounts.map((a) => ({ ...a })),
+      granted: [...granted],
+      tokenTtlMs,
+      state: 'valid',
+      rejectsProfileFields: false,
+    };
+    this.businesses.set(id, business);
+    return business;
+  }
+
+  authorizeUnified(businessId) {
+    const code = `uncode_${rand()}`;
+    this.codes.set(code, { provider: 'unified', userId: businessId });
+    return code;
+  }
+
   /** Simulates the person completing the consent dialog: returns the code Meta would send. */
   authorizeFacebook(userId) {
     const code = `fbcode_${rand()}`;
@@ -167,7 +215,8 @@ export class FakeMeta {
 
   /** 'expired' -> OAuth error 190/463, 'revoked' -> 190/458 (app removed / grant revoked). */
   setTokenState(userId, state) {
-    const user = this.fbUsers.get(userId) ?? this.igUsers.get(userId);
+    const user =
+      this.fbUsers.get(userId) ?? this.igUsers.get(userId) ?? this.businesses.get(userId);
     user.state = state;
   }
 
@@ -194,6 +243,8 @@ export class FakeMeta {
     if (init.body) Object.assign(params, Object.fromEntries(new URLSearchParams(init.body)));
     this.calls.push({ method, host: url.host, path: url.pathname, params });
 
+    const failure = this.failures.get(`${method} ${url.pathname.replace(/^\/v\d+\.\d+/, '')}`);
+    if (failure) return failure();
     if (url.host === 'graph.facebook.com') return this.facebookGraph(method, url.pathname, params);
     if (url.host === 'api.instagram.com' && url.pathname === '/oauth/access_token') {
       return this.instagramCodeExchange(method, params);
@@ -253,17 +304,29 @@ export class FakeMeta {
           expires_in: 5_184_000,
         });
       }
-      if (params.redirect_uri !== FB_REDIRECT_URI) {
+      const grant = this.codes.get(params.code);
+      // Each login dialog had its own redirect URI; the exchange must repeat it exactly.
+      const expectedRedirect =
+        grant?.provider === 'unified' ? UNIFIED_REDIRECT_URI : FB_REDIRECT_URI;
+      if (params.redirect_uri !== expectedRedirect) {
         return graphError(
           400,
           100,
           'Error validating verification code. Please make sure your redirect_uri is identical to the one you used in the OAuth dialog request',
         );
       }
-      const grant = this.codes.get(params.code);
-      if (!grant || grant.provider !== 'facebook')
+      if (!grant || !['facebook', 'unified'].includes(grant.provider))
         return graphError(400, 100, 'Invalid verification code format.');
       this.codes.delete(params.code); // single use
+      if (grant.provider === 'unified') {
+        const business = this.businesses.get(grant.userId);
+        // A Business Integration System User token; its expiry comes from the configuration.
+        return json(200, {
+          access_token: this.issue('bisu', business.id, business.tokenTtlMs),
+          token_type: 'bearer',
+          ...(business.tokenTtlMs ? { expires_in: Math.floor(business.tokenTtlMs / 1000) } : {}),
+        });
+      }
       return json(200, {
         access_token: this.issue('fb_short', grant.userId, 2 * 3_600_000),
         token_type: 'bearer',
@@ -275,6 +338,7 @@ export class FakeMeta {
       if (params.access_token !== `${FB_APP_ID}|${FB_APP_SECRET}`)
         return graphError(400, 190, 'Invalid app access token');
       const record = this.tokens.get(params.input_token);
+      if (record?.type === 'bisu') return this.debugSystemUserToken(record);
       const user = record && this.fbUsers.get(record.userId);
       if (!user)
         return json(200, {
@@ -312,6 +376,9 @@ export class FakeMeta {
 
     if (String(params.access_token ?? '').startsWith('pagetoken_') && method === 'GET') {
       return this.pageTokenGraph(route, params);
+    }
+    if (this.tokens.get(params.access_token)?.type === 'bisu') {
+      return this.systemUserGraph(method, route, params);
     }
 
     const [user, error] = this.fbUserFromToken(params);
@@ -418,6 +485,108 @@ export class FakeMeta {
       );
     }
     return this.followersResponse(nodeId);
+  }
+
+  /** debug_token for a Business Integration System User token. */
+  debugSystemUserToken(record) {
+    const business = this.businesses.get(record.userId);
+    const base = {
+      app_id: FB_APP_ID,
+      type: 'SYSTEM_USER',
+      user_id: business.systemUserId,
+      scopes: business.granted,
+      expires_at: record.expiresAt ? Math.floor(record.expiresAt / 1000) : 0,
+      data_access_expires_at: 0,
+    };
+    const expired =
+      (record.expiresAt && record.expiresAt <= Date.now()) || business.state === 'expired';
+    if (expired) {
+      return json(200, {
+        data: {
+          ...base,
+          is_valid: false,
+          expires_at: Math.floor((record.expiresAt ?? Date.now() - DAY) / 1000),
+          error: { code: 190, subcode: 463, message: 'Session has expired' },
+        },
+      });
+    }
+    if (business.state === 'revoked') {
+      return json(200, {
+        data: {
+          ...base,
+          is_valid: false,
+          error: {
+            code: 190,
+            subcode: 458,
+            message: 'The client removed the app from its business portfolio',
+          },
+        },
+      });
+    }
+    return json(200, { data: { ...base, is_valid: true } });
+  }
+
+  /**
+   * Graph calls made with a system-user token (Unified Login): /me, the assigned Instagram
+   * accounts edge and IG User follower reads. Enforces appsecret_proof, token validity and
+   * instagram_basic like the real API.
+   */
+  systemUserGraph(method, route, params) {
+    const record = this.tokens.get(params.access_token);
+    const business = this.businesses.get(record.userId);
+    const proof = createHmac('sha256', FB_APP_SECRET).update(params.access_token).digest('hex');
+    if (params.appsecret_proof !== proof) {
+      return graphError(400, 100, 'Invalid appsecret_proof provided in the API argument');
+    }
+    const expired = record.expiresAt && record.expiresAt <= Date.now();
+    if (expired || business.state === 'expired')
+      return graphError(400, 190, 'Error validating access token: Session has expired', 463);
+    if (business.state === 'revoked')
+      return graphError(400, 190, 'Error validating access token: app removed', 458);
+    if (method !== 'GET') return graphError(400, 100, `Fake Meta: ${method} ${route} unsupported`);
+
+    if (route === '/me') {
+      return json(200, {
+        id: business.systemUserId,
+        name: business.name,
+        client_business_id: business.id,
+      });
+    }
+    if (route === '/me/assigned_instagram_accounts') {
+      if (!business.granted.includes('instagram_basic')) {
+        return graphError(403, 10, '(#10) This endpoint requires the instagram_basic permission');
+      }
+      const fields = String(params.fields ?? '').split(',');
+      if (business.rejectsProfileFields && fields.some((f) => !['id', 'username'].includes(f))) {
+        return graphError(400, 100, '(#100) Tried accessing nonexisting field (name)');
+      }
+      const all = business.instagramAccounts.map((a) => {
+        const row = { id: a.id, username: a.username };
+        if (fields.includes('name') && a.name) row.name = a.name;
+        if (fields.includes('profile_picture_url'))
+          row.profile_picture_url = `https://example.cdninstagram.com/${a.id}.jpg`;
+        return row;
+      });
+      const limit = Math.min(Number(params.limit ?? 25), this.pageSize);
+      const start = params.after ? Number(Buffer.from(params.after, 'base64url').toString()) : 0;
+      const slice = all.slice(start, start + limit);
+      const nextIndex = start + slice.length;
+      const paging = {
+        cursors: { before: 'b', after: Buffer.from(String(nextIndex)).toString('base64url') },
+      };
+      if (nextIndex < all.length)
+        paging.next = 'https://graph.facebook.com/v27.0/me/assigned_instagram_accounts?after=...';
+      return json(200, { data: slice, paging });
+    }
+    const nodeId = route.slice(1);
+    if (business.instagramAccounts.some((a) => a.id === nodeId)) {
+      if (params.fields !== 'followers_count')
+        return graphError(400, 100, `Fake Meta: unsupported fields ${params.fields}`);
+      if (!business.granted.includes('instagram_basic'))
+        return graphError(403, 10, '(#10) This endpoint requires the instagram_basic permission');
+      return this.followersResponse(nodeId);
+    }
+    return graphError(404, 803, `Fake Meta: unknown system-user route ${method} ${route}`);
   }
 
   instagramCodeExchange(method, params) {

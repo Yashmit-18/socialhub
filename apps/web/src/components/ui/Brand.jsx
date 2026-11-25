@@ -31,7 +31,7 @@ export function LogoMark({ className }) {
 export function Logo({ className, light = false }) {
   return (
     <span className={cn('group/logo inline-flex items-center gap-2.5', className)}>
-      <LogoMark className="drop-shadow-[0_6px_14px_rgb(139_92_246/0.35)] transition-transform duration-500 ease-spring group-hover/logo:-rotate-6 group-hover/logo:scale-105" />
+      <LogoMark className="h-7 w-7" />
       <span
         className={cn(
           'text-[17px] font-semibold tracking-tight',
@@ -39,7 +39,7 @@ export function Logo({ className, light = false }) {
         )}
       >
         Social
-        <span className={light ? 'text-white/80' : 'text-brand-600 dark:text-brand-400'}>Hub</span>
+        <span className={light ? 'text-brand-300' : 'text-brand-600 dark:text-brand-400'}>Hub</span>
       </span>
     </span>
   );

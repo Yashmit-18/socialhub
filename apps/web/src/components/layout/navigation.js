@@ -12,14 +12,16 @@ import {
 } from 'lucide-react';
 
 /**
- * The workspace's pages, grouped as the sidebar shows them. Pages a role cannot use are left
- * out. `hint` is the short description the command palette shows and searches.
+ * The workspace's pages, grouped as the sidebar shows them: the everyday pages first, then
+ * the workspace's own settings. Pages a role cannot use are left out. `hint` is the short
+ * description the command palette shows and searches; `badge` names a live count the sidebar
+ * shows next to the page.
  */
 export function navSections(slug, can) {
   const base = `/w/${slug}`;
   return [
     {
-      id: 'home',
+      id: 'main',
       label: null,
       items: [
         {
@@ -27,38 +29,27 @@ export function navSections(slug, can) {
           label: 'Overview',
           icon: LayoutDashboard,
           end: true,
-          hint: 'Team, accounts and followers at a glance',
+          hint: 'Your workspace at a glance',
         },
-      ],
-    },
-    {
-      id: 'content',
-      label: 'Content',
-      items: [
         can(PERMISSIONS.CONTENT_CREATE) && {
           to: `${base}/compose`,
           label: 'Create post',
           icon: SquarePen,
-          hint: 'Write once, preview for Facebook and Instagram',
+          hint: 'Write once, preview for Facebook and Instagram, publish',
         },
         can(PERMISSIONS.CONTENT_READ) && {
           to: `${base}/publishing`,
-          label: 'Publishing',
+          label: 'Posts',
           icon: Send,
-          hint: 'Queue, schedule and history of posts',
+          hint: 'Published, scheduled and failed posts',
         },
         can(PERMISSIONS.CONTENT_READ) && {
           to: `${base}/groups`,
           label: 'Group sharing',
           icon: Megaphone,
-          hint: 'Facebook Group directory and sharing tasks',
+          badge: 'groupTasks',
+          hint: 'Share your posts in the Facebook Groups your Pages are in',
         },
-      ].filter(Boolean),
-    },
-    {
-      id: 'audience',
-      label: 'Audience',
-      items: [
         {
           to: `${base}/accounts`,
           label: 'Social accounts',

@@ -46,7 +46,7 @@ import { useAccountQueryState } from '../../hooks/useAccountQueryState.js';
 import { useStartAuthorization } from '../../hooks/useStartAuthorization.js';
 import { useSyncFlow } from '../../hooks/useSyncFlow.jsx';
 import { copyText, platformSiteName, platformUrl } from '../../lib/accountOrganization.js';
-import { READINESS_HINTS, needsReconnect } from '../../lib/meta.js';
+import { READINESS_HINTS, needsReconnect, providerConfigKey } from '../../lib/meta.js';
 import {
   useAccountLabels,
   useAccountList,
@@ -322,12 +322,7 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
   // Unknown until the integration loads: the server stays authoritative (it answers
   // META_NOT_CONFIGURED / CONFIG_REQUIRED), so nothing is blocked before then.
   const configuredFor = (provider) =>
-    !meta ||
-    Boolean(
-      provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN
-        ? meta.instagram?.configured
-        : meta.facebook?.configured,
-    );
+    !meta || Boolean(meta[providerConfigKey(provider)]?.configured);
   const logins = canManage
     ? (connections.data ?? []).filter((c) => providers.includes(c.provider))
     : undefined;
@@ -469,6 +464,9 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
   const connectable = meta && {
     facebook: providers.includes(SOCIAL_PROVIDERS.FACEBOOK_LOGIN) ? meta.facebook : undefined,
     instagram: providers.includes(SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) ? meta.instagram : undefined,
+    instagramUnified: providers.includes(SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN)
+      ? meta.instagramUnified
+      : undefined,
   };
 
   const emptyNode = !data ? null : data.total > 0 ? (

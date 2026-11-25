@@ -131,6 +131,8 @@ describe('composing for several platforms', () => {
     renderComposer();
     await selectAccounts('Acme Store', 'Acme Instagram');
     await userEvent.type(captionBox(), 'Summer sale starts today');
+    // Hashtags, the first comment and keywords sit under "More options", closed by default.
+    await userEvent.click(screen.getByRole('button', { name: /More options/ }));
     await userEvent.type(screen.getByRole('textbox', { name: /hashtag/i }), 'summer{Enter}');
 
     const preview = within(previewPanel());
@@ -312,6 +314,7 @@ describe('review regressions', () => {
     setupComposerApi();
     renderComposer();
     await selectAccounts('Acme Instagram');
+    await userEvent.click(screen.getByRole('button', { name: /More options/ }));
     const comment = screen.getByRole('textbox', { name: 'First comment' });
     await userEvent.click(comment);
     await userEvent.paste('#a #b #c #d #e #f');
@@ -369,5 +372,21 @@ describe('layout', () => {
     await userEvent.click(screen.getByRole('tab', { name: /^preview/i }));
     expect(compose).toHaveClass('hidden');
     expect(previewPanel()).not.toHaveClass('hidden');
+  });
+});
+
+describe('More options', () => {
+  it('stays closed until opened, then opens by itself for a post that uses it', async () => {
+    setupComposerApi();
+    renderComposer();
+    await selectAccounts('Acme Store');
+    const toggle = screen.getByRole('button', { name: /More options/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('textbox', { name: 'First comment' })).toBeNull();
+
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.type(screen.getByRole('textbox', { name: /hashtag/i }), 'summer{Enter}');
+    expect(toggle).toHaveTextContent('1 hashtag');
   });
 });

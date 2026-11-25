@@ -8,7 +8,8 @@ discovery. It cannot create or configure your Meta app for you.
 > Every endpoint, permission and dashboard label below was checked against Meta's official
 > documentation on **2026-11-20** (Graph API **v27.0**, released 2026-11-04). Meta changes
 > its dashboard often. Items Meta does not document are marked **(not documented by Meta)**.
-> The [verification notes](#verification-notes) list the sources.
+> The [verification notes](#verification-notes) list the sources. The Instagram API with
+> Unified Login (section 6A) was checked against Meta's documentation on **2026-11-25**.
 
 ---
 
@@ -20,6 +21,7 @@ discovery. It cannot create or configure your Meta app for you.
 4. [Create the Meta app](#4-create-the-meta-app)
 5. [App settings › Basic](#5-app-settings--basic)
 6. [Facebook Login for Business](#6-facebook-login-for-business)
+   6A. [Instagram API with Unified Login (recommended for Instagram)](#6a-instagram-api-with-unified-login-recommended-for-instagram)
 7. [Instagram API with Instagram Login](#7-instagram-api-with-instagram-login)
 8. [App roles and Development mode](#8-app-roles-and-development-mode)
 9. [Put the credentials in `apps/api/.env`](#9-put-the-credentials-in-appsapienv)
@@ -35,20 +37,21 @@ discovery. It cannot create or configure your Meta app for you.
 
 ## 1. What you are setting up
 
-SocialHub supports two official Meta login flows. Configure one or both.
+SocialHub supports three official Meta login flows. Configure the ones you need.
 
-| Flow                                   | Signs in with                              | Gives SocialHub                                                                                                   | Env variables                              |
-| -------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **Facebook Login for Business**        | A person's Facebook account                | Every Facebook Page the person can work on, plus the Instagram professional account linked to each of those Pages | `META_APP_ID`, `META_APP_SECRET`           |
-| **Instagram API with Instagram Login** | An Instagram professional account directly | That one Instagram Business or Creator account. No Facebook Page is needed.                                       | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` |
+| Flow                                   | Signs in with                                              | Gives SocialHub                                                                                                                  | Env variables                                                               |
+| -------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Facebook Login for Business**        | A person's Facebook account                                | Every Facebook Page the person can work on, plus the Instagram professional account linked to each of those Pages                | `META_APP_ID`, `META_APP_SECRET`                                            |
+| **Instagram API with Unified Login**   | Instagram or Facebook, for the client's business portfolio | Every Instagram Business or Creator account the client shares with the app. No Facebook Page is needed; a business portfolio is. | `META_APP_ID`, `META_APP_SECRET` + `META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID` |
+| **Instagram API with Instagram Login** | An Instagram professional account directly                 | That one Instagram Business or Creator account. No Facebook Page is needed. Older setup, optional.                               | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`                                  |
 
 **Which flow for which Instagram account?**
 
 - **The account is linked to a Facebook Page you manage:** connect the Page's Facebook
   login. The Instagram account then shows up next to its Page.
-- **The account has no Facebook Page:** use **Connect Instagram**. Meta documents that this
-  flow "does not require a Facebook Page to be linked to the Instagram professional
-  account".
+- **The account has no Facebook Page:** use **Connect Instagram**. With Unified Login
+  configured (section 6A, Meta's recommended setup) it starts Unified Login; otherwise it
+  starts Instagram Login (section 7). Neither needs a Facebook Page.
 - **Personal (non-professional) accounts:** Meta does not support them in either flow.
   Switch the account to Business or Creator in the Instagram app first.
 
@@ -80,6 +83,7 @@ That URL goes into `API_PUBLIC_URL`. Every value you will paste into Meta comes 
 | Paste into Meta                                                     | Value                                                               |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Facebook Login for Business › **Valid OAuth redirect URIs**         | `{API_PUBLIC_URL}/api/v1/oauth/facebook/callback`                   |
+| Unified Login configuration › **Redirect URL** (section 6A)         | `{API_PUBLIC_URL}/api/v1/oauth/instagram-unified/callback`          |
 | Instagram › Business login settings › **OAuth redirect URIs**       | `{API_PUBLIC_URL}/api/v1/oauth/instagram/callback`                  |
 | App settings › Basic › **User Data Deletion** (callback URL)        | `{API_PUBLIC_URL}/api/v1/meta/facebook/data-deletion`               |
 | Instagram › Business login settings › **Deauthorize callback URL**  | `{API_PUBLIC_URL}/api/v1/meta/instagram/deauthorize`                |
@@ -259,9 +263,82 @@ Page roles also matter. Meta's Pages docs say the person must be able to perform
 `CREATE_CONTENT` task on a Page to publish to it. SocialHub shows Pages without that role
 as **Missing publishing access**.
 
+## 6A. Instagram API with Unified Login (recommended for Instagram)
+
+Meta calls this "the recommended setup for new integrations. New Instagram API features are
+released only for this setup." The client signs in with Instagram or Facebook, chooses the
+business portfolio that owns their Instagram professional accounts and selects the accounts
+to share. SocialHub receives a **Business Integration System User access token** (shown in
+the dashboard as "System-user access token (SUAT)"), owned by the client's business
+portfolio. One token covers every Instagram account the client shared.
+
+It runs under the **Meta App ID and App Secret** (section 5). No Instagram App ID is
+involved. SocialHub needs one more value: the configuration's **Configuration ID**.
+
+### 6A.1 Create or edit the configuration
+
+1. App Dashboard › your app › **Use cases** › **Manage messaging & content on Instagram** ›
+   **Customize** › **API setup with Unified login** › **Configure your app** › **Create new
+   configuration**, or open your existing one. (Meta also documents **Facebook Login for
+   Business › Configurations** with the token type **System-user access token**.)
+2. **Redirect URL:** `{API_PUBLIC_URL}/api/v1/oauth/instagram-unified/callback`, exactly, then
+   **Save**. With a Cloudflare quick tunnel the host changes on every run, so update it each
+   time (and keep **App Domains** in section 5 in step).
+3. **Permissions:** SocialHub uses `instagram_basic` (lists the shared accounts) and
+   `instagram_content_publish` (publishing). Meta's default configuration also selects
+   `instagram_manage_messages` (Meta marks it required) and offers
+   `instagram_manage_comments`, `ads_management` and `ads_read`. SocialHub uses none of
+   those; deselect whatever the dashboard lets you deselect.
+4. **Token expiration:** chosen when the configuration is created. Meta's default for
+   system-user tokens is "never expire". Meta documents no refresh for these tokens, so an
+   expiring token is shown as "Access expires …" and renewed by reconnecting.
+5. **Assets:** Instagram accounts.
+6. Copy the **Configuration ID** into `META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID` (section 9).
+   It is **not an App ID**. Never put it in `META_APP_ID`, `INSTAGRAM_APP_ID` or
+   `META_FACEBOOK_LOGIN_CONFIG_ID`; SocialHub refuses to start if one of them holds the same
+   value. (`META_FACEBOOK_LOGIN_CONFIG_ID` needs a _User access token_ configuration: a
+   system-user configuration there would break Facebook Page discovery.)
+
+### 6A.2 What SocialHub sends and checks
+
+- **Dialog:** `https://www.facebook.com/dialog/oauth` with `client_id` = `META_APP_ID`,
+  `config_id`, `redirect_uri`, `response_type=code`, `override_default_response_type=true`
+  (Facebook Login for Business requires it for system-user configurations), `prompt=login`
+  (offers Instagram and Facebook sign-in) and a random `state`. No `scope`: the
+  configuration holds the permissions.
+- **Callback:** the state, its expiry, the provider and the browser-binding cookie are
+  checked before the code is used, exactly as for Facebook Login. A cancelled dialog is
+  reported as cancelled.
+- **Code exchange:** `GET graph.facebook.com/v27.0/oauth/access_token` with the Meta App ID,
+  App Secret, redirect URI and code (server-side only).
+- **Before anything is saved:** `debug_token` (valid, issued for this app; expiry and
+  permissions), `GET /me?fields=id,name,client_business_id` and
+  `GET /me/assigned_instagram_accounts` (at least one account; all pages are read). If any
+  step fails, nothing is connected and the reason is shown.
+- **Identity:** a login is the client's business portfolio (`client_business_id`).
+  Connecting the same portfolio again updates that login; reconnecting with another
+  portfolio is refused.
+- **Tokens** are encrypted at rest and every Graph call carries `appsecret_proof`.
+- **Sync** re-checks the token with `debug_token`, takes over the permissions Meta reports
+  and marks accounts that are no longer shared.
+- **Publishing** uses graph.facebook.com (`/{ig-user-id}/media`, `/media_publish`) like
+  Page-linked Instagram accounts.
+- **Disconnect** erases the token in SocialHub. Removing the app on Meta's side is done by
+  the client: Business Settings › Integrations › Connected apps.
+
+### 6A.3 Requirements
+
+- The app must be owned by a business portfolio, and the client needs access to the
+  business portfolio that owns their Instagram accounts.
+- Instagram **Business or Creator** accounts only; Meta refuses personal accounts. Meta
+  does not report Business vs Creator in this flow, so SocialHub shows "Professional".
+- Development mode: only people with a role on the app can authorize (section 8). Meta's
+  guide says test users aren't supported; use a real professional account.
+
 ## 7. Instagram API with Instagram Login
 
-Skip this section if you only want Facebook Login.
+This is the older Instagram setup. Skip it if you use Unified Login (section 6A) or only
+want Facebook Login.
 
 1. On the app dashboard, add the **Instagram** product. Meta describes it as "Allow
    creators and businesses to manage messages and comments, publish content, track
@@ -329,7 +406,10 @@ META_FACEBOOK_LOGIN_CONFIG_ID=     # Facebook Login for Business › Configurati
 # Used only when META_FACEBOOK_LOGIN_CONFIG_ID is empty (this is the default list):
 META_FACEBOOK_SCOPES=pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish
 
-# Instagram API with Instagram Login (section 7)
+# Instagram API with Unified Login (section 6A): the Configuration ID, not an app id.
+META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID=
+
+# Instagram API with Instagram Login (section 7, optional)
 INSTAGRAM_APP_ID=                  # Instagram › Business login settings › Instagram App ID
 INSTAGRAM_APP_SECRET=              # Instagram › Business login settings › Instagram app secret
 INSTAGRAM_SCOPES=instagram_business_basic,instagram_business_content_publish
@@ -341,6 +421,9 @@ Rules SocialHub enforces when it starts:
   to `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET`. Otherwise the API refuses to start and
   says why.
 - App IDs must be numeric. `META_GRAPH_API_VERSION` must look like `v27.0`.
+- `META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID` must be numeric and must not equal `META_APP_ID`,
+  `INSTAGRAM_APP_ID` or `META_FACEBOOK_LOGIN_CONFIG_ID`. Without `META_APP_ID` and
+  `META_APP_SECRET` it stays disabled, and the setup notice says which variables are missing.
 - Leaving a pair empty disables that flow, and its **Connect** button doesn't appear.
 
 Every variable, with its default, is documented in
@@ -350,8 +433,9 @@ Every variable, with its default, is documented in
 
 Sign in to SocialHub as a workspace owner or admin and open **Social accounts**.
 
-- **Connect Facebook** and **Connect Instagram** appear only for flows whose ID and secret
-  are both set. If neither is set, the page says the Meta integration is not configured.
+- **Connect Facebook** and **Connect Instagram** appear only for flows that are configured.
+  If a flow is missing, the setup notice names the exact variables (never their values).
+  Facebook connections keep working while Instagram is not configured.
 
 ### The configuration validation endpoint
 
@@ -359,26 +443,31 @@ Sign in to SocialHub as a workspace owner or admin and open **Social accounts**.
 **without exposing any secret**. It reports whether each value is set and usable, never the
 value itself. The response contains:
 
-| Field                                                                 | Meaning                                                                                                                                             |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `graphApiVersion`, `publicApiUrl`, `appUrl`                           | The version and public URLs SocialHub is using                                                                                                      |
-| `facebook.configured` / `instagram.configured`                        | Both the ID and the secret are set                                                                                                                  |
-| `facebook.ready` / `instagram.ready`                                  | Configured **and** no blocking error below                                                                                                          |
-| `…redirectUri`, `…deauthorizeCallbackUrl`, `…dataDeletionCallbackUrl` | The exact URLs to paste into Meta (sections 5 to 7)                                                                                                 |
-| `facebook.usesLoginConfiguration`, `…scopes`                          | Whether a Login for Business configuration is used, or which scopes are sent                                                                        |
-| `checks[]`                                                            | `{ id, level, provider, message }`. `error` means connecting will fail. `warning` means something Meta or publishing will need. `info` is advisory. |
+| Field                                                                 | Meaning                                                                                                                                              |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `graphApiVersion`, `publicApiUrl`, `appUrl`                           | The version and public URLs SocialHub is using                                                                                                       |
+| `facebook.configured` / `instagram.configured`                        | Both the ID and the secret are set                                                                                                                   |
+| `facebook.ready` / `instagram.ready`                                  | Configured **and** no blocking error below                                                                                                           |
+| `…redirectUri`, `…deauthorizeCallbackUrl`, `…dataDeletionCallbackUrl` | The exact URLs to paste into Meta (sections 5 to 7)                                                                                                  |
+| `facebook.usesLoginConfiguration`, `…scopes`                          | Whether a Login for Business configuration is used, or which scopes are sent                                                                         |
+| `…missing`                                                            | The variable names that flow still needs (empty when configured)                                                                                     |
+| `instagramUnified.configured` / `.ready` / `.configId`                | Unified Login settings present / no blocking error / the Configuration ID in use. Meta checks the ID and its Redirect URL only when someone signs in |
+| `instagramUnified.usedPermissions`                                    | What SocialHub uses from the configuration (`instagram_basic`, `instagram_content_publish`)                                                          |
+| `checks[]`                                                            | `{ id, level, provider, message }`. `error` means connecting will fail. `warning` means something Meta or publishing will need. `info` is advisory.  |
 
 Checks you may see:
 
-| `id`                                                                        | Level                         | What to do                                                                                                  |
-| --------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `FACEBOOK_NOT_CONFIGURED`, `INSTAGRAM_NOT_CONFIGURED`                       | info                          | Set that flow's ID and secret if you want it (section 9).                                                   |
-| `PUBLIC_URL_NOT_HTTPS`                                                      | warning (error in production) | Use an HTTPS `API_PUBLIC_URL` (section 3).                                                                  |
-| `CALLBACK_HOST_MISMATCH`                                                    | error                         | The browser and the callback use different hosts, so every connection would fail. Use one host (section 3). |
-| `CALLBACK_HOST_SPLIT`                                                       | warning                       | Split-site deployment. Only works if the web app calls the API at `API_PUBLIC_URL` directly.                |
-| `LOGIN_CONFIG_RECOMMENDED`                                                  | info                          | Create a Facebook Login for Business configuration and set `META_FACEBOOK_LOGIN_CONFIG_ID` (section 6.2).   |
-| `FACEBOOK_REQUIRED_SCOPE_MISSING`, `INSTAGRAM_REQUIRED_SCOPE_MISSING`       | error                         | Add the named permission to the scope variable.                                                             |
-| `FACEBOOK_PUBLISHING_SCOPES_MISSING`, `INSTAGRAM_PUBLISHING_SCOPES_MISSING` | warning                       | Publishing (Phase 4) will need these permissions.                                                           |
+| `id`                                                                        | Level                         | What to do                                                                                                                                             |
+| --------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FACEBOOK_NOT_CONFIGURED`, `INSTAGRAM_NOT_CONFIGURED`                       | info                          | Set that flow's ID and secret if you want it (section 9).                                                                                              |
+| `INSTAGRAM_UNIFIED_NOT_CONFIGURED`                                          | info                          | Set the named variables (section 6A and 9).                                                                                                            |
+| `INSTAGRAM_UNIFIED_REDIRECT_URL`, `INSTAGRAM_UNIFIED_PERMISSIONS`           | info                          | Save the shown Redirect URL in the configuration; check its permissions (section 6A.1).                                                                |
+| `PUBLIC_URL_NOT_HTTPS`                                                      | warning (error in production) | Use an HTTPS `API_PUBLIC_URL` (section 3).                                                                                                             |
+| `CALLBACK_HOST_MISMATCH`                                                    | error                         | The browser and the callback use different hosts, so every connection would fail. Use one host (section 3).                                            |
+| `CALLBACK_HOST_SPLIT`                                                       | warning                       | Split-site deployment. Only works if the web app calls the API at `API_PUBLIC_URL` directly.                                                           |
+| `LOGIN_CONFIG_RECOMMENDED`                                                  | info                          | Create a Facebook Login for Business configuration and set `META_FACEBOOK_LOGIN_CONFIG_ID` (section 6.2).                                              |
+| `FACEBOOK_REQUIRED_SCOPE_MISSING`, `INSTAGRAM_REQUIRED_SCOPE_MISSING`       | error                         | Add the named permission to the scope variable.                                                                                                        |
+| `FACEBOOK_PUBLISHING_SCOPES_MISSING`, `INSTAGRAM_PUBLISHING_SCOPES_MISSING` | warning                       | Publishing will need these permissions. With Unified Login configured, a Facebook-only login is complete: Instagram permissions are not listed for it. |
 
 These checks cover SocialHub's own configuration. They cannot confirm that the values
 match your Meta app. The only real test is completing a connection (section 11): a wrong
@@ -398,8 +487,10 @@ Meta".
    the other person. Then click **Connect Facebook** again. That login becomes a separate
    connection. If a Page is already connected through a healthy login, SocialHub shows that
    and never takes it over.
-5. **Instagram without a Page:** click **Connect Instagram** and sign in with the Instagram
-   professional account.
+5. **Instagram without a Page:** click **Connect Instagram**. With Unified Login, sign in
+   with Instagram or Facebook, choose the business portfolio and select the Instagram
+   accounts; SocialHub then lists them in **Choose accounts to add**. With Instagram Login,
+   sign in with the Instagram professional account.
 6. On the **Logins** tab, each login card has **Sync now**, **Reconnect / update
    permissions**, **Disconnect** (keeps the accounts, erases tokens) and **Remove with its
    accounts**. **Sync all** checks every login and lists the result for each one. The
@@ -416,6 +507,7 @@ anything as connected.
 | Facebook user token                              | Short-lived ("about one to two hours"), exchanged at once for a long-lived token that "generally lasts about 60 days"                                                           | Stores the long-lived token, encrypted. Tracks `expires_at` and `data_access_expires_at` from Meta's `debug_token`. |
 | Facebook Page token (from long-lived user token) | "do not have an expiration date and only expire or are invalidated under certain conditions"                                                                                    | Stores one per Page, encrypted. Marks the Page unhealthy when Meta rejects it.                                      |
 | Instagram Login token                            | Long-lived, 60 days. Refreshable once it is at least 24 hours old and still valid. "Tokens that have not been refreshed in 60 days will expire and can no longer be refreshed." | Refreshes automatically during sync when the token is older than 24 hours and expires within 30 days.               |
+| Unified Login (system-user) token                | "Whether the access token expires depends on your configuration" (default: never). No refresh is documented for it.                                                             | Stores it encrypted; sync re-checks it with `debug_token`. When it expires, the login shows **Reconnect**.          |
 
 Meta warns: "Do not depend on these lifetimes remaining the same". SocialHub always uses
 the expiry dates Meta reports, not assumed durations.
@@ -435,7 +527,8 @@ Linux, use cron. It exits non-zero if any connection failed to sync.
 the connection shows **Reconnect**. Reconnecting must use the same Facebook or Instagram
 account. A different account is rejected, and you can connect it as a new connection
 instead. For Facebook, reconnect re-asks for declined permissions (`auth_type=rerequest`).
-For Instagram, it forces a fresh sign-in (`force_reauth=true`).
+For Instagram Login, it forces a fresh sign-in (`force_reauth=true`). Unified Login always
+asks the client to sign in (`prompt=login`) and must use the same business portfolio.
 
 ## 13. Going live: App Review and Business Verification
 
@@ -456,19 +549,21 @@ who have no role on your app:
 
 ## 14. Troubleshooting
 
-| Symptom                                                                 | Likely cause                                                                                        | Fix                                                                                                                                                                   |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Connect Facebook / Connect Instagram** button missing                 | That flow's ID or secret is not set, or the API was not restarted                                   | Set both values (section 9) and restart the API.                                                                                                                      |
-| Meta shows "URL blocked" or a redirect URI error                        | The redirect URI is not in the allow-list exactly (Strict Mode)                                     | Copy the URI from `GET /api/v1/integrations/meta` into **Valid OAuth redirect URIs** / **OAuth redirect URIs**. Check `https`, host and path, with no trailing slash. |
-| Meta says a scope or permission is invalid                              | `META_FACEBOOK_SCOPES` or `INSTAGRAM_SCOPES` lists a permission the app doesn't have                | Add the permission to the app or configuration, or remove it from the env variable. Better: use `META_FACEBOOK_LOGIN_CONFIG_ID`.                                      |
-| "…must be completed in the same browser where it was started"           | The browser's host differs from `API_PUBLIC_URL`, or cookies are blocked                            | Open SocialHub through `API_PUBLIC_URL` (section 3). Finish within 10 minutes (`META_OAUTH_STATE_TTL_MINUTES`).                                                       |
-| "The authorization took too long and expired"                           | More than `META_OAUTH_STATE_TTL_MINUTES` (default 10) passed at Meta                                | Start again.                                                                                                                                                          |
-| "Only Instagram Business and Creator accounts can be connected"         | A personal Instagram account was used                                                               | Switch it to a professional account in Instagram and try again.                                                                                                       |
-| A Page is missing from **Choose accounts to add**                       | The Page wasn't selected in Meta's dialog, or the person has no task on it                          | **Reconnect and choose Pages again**, and select the Page in Meta's dialog. Make sure the person has a role on the Page.                                              |
-| Page-linked Instagram account missing                                   | `instagram_basic` not granted, or the account isn't linked to the Page                              | Grant `instagram_basic` (section 6.3; also see `pages_read_user_content`). Link the account in the Page's settings, or use **Connect Instagram**.                     |
-| Page shows **Missing publishing access**                                | `pages_manage_posts` / `pages_read_engagement` not granted, or no `CREATE_CONTENT` task on the Page | Reconnect and grant the permissions. Ask a Page admin for content access.                                                                                             |
-| "You signed in with a different account than the one being reconnected" | Reconnect was done with another Facebook or Instagram account                                       | Reconnect with the original account, or use **Connect** to add the other one.                                                                                         |
-| Only you can connect, teammates can't                                   | Development mode or Standard Access                                                                 | Give them a role on the app (section 8), or complete App Review (section 13).                                                                                         |
+| Symptom                                                                           | Likely cause                                                                                                                                                     | Fix                                                                                                                                                                   |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connect Facebook / Connect Instagram** button missing                           | That flow's ID or secret is not set, or the API was not restarted                                                                                                | Set both values (section 9) and restart the API.                                                                                                                      |
+| Meta shows "URL blocked" or a redirect URI error                                  | The redirect URI is not in the allow-list exactly (Strict Mode)                                                                                                  | Copy the URI from `GET /api/v1/integrations/meta` into **Valid OAuth redirect URIs** / **OAuth redirect URIs**. Check `https`, host and path, with no trailing slash. |
+| Meta refuses the Unified Login dialog (invalid redirect / "Config ID is invalid") | The configuration's Redirect URL differs from `{API_PUBLIC_URL}/api/v1/oauth/instagram-unified/callback` (tunnel host changed), or the Configuration ID is wrong | Copy the URL from `GET /api/v1/integrations/meta` (`instagramUnified.redirectUri`) into the configuration and save. Check `META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID`.   |
+| "No Instagram professional account was shared with SocialHub"                     | No Instagram account was selected in Meta's dialog                                                                                                               | Connect again and select at least one Instagram Business or Creator account.                                                                                          |
+| Meta says a scope or permission is invalid                                        | `META_FACEBOOK_SCOPES` or `INSTAGRAM_SCOPES` lists a permission the app doesn't have                                                                             | Add the permission to the app or configuration, or remove it from the env variable. Better: use `META_FACEBOOK_LOGIN_CONFIG_ID`.                                      |
+| "…must be completed in the same browser where it was started"                     | The browser's host differs from `API_PUBLIC_URL`, or cookies are blocked                                                                                         | Open SocialHub through `API_PUBLIC_URL` (section 3). Finish within 10 minutes (`META_OAUTH_STATE_TTL_MINUTES`).                                                       |
+| "The authorization took too long and expired"                                     | More than `META_OAUTH_STATE_TTL_MINUTES` (default 10) passed at Meta                                                                                             | Start again.                                                                                                                                                          |
+| "Only Instagram Business and Creator accounts can be connected"                   | A personal Instagram account was used                                                                                                                            | Switch it to a professional account in Instagram and try again.                                                                                                       |
+| A Page is missing from **Choose accounts to add**                                 | The Page wasn't selected in Meta's dialog, or the person has no task on it                                                                                       | **Reconnect and choose Pages again**, and select the Page in Meta's dialog. Make sure the person has a role on the Page.                                              |
+| Page-linked Instagram account missing                                             | `instagram_basic` not granted, or the account isn't linked to the Page                                                                                           | Grant `instagram_basic` (section 6.3; also see `pages_read_user_content`). Link the account in the Page's settings, or use **Connect Instagram**.                     |
+| Page shows **Missing publishing access**                                          | `pages_manage_posts` / `pages_read_engagement` not granted, or no `CREATE_CONTENT` task on the Page                                                              | Reconnect and grant the permissions. Ask a Page admin for content access.                                                                                             |
+| "You signed in with a different account than the one being reconnected"           | Reconnect was done with another Facebook or Instagram account                                                                                                    | Reconnect with the original account, or use **Connect** to add the other one.                                                                                         |
+| Only you can connect, teammates can't                                             | Development mode or Standard Access                                                                                                                              | Give them a role on the app (section 8), or complete App Review (section 13).                                                                                         |
 
 ## 15. Checklist
 
@@ -478,7 +573,8 @@ who have no role on your app:
 - [ ] App ID and App Secret copied to `META_APP_ID` and `META_APP_SECRET`
 - [ ] Facebook Login for Business: settings, exact redirect URI, Strict Mode, Enforce HTTPS (section 6.1)
 - [ ] Facebook Login for Business configuration (User access token, Pages + Instagram assets, permissions) and its ID in `META_FACEBOOK_LOGIN_CONFIG_ID` (section 6.2)
-- [ ] Instagram product: business login set up, redirect URI, deauthorize and data deletion URLs (section 7)
+- [ ] Unified Login configuration: Redirect URL `{API_PUBLIC_URL}/api/v1/oauth/instagram-unified/callback`, permissions `instagram_basic` + `instagram_content_publish`, its Configuration ID in `META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID` (section 6A)
+- [ ] Optional, older setup: Instagram product business login, redirect URI, deauthorize and data deletion URLs (section 7)
 - [ ] Instagram App ID and app secret copied to `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET`
 - [ ] Your account and teammates added under App roles (section 8)
 - [ ] API restarted, configuration checked (section 10)
@@ -492,28 +588,35 @@ who have no role on your app:
 
 Checked against developers.facebook.com on 2026-11-20:
 
-| Topic                                                               | Source                                                                                                                                                                       |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Latest Graph API version (v27.0, released 2026-11-04)               | `docs/graph-api/changelog`                                                                                                                                                   |
-| Login dialog, code exchange, `auth_type=rerequest`                  | `docs/facebook-login/guides/advanced/manual-flow`, `docs/facebook-login/guides/permissions/request-revoke`                                                                   |
-| Long-lived user and Page tokens                                     | `docs/facebook-login/guides/access-tokens/get-long-lived`, `docs/facebook-login/guides/access-tokens`                                                                        |
-| `config_id`, configurations, business-type app                      | `docs/facebook-login/facebook-login-for-business`                                                                                                                            |
-| `debug_token` fields, app access token                              | `docs/graph-api/reference/debug_token`                                                                                                                                       |
-| `appsecret_proof`, Require App Secret                               | `docs/graph-api/securing-requests`                                                                                                                                           |
-| `/me/accounts`, Page `tasks`, `CREATE_CONTENT`                      | `docs/graph-api/reference/user/accounts`, `docs/pages-api/overview`, `docs/pages-api/getting-started`, `docs/pages-api/posts`                                                |
-| Page `instagram_business_account`, IG User fields                   | `docs/graph-api/reference/page`, `docs/instagram-platform/instagram-graph-api/reference/ig-user`                                                                             |
-| Permissions and dependencies                                        | `docs/permissions`                                                                                                                                                           |
-| Instagram via Facebook Login (permissions, Page link, `ads_*` note) | `docs/instagram-platform/instagram-api-with-facebook-login/get-started`, `docs/instagram-platform/content-publishing`                                                        |
-| Instagram Login endpoints, `force_reauth`, `#_`, scopes, refresh    | `docs/instagram-platform/instagram-api-with-instagram-login/business-login`, `.../get-started`, `docs/instagram-platform/reference/access_token`, `.../refresh_access_token` |
-| Instagram dashboard setup                                           | `docs/instagram-platform/instagram-api-with-instagram-login/create-a-meta-app-with-instagram`                                                                                |
-| Use cases                                                           | `docs/development/create-an-app`                                                                                                                                             |
-| Data deletion callback and `signed_request`                         | `docs/development/create-an-app/app-dashboard/data-deletion-callback`                                                                                                        |
-| Basic settings fields, Live mode requirements                       | `documentation/development/create-an-app/app-dashboard/basic-settings`, `documentation/development/build-and-test/app-modes`                                                 |
-| Standard vs Advanced Access, Business Verification                  | `docs/graph-api/overview/access-levels`                                                                                                                                      |
-| Strict Mode, Enforce HTTPS, Client/Web OAuth login                  | `docs/facebook-login/security`                                                                                                                                               |
-| Error codes and rate limits                                         | `docs/graph-api/guides/error-handling`, `docs/graph-api/overview/rate-limiting`                                                                                              |
+| Topic                                                               | Source                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Latest Graph API version (v27.0, released 2026-11-04)               | `docs/graph-api/changelog`                                                                                                                                                                                                                                                                                               |
+| Login dialog, code exchange, `auth_type=rerequest`                  | `docs/facebook-login/guides/advanced/manual-flow`, `docs/facebook-login/guides/permissions/request-revoke`                                                                                                                                                                                                               |
+| Long-lived user and Page tokens                                     | `docs/facebook-login/guides/access-tokens/get-long-lived`, `docs/facebook-login/guides/access-tokens`                                                                                                                                                                                                                    |
+| `config_id`, configurations, business-type app                      | `docs/facebook-login/facebook-login-for-business`                                                                                                                                                                                                                                                                        |
+| `debug_token` fields, app access token                              | `docs/graph-api/reference/debug_token`                                                                                                                                                                                                                                                                                   |
+| `appsecret_proof`, Require App Secret                               | `docs/graph-api/securing-requests`                                                                                                                                                                                                                                                                                       |
+| `/me/accounts`, Page `tasks`, `CREATE_CONTENT`                      | `docs/graph-api/reference/user/accounts`, `docs/pages-api/overview`, `docs/pages-api/getting-started`, `docs/pages-api/posts`                                                                                                                                                                                            |
+| Page `instagram_business_account`, IG User fields                   | `docs/graph-api/reference/page`, `docs/instagram-platform/instagram-graph-api/reference/ig-user`                                                                                                                                                                                                                         |
+| Permissions and dependencies                                        | `docs/permissions`                                                                                                                                                                                                                                                                                                       |
+| Instagram via Facebook Login (permissions, Page link, `ads_*` note) | `docs/instagram-platform/instagram-api-with-facebook-login/get-started`, `docs/instagram-platform/content-publishing`                                                                                                                                                                                                    |
+| Instagram Login endpoints, `force_reauth`, `#_`, scopes, refresh    | `docs/instagram-platform/instagram-api-with-instagram-login/business-login`, `.../get-started`, `docs/instagram-platform/reference/access_token`, `.../refresh_access_token`                                                                                                                                             |
+| Instagram dashboard setup                                           | `docs/instagram-platform/instagram-api-with-instagram-login/create-a-meta-app-with-instagram`                                                                                                                                                                                                                            |
+| Use cases                                                           | `docs/development/create-an-app`                                                                                                                                                                                                                                                                                         |
+| Instagram API with Unified Login (checked 2026-11-25)               | `documentation/instagram-platform/instagram-api-with-unified-login` (overview, `get-started`, `authentication`, `permissions`, `business-onboarding`, `eligibility-and-troubleshooting`, `migration`), `documentation/facebook-login/facebook-login-for-business`, `documentation/instagram-platform/content-publishing` |
+| Data deletion callback and `signed_request`                         | `docs/development/create-an-app/app-dashboard/data-deletion-callback`                                                                                                                                                                                                                                                    |
+| Basic settings fields, Live mode requirements                       | `documentation/development/create-an-app/app-dashboard/basic-settings`, `documentation/development/build-and-test/app-modes`                                                                                                                                                                                             |
+| Standard vs Advanced Access, Business Verification                  | `docs/graph-api/overview/access-levels`                                                                                                                                                                                                                                                                                  |
+| Strict Mode, Enforce HTTPS, Client/Web OAuth login                  | `docs/facebook-login/security`                                                                                                                                                                                                                                                                                           |
+| Error codes and rate limits                                         | `docs/graph-api/guides/error-handling`, `docs/graph-api/overview/rate-limiting`                                                                                                                                                                                                                                          |
 
-**Not documented by Meta (as of 2026-11-20):**
+**Not documented by Meta (as of 2026-11-20; Unified Login items as of 2026-11-25):**
+
+- Unified Login: whether `state` is echoed back (SocialHub requires it, so a callback
+  without it is refused), whether `debug_token` reports system-user tokens (SocialHub
+  requires a valid answer), whether `/me/assigned_instagram_accounts` accepts fields beyond
+  `id,username` (SocialHub falls back to those), and which id a deauthorize callback carries
+  for a system user (SocialHub matches the system user id on the Facebook callbacks).
 
 - Where the Facebook **deauthorize callback** is configured and what it sends. SocialHub
   accepts the same `signed_request` format as the data deletion callback.

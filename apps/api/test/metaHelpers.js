@@ -54,6 +54,22 @@ export async function connectInstagram(fake, token, workspaceId, userId, { code 
   return { ...done, connectionId: done.result?.connection };
 }
 
+/** Full Instagram Unified Login flow for a business portfolio registered in the fake. */
+export async function connectUnified(fake, token, workspaceId, businessId, { connectionId } = {}) {
+  const started = await startAuth(token, workspaceId, {
+    provider: 'INSTAGRAM_UNIFIED_LOGIN',
+    ...(connectionId && { connectionId }),
+  });
+  if (!started.state)
+    throw new Error(`start failed: ${started.res.status} ${JSON.stringify(started.res.body)}`);
+  const done = await callback('instagram-unified', {
+    state: started.state,
+    code: fake.authorizeUnified(businessId),
+    cookie: started.cookie,
+  });
+  return { ...done, started, connectionId: done.result?.connection };
+}
+
 export function selectAccounts(token, workspaceId, connectionId, accounts) {
   return as(token)
     .post(`/api/v1/workspaces/${workspaceId}/social-connections/${connectionId}/accounts`)

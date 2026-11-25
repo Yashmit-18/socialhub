@@ -141,6 +141,7 @@ export const PLATFORM_RULES = Object.freeze({
           'pages_show_list',
         ],
         INSTAGRAM_LOGIN: ['instagram_business_basic', 'instagram_business_manage_comments'],
+        INSTAGRAM_UNIFIED_LOGIN: ['instagram_basic', 'instagram_manage_comments'],
       },
       pageTask: 'PROFILE_PLUS_MODERATE',
       editable: false,

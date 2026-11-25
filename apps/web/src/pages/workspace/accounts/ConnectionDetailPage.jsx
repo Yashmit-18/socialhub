@@ -3,7 +3,7 @@ import {
   ERROR_CODES,
   PERMISSIONS,
   SOCIAL_PLATFORMS,
-  SOCIAL_PROVIDERS,
+  isInstagramDirectProvider,
 } from '@socialhub/shared';
 import {
   Activity,
@@ -56,6 +56,7 @@ import {
   loginAccountTotal,
   loginDestinationsText,
   loginWantsReconnect,
+  loginFlowName,
 } from '../../../lib/meta.js';
 import { useConnectionDetail, useMetaIntegration, useSyncRuns } from '../../../lib/queries.js';
 import { cn, formatDate, timeAgo } from '../../../lib/utils.js';
@@ -232,7 +233,7 @@ function DetailsCard({ connection }) {
     <Card>
       <CardHeader icon={KeyRound} title="Login details" />
       <dl className="mt-4 divide-y divide-slate-100 border-t border-slate-100 dark:divide-white/5 dark:border-white/5">
-        <DetailRow label="Provider">{providerLabel(connection.provider)} Login</DetailRow>
+        <DetailRow label="Provider">{loginFlowName(connection.provider)}</DetailRow>
         <DetailRow label="Connected">
           {connection.createdAt ? (
             <time
@@ -429,7 +430,7 @@ function AccountRow({ account, href }) {
 function AccountsCard({ accounts, connection, slug, selectHref }) {
   const active = connection.status === CONNECTION_STATUS.ACTIVE;
   const needAttention = connection.accountCounts?.needsAttention ?? 0;
-  const instagramLogin = connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN;
+  const instagramLogin = isInstagramDirectProvider(connection.provider);
   const chooseLink = (
     <ButtonLink size="sm" variant="secondary" to={selectHref}>
       <ListChecks className="h-3.5 w-3.5" aria-hidden="true" /> Choose accounts
@@ -616,7 +617,7 @@ function ConnectionDetail({ workspace, connectionId }) {
   const configured = capabilities?.providerConfigured !== false;
   const setupReason = configured
     ? null
-    : `Sync and reconnect are unavailable until ${provider} Login is configured on this server.`;
+    : `Sync and reconnect are unavailable until ${loginFlowName(connection.provider)} is configured on this server.`;
   const syncReason =
     setupReason ??
     (disconnected

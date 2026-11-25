@@ -82,14 +82,10 @@ export function Modal({
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={cn(
-          'relative flex max-h-[calc(100dvh-2rem)] w-full animate-scale-in flex-col rounded-[1.25rem] border border-slate-200/80 bg-white shadow-pop focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06),0_30px_80px_-20px_rgb(0_0_0/0.8)]',
+          'relative flex max-h-[calc(100dvh-2rem)] w-full animate-scale-in flex-col rounded-2xl border border-slate-200 bg-white shadow-pop focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06),0_30px_80px_-20px_rgb(0_0_0/0.8)]',
           WIDTHS[size],
         )}
       >
-        <div
-          className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent dark:via-brand-400/60"
-          aria-hidden="true"
-        />
         <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6">
           <div>
             <h2

@@ -174,14 +174,17 @@ function Header({ signedIn, scrolled, barRef, isDark, onToggleTheme }) {
     setOpen(false);
     scrollToSection(event, href);
   };
+  // At the top of the page the header sits on the hero's deep indigo band, so it uses the dark
+  // tokens; once condensed it is a frosted pill in the page's own theme.
+  const condensed = scrolled || open;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       <div ref={barRef} aria-hidden="true" className="lp-scrollbar" />
-      <div className={cn('lp-header', (scrolled || open) && 'is-condensed')}>
+      <div className={cn('lp-header', condensed ? 'is-condensed' : 'lp-on-ink')}>
         <div className="lp-header-row flex items-center justify-between gap-3 px-4 sm:px-5">
           <Link to={signedIn ? '/welcome' : '/'} aria-label="SocialHub home" className="shrink-0">
-            <Logo />
+            <Logo light={!condensed} />
           </Link>
 
           <nav aria-label="Landing page" className="hidden lg:block">
@@ -315,9 +318,10 @@ function Hero({ signedIn }) {
       </div>
       <div className="lp-grid" aria-hidden="true" />
       <div className="lp-grid-spot" aria-hidden="true" />
+      <div className="lp-hero-ink" aria-hidden="true" />
 
       <div className={cn(CONTAINER, 'relative text-center')}>
-        <div className="lp-hero-copy">
+        <div className="lp-hero-copy lp-on-ink">
           <p className="lp-eyebrow lp-rise">
             <span className="lp-eyebrow-badge">New</span>
             The universal post composer is here
@@ -491,11 +495,11 @@ const footerLink = 'text-(--lp-muted) transition-colors hover:text-(--lp-text)';
 function Footer({ signedIn }) {
   const year = new Date().getFullYear();
   return (
-    <footer className="relative overflow-hidden border-t border-(--lp-border) pt-16">
+    <footer className="lp-on-ink lp-footer-ink relative overflow-hidden border-t border-(--lp-border) pt-16">
       <div className={CONTAINER}>
         <div className="grid gap-10 sm:grid-cols-3 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div className="sm:col-span-3 md:col-span-1">
-            <Logo />
+            <Logo light />
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-(--lp-muted)">
               The team workspace for Facebook Pages and Instagram professional accounts, built for
               creators, social media managers and agencies.

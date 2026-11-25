@@ -8,6 +8,7 @@ import {
   SYNC_OUTCOMES,
   SYNC_SKIP_REASONS,
   SYNC_TRIGGERS,
+  isInstagramDirectProvider,
 } from '@socialhub/shared';
 import { formatDate } from './utils.js';
 
@@ -39,6 +40,22 @@ export const READINESS_HINTS = {
 export const PROVIDER_LABELS = {
   [SOCIAL_PROVIDERS.FACEBOOK_LOGIN]: 'Facebook',
   [SOCIAL_PROVIDERS.INSTAGRAM_LOGIN]: 'Instagram',
+  [SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN]: 'Instagram',
+};
+
+/** Name of each login flow, for "… is not configured" messages and login details. */
+export const LOGIN_FLOW_NAMES = {
+  [SOCIAL_PROVIDERS.FACEBOOK_LOGIN]: 'Facebook Login',
+  [SOCIAL_PROVIDERS.INSTAGRAM_LOGIN]: 'Instagram Login',
+  [SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN]: 'Instagram Unified Login',
+};
+
+export const loginFlowName = (provider) => LOGIN_FLOW_NAMES[provider] ?? 'Meta login';
+
+/** Provider labels that tell the two Instagram flows apart (filters). */
+export const PROVIDER_FILTER_LABELS = {
+  ...PROVIDER_LABELS,
+  [SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN]: 'Instagram (Unified Login)',
 };
 
 export const PLATFORM_LABELS = {
@@ -89,7 +106,31 @@ export const SYNC_SKIP_TONE = {
 const PROVIDER_CONFIG_KEYS = {
   [SOCIAL_PROVIDERS.FACEBOOK_LOGIN]: 'facebook',
   [SOCIAL_PROVIDERS.INSTAGRAM_LOGIN]: 'instagram',
+  [SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN]: 'instagramUnified',
 };
+
+/** Key of a provider's block in the GET /integrations/meta response. */
+export const providerConfigKey = (provider) => PROVIDER_CONFIG_KEYS[provider] ?? 'facebook';
+
+/**
+ * The login "Connect Instagram" starts directly, without a Facebook Page: Instagram Unified
+ * Login (Meta's recommended setup) when the server has it, otherwise Instagram Login. null
+ * when neither is configured (Facebook Login may still find Page-linked accounts).
+ */
+export function instagramDirectProvider(integration) {
+  if (integration?.instagramUnified?.configured) return SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN;
+  if (integration?.instagram?.configured) return SOCIAL_PROVIDERS.INSTAGRAM_LOGIN;
+  return null;
+}
+
+/** Whether the server can start any Meta login at all. */
+export function anyLoginConfigured(integration) {
+  return Boolean(
+    integration?.facebook?.configured ||
+    integration?.instagramUnified?.configured ||
+    integration?.instagram?.configured,
+  );
+}
 
 /**
  * Whether the server has Meta app credentials for a provider (`integration` is the
@@ -98,7 +139,7 @@ const PROVIDER_CONFIG_KEYS = {
  */
 export function isProviderConfigured(integration, provider) {
   if (!integration) return true;
-  return Boolean(integration[PROVIDER_CONFIG_KEYS[provider]]?.configured);
+  return Boolean(integration[providerConfigKey(provider)]?.configured);
 }
 
 /** Problems of a login that still works where authorizing again is the fix. */
@@ -129,7 +170,7 @@ export function loginDestinationsText(connection) {
   const counts = connection.accountCounts;
   if (!counts) return plural(connection.accountCount ?? 0, 'account');
   const parts = [];
-  if (connection.provider !== SOCIAL_PROVIDERS.INSTAGRAM_LOGIN || counts.facebookPages > 0) {
+  if (!isInstagramDirectProvider(connection.provider) || counts.facebookPages > 0) {
     parts.push(plural(counts.facebookPages ?? 0, 'Facebook Page'));
   }
   parts.push(plural(counts.instagramAccounts ?? 0, 'Instagram account'));
@@ -164,11 +205,11 @@ export function createContentState(account) {
       'Cannot create content',
       'The login has no Page role with the CREATE_CONTENT task. Ask a Page admin to give it a role that can create content, then sync.',
     ];
-  if (account?.connection?.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN)
+  if (isInstagramDirectProvider(account?.connection?.provider))
     return [
       'neutral',
       'Not applicable',
-      'Instagram Login accounts are not managed through a Facebook Page role.',
+      `${loginFlowName(account.connection.provider)} accounts are not managed through a Facebook Page role.`,
     ];
   return [
     'warning',
@@ -235,6 +276,10 @@ export const OAUTH_RESULT_MESSAGES = {
   [META_OAUTH_RESULTS.NOT_ELIGIBLE]:
     'Only Instagram Business and Creator accounts can be connected. Switch the account to a professional account in Instagram and try again.',
   [META_OAUTH_RESULTS.NOT_CONFIGURED]: 'This Meta login is not configured on the server.',
+  [META_OAUTH_RESULTS.NO_INSTAGRAM_ACCOUNTS]:
+    'No Instagram professional account was shared with SocialHub. Connect again and select at least one Instagram Business or Creator account in the Meta dialog. Personal accounts cannot be connected.',
+  [META_OAUTH_RESULTS.ACCOUNT_DISCOVERY_FAILED]:
+    'Meta authorized SocialHub but would not list the Instagram accounts, so nothing was connected. Please try again in a moment.',
 };
 
 export function daysUntil(date, now = Date.now()) {

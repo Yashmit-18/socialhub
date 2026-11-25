@@ -5,16 +5,28 @@
  * Duplicate prevention: a share reaches each group at most once (unique (share, group) index),
  * and a group's "days between shares" rule keeps new tasks away until it allows another share.
  * Completing a task never contacts Facebook: the person posts it themselves and says so.
+ *
+ * Auto share: a real post published to Facebook Pages gets one share, and each group one of
+ * those Pages is a member of gets a task as soon as that Page's post is live on Facebook
+ * (`queueGroupTasksForDestination`, called by the publishing worker). Simulated posts, posts
+ * that failed and posts not live yet create no tasks. People still post in the groups.
  */
 import mongoose from 'mongoose';
 import {
   ACTIVITY_ACTIONS,
+  AUTO_SHARE_REFUSALS,
+  DESTINATION_STATES,
   FACEBOOK_GROUP_STATUS,
+  GROUP_LIMITS,
   PERMISSIONS,
+  PUBLISHING_MODES,
   SHARE_SKIP_REASONS,
   SHARING_TASK_STATUS,
+  SOCIAL_PLATFORMS,
+  composeCaption,
   hasPermission,
 } from '@socialhub/shared';
+import { logger } from '../../config/logger.js';
 import {
   conflict,
   forbidden,
@@ -22,8 +34,16 @@ import {
   notFound,
   validationError,
 } from '../../lib/errors.js';
-import { FacebookGroup, GroupShare, Membership, SharingTask } from '../../models/index.js';
+import {
+  FacebookGroup,
+  GroupShare,
+  Membership,
+  PublishDestination,
+  PublishJob,
+  SharingTask,
+} from '../../models/index.js';
 import { recordActivity } from '../activity/activity.service.js';
+import { jobIsVisible } from '../contentPackages/contentAccess.js';
 import { nextShareAllowedAt } from './directory.service.js';
 
 const id = (v) => String(v?._id ?? v);
@@ -38,8 +58,17 @@ function shareView(share, counts = emptyCounts()) {
   return {
     id: id(share),
     title: share.title,
-    message: share.message,
+    message: share.message ?? '',
     link: share.link ?? '',
+    // Auto share: the real post it was made from.
+    auto: Boolean(share.publishJob),
+    publishJobId: share.publishJob ? id(share.publishJob) : null,
+    skipped: (share.skipped ?? []).map((entry) => ({
+      groupId: id(entry.group),
+      name: entry.name,
+      reason: entry.reason,
+      nextShareAllowedAt: entry.nextShareAllowedAt ?? null,
+    })),
     createdBy: person(share.createdBy),
     createdAt: share.createdAt,
     updatedAt: share.updatedAt,
@@ -64,6 +93,13 @@ async function countsByShare(shareIds) {
   return out;
 }
 
+/** The live Page post a task shares, when it is live on Facebook (never for simulations). */
+function pagePostView(destination) {
+  if (!destination?._id) return null;
+  const live = destination.state === DESTINATION_STATES.PUBLISHED && !destination.simulated;
+  return { state: destination.state, url: live ? (destination.externalUrl ?? null) : null };
+}
+
 function taskView(task, { now = new Date() } = {}) {
   const group = task.group?._id ? task.group : null;
   const share = task.share?._id ? task.share : null;
@@ -71,8 +107,17 @@ function taskView(task, { now = new Date() } = {}) {
     id: id(task),
     status: task.status,
     share: share
-      ? { id: id(share), title: share.title, message: share.message, link: share.link ?? '' }
+      ? {
+          id: id(share),
+          title: share.title,
+          message: share.message ?? '',
+          link: share.link ?? '',
+          auto: Boolean(share.publishJob),
+        }
       : null,
+    // Auto share: the Page to share as, and its post on Facebook.
+    page: task.page?._id ? { id: id(task.page), name: task.page.name } : null,
+    pagePost: pagePostView(task.publishDestination),
     group: group
       ? {
           id: id(group),
@@ -95,7 +140,9 @@ function taskView(task, { now = new Date() } = {}) {
 }
 
 const TASK_POPULATE = [
-  { path: 'share', select: 'title message link' },
+  { path: 'share', select: 'title message link publishJob' },
+  { path: 'page', select: 'name' },
+  { path: 'publishDestination', select: 'state simulated externalUrl' },
   { path: 'group', select: 'name url notes status minDaysBetweenShares lastSharedAt' },
   { path: 'assignee', select: 'name' },
   { path: 'completedBy', select: 'name' },
@@ -462,6 +509,202 @@ export async function updateTask(workspace, membership, actor, taskId, body, con
   // The group's last-shared date may have changed with this task.
   const fresh = await SharingTask.findById(task._id).populate(TASK_POPULATE);
   return { task: taskView(fresh ?? updated) };
+}
+
+/* --------------------------------------------------------------------- auto share */
+
+const AUTO_TITLE_MAX = 80;
+
+/** A short title from the caption's first line, or the date for a post without text. */
+function autoTitle(caption, at) {
+  const line =
+    caption
+      .split('\n')
+      .find((text) => text.trim())
+      ?.trim() ?? '';
+  if (!line) {
+    return `Post of ${at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`;
+  }
+  const chars = [...line];
+  return chars.length > AUTO_TITLE_MAX ? `${chars.slice(0, AUTO_TITLE_MAX - 1).join('')}…` : line;
+}
+
+/**
+ * Creates the tasks for one Facebook Page's live post: one per active group that Page is a
+ * member of. A group this share already has a task for (through another Page) is left alone;
+ * a group whose "days between shares" rule does not allow a share yet is recorded as skipped.
+ */
+async function materialize(share, destination, now = new Date()) {
+  const groups = await FacebookGroup.find({
+    workspace: share.workspace,
+    pages: destination.socialAccount,
+    status: FACEBOOK_GROUP_STATUS.ACTIVE,
+  }).limit(GROUP_LIMITS.GROUPS_MAX);
+  if (groups.length === 0) return { created: 0, skipped: [] };
+  const queued = new Set(
+    (
+      await SharingTask.find({ share: share._id, group: { $in: groups.map((g) => g._id) } }).select(
+        'group',
+      )
+    ).map((task) => id(task.group)),
+  );
+  const create = [];
+  const skipped = [];
+  for (const group of groups) {
+    if (queued.has(id(group))) continue;
+    const next = nextShareAllowedAt(group, now);
+    if (next) {
+      skipped.push({
+        group: group._id,
+        name: group.name,
+        reason: SHARE_SKIP_REASONS.TOO_SOON,
+        nextShareAllowedAt: next,
+      });
+    } else create.push(group);
+  }
+  let created = 0;
+  if (create.length) {
+    try {
+      const inserted = await SharingTask.insertMany(
+        create.map((group) => ({
+          workspace: share.workspace,
+          share: share._id,
+          group: group._id,
+          page: destination.socialAccount,
+          publishDestination: destination._id,
+          createdBy: share.createdBy,
+        })),
+        { ordered: false },
+      );
+      created = inserted.length;
+    } catch (err) {
+      // Another call (the worker and the person's request at once) created some of them.
+      if (!isDuplicateKeyError(err) && !err?.writeErrors) throw err;
+      created = create.length - (err.writeErrors?.length ?? 0);
+    }
+  }
+  if (skipped.length) {
+    const current = await GroupShare.findById(share._id).select('skipped');
+    const known = new Set((current?.skipped ?? []).map((entry) => id(entry.group)));
+    const fresh = skipped.filter((entry) => !known.has(id(entry.group)));
+    if (fresh.length) {
+      await GroupShare.updateOne(
+        { _id: share._id },
+        { $push: { skipped: { $each: fresh, $slice: -GROUP_LIMITS.GROUPS_PER_SHARE_MAX } } },
+      );
+    }
+  }
+  return { created, skipped };
+}
+
+/** A real post's live Facebook Page posts: the only ones that may get group tasks. */
+const liveFacebookPosts = (jobId) =>
+  PublishDestination.find({
+    job: jobId,
+    platform: SOCIAL_PLATFORMS.FACEBOOK_PAGE,
+    state: DESTINATION_STATES.PUBLISHED,
+    simulated: { $ne: true },
+  });
+
+/**
+ * Auto share for a real post (idempotent: one share per post). Tasks for the Pages whose post
+ * is already live are created now; the others follow when their post goes live.
+ */
+export async function createAutoShare(workspace, membership, actor, body, context) {
+  const job = mongoose.isValidObjectId(body.publishJobId)
+    ? await PublishJob.findOne({ _id: body.publishJobId, workspace: workspace._id })
+    : null;
+  if (!job || !(await jobIsVisible(workspace, membership, job._id))) {
+    throw notFound('Publishing job not found');
+  }
+  if (job.mode !== PUBLISHING_MODES.LIVE) {
+    throw conflict(
+      'This post was a simulation, so it is not on Facebook and cannot be shared in groups.',
+      { reason: AUTO_SHARE_REFUSALS.SIMULATED },
+    );
+  }
+  const pageCount = await PublishDestination.countDocuments({
+    job: job._id,
+    platform: SOCIAL_PLATFORMS.FACEBOOK_PAGE,
+  });
+  if (pageCount === 0) {
+    throw conflict('This post went to no Facebook Page, so there is nothing to share in groups.', {
+      reason: AUTO_SHARE_REFUSALS.NO_FACEBOOK_PAGES,
+    });
+  }
+
+  let share = await GroupShare.findOne({ publishJob: job._id });
+  let created = false;
+  if (!share) {
+    const caption = composeCaption(
+      job.content?.toObject?.() ?? job.content ?? {},
+      SOCIAL_PLATFORMS.FACEBOOK_PAGE,
+    );
+    try {
+      share = await GroupShare.create({
+        workspace: workspace._id,
+        title: autoTitle(caption, job.createdAt ?? new Date()),
+        message: caption,
+        publishJob: job._id,
+        createdBy: actor._id,
+      });
+      created = true;
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      share = await GroupShare.findOne({ publishJob: job._id });
+    }
+  }
+
+  let tasks = 0;
+  for (const destination of await liveFacebookPosts(job._id)) {
+    tasks += (await materialize(share, destination)).created;
+  }
+  if (created) {
+    await recordActivity({
+      workspace,
+      actor,
+      action: ACTIVITY_ACTIONS.GROUP_SHARE_CREATED,
+      target: { type: 'group_share', id: share._id, label: share.title },
+      metadata: { auto: true, groups: tasks },
+      context,
+    });
+  }
+  const fresh = await GroupShare.findById(share._id).populate('createdBy', 'name');
+  const counts = (await countsByShare([share._id])).get(id(share));
+  const waiting = await PublishDestination.countDocuments({
+    job: job._id,
+    platform: SOCIAL_PLATFORMS.FACEBOOK_PAGE,
+    state: { $ne: DESTINATION_STATES.PUBLISHED },
+  });
+  return { share: shareView(fresh, counts), created, tasksCreated: tasks, pagesWaiting: waiting };
+}
+
+/**
+ * Called by the publishing worker when a destination is published: if its post has an auto
+ * share and it is a real Facebook Page post, the Page's groups get their tasks. Never throws:
+ * group tasks must not affect the publishing result.
+ */
+export async function queueGroupTasksForDestination(destinationId) {
+  try {
+    const destination = await PublishDestination.findById(destinationId);
+    if (
+      !destination ||
+      destination.platform !== SOCIAL_PLATFORMS.FACEBOOK_PAGE ||
+      destination.state !== DESTINATION_STATES.PUBLISHED ||
+      destination.simulated
+    ) {
+      return null;
+    }
+    const share = await GroupShare.findOne({ publishJob: destination.job });
+    if (!share) return null;
+    return await materialize(share, destination);
+  } catch (err) {
+    logger.warn(
+      { err, destinationId: String(destinationId) },
+      'Could not create group sharing tasks for a published post',
+    );
+    return null;
+  }
 }
 
 /** Open tasks of a member who leaves or is removed go back to "anyone". */

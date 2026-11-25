@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { FormError } from '../../components/ui/Field.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { timeAgo } from '../../lib/utils.js';
+import { ShareInGroupsButton } from '../groups/ShareInGroupsButton.jsx';
 import { CaptionPreview, ScheduledTime } from './JobList.jsx';
 import {
   DestinationStateBadge,
@@ -479,6 +480,7 @@ export function JobDetailsModal({
         footer={
           <>
             {footerExtra}
+            {canAct && <ShareInGroupsButton job={job} />}
             {canAct && job?.canReschedule && onReschedule && (
               <Button variant="secondary" onClick={() => onReschedule(job)}>
                 <CalendarClock className="h-4 w-4" aria-hidden="true" />

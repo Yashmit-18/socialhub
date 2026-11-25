@@ -12,7 +12,7 @@ import {
   PUBLISH_ERROR_CODES,
   PUBLISH_JOB_STATUS,
   PUBLISH_WARNINGS,
-  SOCIAL_PROVIDERS,
+  isInstagramDirectProvider,
   composeCaption,
   deriveJobStatus,
   effectivePublishingMode,
@@ -23,7 +23,7 @@ import {
 } from '@socialhub/shared';
 import { logger } from '../../config/logger.js';
 import { randomToken } from '../../lib/crypto.js';
-import { facebookSettings, instagramSettings } from '../../integrations/meta/settings.js';
+import { facebookSettings, providerSettings } from '../../integrations/meta/settings.js';
 import {
   MediaAsset,
   Membership,
@@ -36,6 +36,7 @@ import {
 import { getPublishQueue } from '../../queue/publishQueue.js';
 import { getStorage } from '../../storage/index.js';
 import { recordActivity } from '../activity/activity.service.js';
+import { queueGroupTasksForDestination } from '../groups/sharing.service.js';
 import { canAccessAccount } from '../socialAccounts/socialAccount.service.js';
 import { adapterFor } from './adapters/index.js';
 import { retryDelayMs } from './backoff.js';
@@ -509,15 +510,16 @@ async function prepare(destination, job) {
   let accessToken = null;
   if (!adapter.simulated) {
     const provider = connection?.provider;
-    const configured =
-      provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN ? instagramSettings() : facebookSettings();
+    const configured = provider ? providerSettings(provider) : facebookSettings();
     if (!configured) {
       throw fail(E.LIVE_PUBLISHING_DISABLED, 'The Meta app is not configured on this server.');
     }
-    // Instagram Login tokens expire (about 60 days). Page tokens obtained through Facebook
-    // Login do not, so for those Meta's answer decides (an expired grant fails as reconnect).
+    // Instagram Login tokens expire (about 60 days) and Unified Login tokens expire when their
+    // configuration says so; both are the connection's own token. Page tokens obtained through
+    // Facebook Login do not, so for those Meta's answer decides (an expired grant fails as
+    // reconnect).
     if (
-      provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN &&
+      isInstagramDirectProvider(provider) &&
       connection?.tokenExpiresAt &&
       connection.tokenExpiresAt.getTime() <= Date.now()
     ) {
@@ -642,6 +644,7 @@ export async function processDestination(
     if (sent) {
       outcome = await savePublishedResult(destination, sent, now, caught, saveRetryDelaysMs);
       await syncJob(destination.job).catch((err) => logJobSyncError(err, destination));
+      if (outcome === 'published') await queueGroupTasksForDestination(destination._id);
       return outcome;
     }
     const error =
@@ -668,6 +671,8 @@ export async function processDestination(
     }
   }
   await syncJob(destination.job).catch((err) => logJobSyncError(err, destination));
+  // A real Facebook Page post with an auto share: its groups get their sharing tasks now.
+  if (outcome === 'published') await queueGroupTasksForDestination(destination._id);
   return outcome;
 }
 

@@ -2,6 +2,10 @@
  * Phase 6: manual Facebook Group distribution. SocialHub keeps a directory of Facebook Groups
  * and turns a post into one sharing task per group; a person posts it in the group themselves
  * and marks the task done. Nothing here posts to, reads or scrapes Facebook.
+ *
+ * Each group can list the workspace's Facebook Pages that are members of it (entered by
+ * people: Meta offers no API to read which groups a Page has joined). A real post published
+ * to one of those Pages can then get its sharing tasks automatically ("auto share").
  */
 import { z } from 'zod';
 import { objectIdSchema } from './schemas.js';
@@ -21,6 +25,10 @@ export const GROUP_LIMITS = Object.freeze({
   GROUPS_PER_SHARE_MAX: 200,
   TASK_NOTE_MAX: 500,
   PAGE_SIZE_MAX: 100,
+  /** Facebook Pages listed as members of one group. */
+  PAGES_PER_GROUP_MAX: 50,
+  /** Group links accepted by one bulk add. */
+  BULK_GROUPS_MAX: 100,
 });
 
 export const FACEBOOK_GROUP_STATUS = Object.freeze({
@@ -66,6 +74,22 @@ export function parseFacebookGroupUrl(input) {
   if (!match) return null;
   const slug = match[1];
   return { url: `https://www.facebook.com/groups/${slug}/`, key: slug.toLowerCase() };
+}
+
+/**
+ * A readable starting name for a group added by link only: "london.fashion-lovers" becomes
+ * "London Fashion Lovers", a numeric id becomes "Facebook group 1234". People can rename it.
+ */
+export function groupNameFromUrl(input) {
+  const parsed = parseFacebookGroupUrl(input);
+  if (!parsed) return null;
+  const slug = /\/groups\/([^/]+)\//.exec(parsed.url)[1];
+  if (/^\d+$/.test(slug)) return `Facebook group ${slug}`;
+  const words = slug
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+  return (words.join(' ') || slug).slice(0, GROUP_LIMITS.NAME_MAX);
 }
 
 /** True for an https address on facebook.com (any subdomain) or fb.com: a shared post's link. */
@@ -128,6 +152,14 @@ const tagsSchema = z
 
 const cooldownSchema = z.number().int().min(1).max(GROUP_LIMITS.COOLDOWN_DAYS_MAX).nullable();
 
+/** The workspace's Facebook Pages (social account ids) that are members of a group. */
+const pageIdsSchema = z
+  .array(objectIdSchema)
+  .max(GROUP_LIMITS.PAGES_PER_GROUP_MAX, {
+    error: `Choose at most ${GROUP_LIMITS.PAGES_PER_GROUP_MAX} Pages`,
+  })
+  .transform((ids) => [...new Set(ids.map((value) => value.toLowerCase()))]);
+
 export const groupCategorySchema = z.strictObject({
   name: trimmedString(GROUP_LIMITS.CATEGORY_NAME_MAX, 'Name'),
 });
@@ -142,6 +174,24 @@ export const facebookGroupCreateSchema = z.strictObject({
   notes: optionalText(GROUP_LIMITS.NOTES_MAX).optional(),
   /** Minimum days between two shares in this group (null: no rule). */
   minDaysBetweenShares: cooldownSchema.optional(),
+  /** The workspace's Facebook Pages that are members of this group. */
+  pageIds: pageIdsSchema.optional(),
+});
+
+/**
+ * Many groups at once, by link: one per line in the app. Each link is checked on its own and
+ * reported back (added, already listed, not a group link). Groups get a name from their link.
+ */
+export const facebookGroupBulkCreateSchema = z.strictObject({
+  urls: z
+    .array(z.string().max(GROUP_LIMITS.LINK_MAX))
+    .min(1, { error: 'Paste at least one group link' })
+    .max(GROUP_LIMITS.BULK_GROUPS_MAX, {
+      error: `Add at most ${GROUP_LIMITS.BULK_GROUPS_MAX} groups at a time`,
+    }),
+  categoryId: objectIdSchema.nullable().optional(),
+  /** Pages that are members of every listed group (added to groups already listed, too). */
+  pageIds: pageIdsSchema.optional(),
 });
 
 export const facebookGroupUpdateSchema = facebookGroupCreateSchema
@@ -166,6 +216,8 @@ export const facebookGroupQuerySchema = z.strictObject({
   /** A category id, or "none" for groups without a category. */
   category: z.union([objectIdSchema, z.literal('none')]).optional(),
   tag: z.string().trim().toLowerCase().max(GROUP_LIMITS.TAG_MAX).optional(),
+  /** Only groups this Facebook Page (social account id) is a member of. */
+  pageId: objectIdSchema.optional(),
   status: z.enum([...Object.values(FACEBOOK_GROUP_STATUS), 'ALL']).default('ACTIVE'),
   sort: z.enum(FACEBOOK_GROUP_SORTS).default('name'),
   page,
@@ -207,6 +259,20 @@ export const groupShareAddGroupsSchema = z.strictObject({
 });
 
 export const groupShareQuerySchema = z.strictObject({ page, limit });
+
+/**
+ * Auto share: sharing tasks for a real post, in the groups its Facebook Pages are members of.
+ * Tasks for a Page are created once its post is live on Facebook.
+ */
+export const autoGroupShareSchema = z.strictObject({ publishJobId: objectIdSchema });
+
+/** Why a published post cannot be shared in groups automatically. */
+export const AUTO_SHARE_REFUSALS = Object.freeze({
+  /** Simulated posts never reached Facebook: there is nothing to share. */
+  SIMULATED: 'SIMULATED',
+  /** The post went to no Facebook Page. */
+  NO_FACEBOOK_PAGES: 'NO_FACEBOOK_PAGES',
+});
 
 export const sharingTaskQuerySchema = z.strictObject({
   status: z.enum([...Object.values(SHARING_TASK_STATUS), 'ALL']).default('OPEN'),

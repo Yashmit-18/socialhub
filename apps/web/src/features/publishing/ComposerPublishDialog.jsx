@@ -1,11 +1,13 @@
-import { PUBLISHING_LIMITS, PUBLISHING_MODES } from '@socialhub/shared';
-import { CircleX, FlaskConical, TriangleAlert } from 'lucide-react';
+import { PUBLISHING_LIMITS, PUBLISHING_MODES, SOCIAL_PLATFORMS } from '@socialhub/shared';
+import { CircleX, FlaskConical, TriangleAlert, UsersRound } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button.jsx';
 import { Spinner } from '../../components/ui/Feedback.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { useNow } from '../composer/hooks/useNow.js';
+import { useAutoShare, useGroupCountsByPage } from '../groups/api.js';
+import { autoShareMessage } from '../groups/helpers.js';
 import { PostPreview } from './PostPreview.jsx';
 import { PlatformIcon } from './PublishingBadges.jsx';
 import { RealPostConfirmation } from './RealPostConfirmation.jsx';
@@ -40,6 +42,37 @@ function ProblemList({ title, items, tone }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * "Also share in Facebook Groups": for a real post to Facebook Pages that are members of
+ * groups. Facebook does not let apps post in groups, so this only prepares one sharing task per
+ * group, created as each Page's post goes live; people post in the groups themselves.
+ */
+function GroupSharingOption({ pageCount, groupCount, checked, disabled, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-sm has-[:disabled]:cursor-not-allowed dark:border-white/10">
+      <input
+        type="checkbox"
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-brand-600"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-white">
+          <UsersRound className="h-4 w-4 text-[#1877F2]" aria-hidden="true" />
+          Also share in Facebook Groups
+        </span>
+        <span className="mt-0.5 block text-xs text-muted">
+          {pageCount === 1 ? 'This Page is' : 'These Pages are'} in {groupCount}{' '}
+          {groupCount === 1 ? 'group' : 'groups'}. Once the post is live, each group gets a
+          ready-to-share task under Group sharing. Facebook doesn’t let apps post in groups, so you
+          post each one yourself.
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -112,6 +145,21 @@ export function ComposerPublishDialog({
     confirmation.subject !== subject;
   if (stale) setConfirmation({ confirmed: false, workspaceId, mode, subject });
   const confirmedLive = live && confirmation.confirmed && !stale;
+  // Group sharing is offered for real posts to Pages that are listed as members of groups.
+  const facebookPages = accounts.filter(
+    (account) => account.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE,
+  );
+  const groupCounts = useGroupCountsByPage(workspaceId, {
+    enabled: live && facebookPages.length > 0,
+  });
+  // A group several of these Pages are in is counted once per Page here (it gets one task).
+  const groupCount = facebookPages.reduce(
+    (total, page) => total + (groupCounts.data?.[page.id] ?? 0),
+    0,
+  );
+  const offerGroups = live && groupCount > 0;
+  const [shareInGroups, setShareInGroups] = useState(true);
+  const autoShare = useAutoShare(workspaceId);
   const resolved = when === 'schedule' ? resolveSchedule(schedule, new Date(now)) : null;
   const notReady = accounts.filter((account) => !account.publishable);
   const serverBlocks = !status.data?.canPublish;
@@ -187,6 +235,21 @@ export function ComposerPublishDialog({
         });
         if (created === false) toast.info(message.title);
         else toast.success(message.title, { description: message.description });
+        // Not awaited: the post is on its way whatever happens here. The promise (unlike
+        // mutate callbacks) still settles after this dialog has closed.
+        if (offerGroups && shareInGroups && publishJob?.id && publishJob.simulated === false) {
+          autoShare
+            .mutateAsync(publishJob.id)
+            .then((result) => {
+              const groups = autoShareMessage(result);
+              toast.success(groups.title, { description: groups.description });
+            })
+            .catch((err) =>
+              toast.error('Group sharing could not be set up', {
+                description: `${err?.message ?? 'Please try again.'} You can set it up later from the post’s details.`,
+              }),
+            );
+        }
         onCreated?.(publishJob);
       } catch {
         // Shown in the dialog from create.error.
@@ -321,6 +384,16 @@ export function ComposerPublishDialog({
           workspaceTimeZone={workspaceTimeZone}
           simulated={simulated}
         />
+
+        {offerGroups && (
+          <GroupSharingOption
+            pageCount={facebookPages.length}
+            groupCount={groupCount}
+            checked={shareInGroups}
+            disabled={step !== 'idle'}
+            onChange={setShareInGroups}
+          />
+        )}
 
         {live && accounts.length > 0 && (
           <RealPostConfirmation

@@ -5,11 +5,15 @@
 /*
  * SocialHub design tokens.
  *
- * - Neutrals: Tailwind's `slate` scale re-tuned to a violet-leaning grey (same lightness steps,
- *   so contrast is unchanged), which makes every page sit in the brand's indigo → fuchsia world.
- * - Motion: expo-out for entrances, a soft spring for pops. Entrance animations use
- *   `backwards` fill only, so nothing keeps a transform (and its containing block) afterwards.
- *   Everything collapses to an instant change under `prefers-reduced-motion`.
+ * - Palette: taken from the logo (indigo → violet → pink). Indigo is the primary colour (actions,
+ *   selection), violet and pink are accents, and green/amber/red are kept for status.
+ * - Neutrals: Tailwind's `slate` scale tinted towards the brand indigo (same lightness steps, so
+ *   contrast is unchanged), so greys and the brand colour belong together. The sidebar is a deep
+ *   "ink" indigo; pages sit on a soft lavender-grey canvas with white cards.
+ * - Surfaces are flat: a hairline border and a soft shadow, no glows or gradients.
+ * - Motion: short expo-out entrances. Entrance animations use `backwards` fill only, so nothing
+ *   keeps a transform (and its containing block) afterwards. Everything collapses to an
+ *   instant change under `prefers-reduced-motion`.
  */
 @theme {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -26,26 +30,27 @@
   --color-brand-900: oklch(0.32 0.13 277);
   --color-brand-950: oklch(0.22 0.09 277);
 
-  --color-slate-50: oklch(0.985 0.003 285);
-  --color-slate-100: oklch(0.967 0.006 285);
-  --color-slate-200: oklch(0.927 0.011 285);
-  --color-slate-300: oklch(0.868 0.018 285);
-  --color-slate-400: oklch(0.704 0.028 285);
-  --color-slate-500: oklch(0.554 0.033 285);
-  --color-slate-600: oklch(0.446 0.033 285);
-  --color-slate-700: oklch(0.372 0.032 285);
-  --color-slate-800: oklch(0.279 0.03 285);
-  --color-slate-900: oklch(0.205 0.026 285);
-  --color-slate-950: oklch(0.142 0.02 285);
+  --color-slate-50: oklch(0.984 0.004 277);
+  --color-slate-100: oklch(0.966 0.007 277);
+  --color-slate-200: oklch(0.926 0.012 277);
+  --color-slate-300: oklch(0.866 0.018 277);
+  --color-slate-400: oklch(0.703 0.026 277);
+  --color-slate-500: oklch(0.552 0.032 277);
+  --color-slate-600: oklch(0.445 0.034 277);
+  --color-slate-700: oklch(0.37 0.034 277);
+  --color-slate-800: oklch(0.28 0.032 277);
+  --color-slate-900: oklch(0.212 0.03 277);
+  --color-slate-950: oklch(0.155 0.026 277);
 
-  --shadow-card:
-    0 1px 2px rgb(24 20 51 / 0.04), 0 1px 1px rgb(24 20 51 / 0.02),
-    0 10px 28px -14px rgb(24 20 51 / 0.12);
-  --shadow-lift:
-    0 1px 2px rgb(24 20 51 / 0.05), 0 22px 44px -18px rgb(67 56 202 / 0.28),
-    0 8px 18px -12px rgb(24 20 51 / 0.14);
-  --shadow-pop: 0 2px 6px rgb(24 20 51 / 0.06), 0 28px 70px -20px rgb(24 20 51 / 0.42);
-  --shadow-glow: 0 10px 30px -10px rgb(99 102 241 / 0.6);
+  /* Page background (light) and the sidebar's deep indigo (light and dark themes). */
+  --color-canvas: oklch(0.973 0.008 277);
+  --color-ink: oklch(0.215 0.06 277);
+  --color-ink-dark: oklch(0.13 0.024 277);
+
+  --shadow-card: 0 1px 2px rgb(30 27 75 / 0.05), 0 1px 3px rgb(30 27 75 / 0.04);
+  --shadow-lift: 0 1px 2px rgb(30 27 75 / 0.06), 0 8px 20px -6px rgb(30 27 75 / 0.14);
+  --shadow-pop: 0 2px 6px rgb(30 27 75 / 0.07), 0 24px 56px -16px rgb(30 27 75 / 0.32);
+  --shadow-glow: 0 1px 2px rgb(30 27 75 / 0.08);
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
@@ -53,7 +58,7 @@
 
   --animate-fade-in: fade-in 220ms ease-out;
   --animate-scale-in: scale-in 320ms var(--ease-out-expo);
-  --animate-rise: rise 640ms var(--ease-out-expo) backwards;
+  --animate-rise: rise 420ms var(--ease-out-expo) backwards;
   --animate-pop-in: pop-in 420ms var(--ease-spring) backwards;
   --animate-drawer-in: drawer-in 420ms var(--ease-out-expo);
   --animate-shimmer: shimmer 1.8s ease-in-out infinite;
@@ -85,7 +90,7 @@
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translateY(14px);
+      transform: translateY(6px);
     }
     to {
       opacity: 1;
@@ -188,7 +193,8 @@
     color-scheme: dark;
   }
   body {
-    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-canvas text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    letter-spacing: -0.006em;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
   }
   h1,
@@ -227,12 +233,12 @@
 /* ---------- Surfaces ---------- */
 
 @utility surface {
-  @apply rounded-2xl border border-slate-200/70 bg-white shadow-card dark:border-white/[0.07] dark:bg-slate-900/55 dark:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04),0_18px_40px_-24px_rgb(0_0_0/0.7)];
+  @apply rounded-xl border border-slate-200 bg-white shadow-card dark:border-white/[0.08] dark:bg-slate-900 dark:shadow-none;
 }
 
-/* A surface that lifts towards the pointer: for cards that are links or show live numbers. */
+/* A surface that reacts to the pointer: for cards that are links. */
 @utility surface-hover {
-  @apply transition-[transform,box-shadow,border-color] duration-300 ease-out-expo hover:-translate-y-0.5 hover:border-slate-300/70 hover:shadow-lift dark:hover:border-white/[0.13];
+  @apply transition-[box-shadow,border-color] duration-200 hover:border-slate-300 hover:shadow-lift dark:hover:border-white/[0.16];
 }
 
 @utility text-muted {
@@ -255,60 +261,48 @@
   .page-enter > *,
   .stagger > *,
   .auth-form form > * {
-    animation: rise 640ms var(--ease-out-expo) backwards;
+    animation: rise 420ms var(--ease-out-expo) backwards;
   }
   .page-enter > :nth-child(2),
   .stagger > :nth-child(2),
   .auth-form form > :nth-child(2) {
-    animation-delay: 60ms;
+    animation-delay: 30ms;
   }
   .page-enter > :nth-child(3),
   .stagger > :nth-child(3),
   .auth-form form > :nth-child(3) {
-    animation-delay: 120ms;
+    animation-delay: 60ms;
   }
   .page-enter > :nth-child(4),
   .stagger > :nth-child(4),
   .auth-form form > :nth-child(4) {
-    animation-delay: 180ms;
+    animation-delay: 90ms;
   }
   .page-enter > :nth-child(5),
   .stagger > :nth-child(5),
   .auth-form form > :nth-child(5) {
-    animation-delay: 240ms;
+    animation-delay: 120ms;
   }
   .page-enter > :nth-child(n + 6),
   .stagger > :nth-child(n + 6),
   .auth-form form > :nth-child(n + 6) {
-    animation-delay: 300ms;
+    animation-delay: 150ms;
   }
   /* Fixed bars (bulk actions, toasts) appear in place instead of rising from the page. */
   .page-enter > .fixed {
     animation: fade-in 220ms ease-out backwards;
   }
 
-  /* Ambient background behind the app: two soft brand glows and a faded grid. */
+  /*
+   * Ambient background (auth and onboarding screens only; the app itself sits on a plain
+   * background): one soft brand glow, no grid.
+   */
   .app-ambient {
     position: fixed;
     inset: 0;
     z-index: -1;
     pointer-events: none;
     overflow: hidden;
-  }
-  .app-ambient::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(to right, rgb(99 102 241 / 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(99 102 241 / 0.05) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 70% 50% at 60% 0%, #000 20%, transparent 75%);
-  }
-  .dark .app-ambient::before {
-    background-image:
-      linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
   }
   .app-glow {
     position: absolute;
@@ -321,22 +315,48 @@
     right: 8%;
     width: 38rem;
     height: 26rem;
-    background: rgb(129 140 248 / 0.2);
+    background: rgb(129 140 248 / 0.12);
   }
   .app-glow-b {
-    top: -10rem;
-    left: 22%;
-    width: 30rem;
-    height: 20rem;
-    background: rgb(232 121 249 / 0.12);
-    animation-duration: 30s;
-    animation-delay: -8s;
+    display: none;
   }
   .dark .app-glow-a {
-    background: rgb(99 102 241 / 0.22);
+    background: rgb(99 102 241 / 0.12);
   }
-  .dark .app-glow-b {
-    background: rgb(192 38 211 / 0.13);
+
+  /* App sidebar: deep indigo that turns violet towards the bottom, lit from the top corner. */
+  .sidebar-ink {
+    background:
+      radial-gradient(120% 45% at 0% 0%, rgb(99 102 241 / 0.24), transparent 65%),
+      linear-gradient(180deg, var(--color-ink) 0%, oklch(0.2 0.075 293) 100%);
+  }
+  .dark .sidebar-ink {
+    background:
+      radial-gradient(120% 45% at 0% 0%, rgb(99 102 241 / 0.14), transparent 65%),
+      linear-gradient(180deg, var(--color-ink-dark) 0%, oklch(0.13 0.035 293) 100%);
+  }
+
+  /*
+   * A soft wash of indigo and pink behind the top of every app page. It is the first child of
+   * the content column and is not layered below it (no z-index), so the header and page paint
+   * over it in document order and fixed bars inside pages keep their own stacking.
+   */
+  .page-wash {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 22rem;
+    pointer-events: none;
+    background:
+      radial-gradient(55% 100% at 20% 0%, rgb(99 102 241 / 0.16), transparent 72%),
+      radial-gradient(40% 85% at 92% 0%, rgb(236 72 153 / 0.1), transparent 72%),
+      linear-gradient(180deg, rgb(238 242 255 / 0.85), transparent);
+  }
+  .dark .page-wash {
+    background:
+      radial-gradient(55% 100% at 20% 0%, rgb(99 102 241 / 0.14), transparent 72%),
+      radial-gradient(40% 85% at 92% 0%, rgb(236 72 153 / 0.07), transparent 72%);
   }
 
   /* Small keyboard hint (⌘K). */

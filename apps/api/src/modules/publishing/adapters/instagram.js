@@ -23,7 +23,9 @@ import { PublishError, fromMetaError } from '../publishError.js';
  *   4. GET  /{media-id}?fields=permalink       the link (best effort)
  *
  * Accounts connected with Instagram Login use graph.instagram.com; accounts reached through
- * a Facebook Page use graph.facebook.com. The container id is saved before step 3, so a
+ * a Facebook Page or Instagram Unified Login (Business Integration System User token,
+ * permissions instagram_basic + instagram_content_publish) use graph.facebook.com with
+ * appsecret_proof (the Meta app secret). The container id is saved before step 3, so a
  * retry resumes instead of creating another container, and a container Instagram reports as
  * already PUBLISHED is never published again.
  */

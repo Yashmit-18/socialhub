@@ -37,10 +37,7 @@ export function DraftRestoreBanner({
       aria-label="Unsaved draft"
       className={cn('surface relative animate-fade-in overflow-hidden', className)}
     >
-      <span
-        aria-hidden="true"
-        className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-brand-500 to-fuchsia-500"
-      />
+      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-brand-500" />
       <div className="flex flex-col gap-4 p-4 pl-5 sm:flex-row sm:items-start sm:p-5 sm:pl-6">
         <span
           aria-hidden="true"

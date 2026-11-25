@@ -1,16 +1,19 @@
 /**
- * Facebook Group directory (Phase 6): groups entered by people, their categories and
- * relevance tags. SocialHub never reads, joins or posts to groups on Facebook.
+ * Facebook Group directory (Phase 6): groups entered by people, their categories, relevance
+ * tags and the workspace's Facebook Pages that are members of them. SocialHub never reads,
+ * joins or posts to groups on Facebook.
  */
 import mongoose from 'mongoose';
 import {
   ACTIVITY_ACTIONS,
   GROUP_LIMITS,
   SHARING_TASK_STATUS,
+  SOCIAL_PLATFORMS,
+  groupNameFromUrl,
   parseFacebookGroupUrl,
 } from '@socialhub/shared';
 import { conflict, isDuplicateKeyError, notFound, validationError } from '../../lib/errors.js';
-import { FacebookGroup, GroupCategory, SharingTask } from '../../models/index.js';
+import { FacebookGroup, GroupCategory, SharingTask, SocialAccount } from '../../models/index.js';
 import { recordActivity } from '../activity/activity.service.js';
 
 const DAY_MS = 86_400_000;
@@ -52,10 +55,21 @@ export function groupView(group, { categories, now = new Date() } = {}) {
     status: group.status,
     lastSharedAt: group.lastSharedAt ?? null,
     nextShareAllowedAt: nextShareAllowedAt(group, now),
+    // Populated Pages only: a Page removed from the workspace drops out of the list.
+    pages: (group.pages ?? [])
+      .filter((page) => page?._id)
+      .map((page) => ({ id: id(page), name: page.name })),
     createdAt: group.createdAt,
     updatedAt: group.updatedAt,
   };
 }
+
+/** Populates a group's Pages (names only); anything that is not a Facebook Page drops out. */
+export const GROUP_PAGES = {
+  path: 'pages',
+  select: 'name',
+  match: { platform: SOCIAL_PLATFORMS.FACEBOOK_PAGE },
+};
 
 async function categoryMap(workspaceId) {
   const categories = await GroupCategory.find({ workspace: workspaceId });
@@ -146,6 +160,22 @@ async function assertCategory(workspace, categoryId) {
   return categoryId;
 }
 
+/** Every id must be a Facebook Page of this workspace (422 otherwise). */
+async function assertPages(workspace, pageIds) {
+  if (!pageIds?.length) return [];
+  const found = await SocialAccount.countDocuments({
+    workspace: workspace._id,
+    _id: { $in: pageIds },
+    platform: SOCIAL_PLATFORMS.FACEBOOK_PAGE,
+  });
+  if (found !== pageIds.length) {
+    throw validationError({
+      fields: { pageIds: 'One or more Pages are no longer connected. Reload and try again.' },
+    });
+  }
+  return pageIds.map((pageId) => new mongoose.Types.ObjectId(pageId));
+}
+
 async function duplicateGroup(workspace, urlKey) {
   const existing = await FacebookGroup.findOne({ workspace: workspace._id, urlKey }).select('name');
   return conflict(
@@ -180,33 +210,45 @@ export async function listGroups(workspace, query, { now = new Date() } = {}) {
   if (query.category === 'none') filter.category = null;
   else if (query.category) filter.category = new mongoose.Types.ObjectId(query.category);
   if (query.tag) filter.tags = query.tag;
+  if (query.pageId) filter.pages = new mongoose.Types.ObjectId(query.pageId);
   if (query.q) {
     const needle = new RegExp(escapeRegex(query.q), 'i');
     filter.$or = [{ name: needle }, { urlKey: needle }, { tags: needle }, { notes: needle }];
   }
 
   const { page, limit } = query;
-  const [groups, total, categories, categoryCounts, tagCounts, statusCounts] = await Promise.all([
-    FacebookGroup.find(filter)
-      .sort(SORTS[query.sort] ?? SORTS.name)
-      .collation(COLLATION)
-      .skip((page - 1) * limit)
-      .limit(limit),
-    FacebookGroup.countDocuments(filter),
-    categoryMap(workspace._id),
-    FacebookGroup.aggregate([
-      { $match: scoped },
-      { $group: { _id: '$category', count: { $sum: 1 } } },
-    ]),
-    FacebookGroup.aggregate([
-      { $match: scoped },
-      { $unwind: '$tags' },
-      { $group: { _id: '$tags', count: { $sum: 1 } } },
-      { $sort: { count: -1, _id: 1 } },
-      { $limit: 30 },
-    ]),
-    FacebookGroup.aggregate([{ $match: base }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
-  ]);
+  const [groups, total, categories, categoryCounts, tagCounts, statusCounts, pageCounts] =
+    await Promise.all([
+      FacebookGroup.find(filter)
+        .sort(SORTS[query.sort] ?? SORTS.name)
+        .collation(COLLATION)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate(GROUP_PAGES),
+      FacebookGroup.countDocuments(filter),
+      categoryMap(workspace._id),
+      FacebookGroup.aggregate([
+        { $match: scoped },
+        { $group: { _id: '$category', count: { $sum: 1 } } },
+      ]),
+      FacebookGroup.aggregate([
+        { $match: scoped },
+        { $unwind: '$tags' },
+        { $group: { _id: '$tags', count: { $sum: 1 } } },
+        { $sort: { count: -1, _id: 1 } },
+        { $limit: 30 },
+      ]),
+      FacebookGroup.aggregate([
+        { $match: base },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      // How many groups (in the status in view) each Page is a member of.
+      FacebookGroup.aggregate([
+        { $match: scoped },
+        { $unwind: '$pages' },
+        { $group: { _id: '$pages', count: { $sum: 1 } } },
+      ]),
+    ]);
 
   return {
     items: groups.map((g) => groupView(g, { categories, now })),
@@ -220,13 +262,14 @@ export async function listGroups(workspace, query, { now = new Date() } = {}) {
       ),
       tags: tagCounts.map((row) => ({ tag: row._id, count: row.count })),
       status: Object.fromEntries(statusCounts.map((row) => [row._id, row.count])),
+      pages: Object.fromEntries(pageCounts.map((row) => [id(row._id), row.count])),
     },
   };
 }
 
 export async function findGroup(workspace, groupId) {
   const group = mongoose.isValidObjectId(groupId)
-    ? await FacebookGroup.findOne({ _id: groupId, workspace: workspace._id })
+    ? await FacebookGroup.findOne({ _id: groupId, workspace: workspace._id }).populate(GROUP_PAGES)
     : null;
   if (!group) throw notFound('Group not found');
   return group;
@@ -278,6 +321,11 @@ function groupFields(body) {
   return fields;
 }
 
+/** Whether a group's stored Pages (populated or not) are the same set as `next`. */
+const samePages = (stored, next) =>
+  JSON.stringify((stored ?? []).map((page) => id(page)).sort()) ===
+  JSON.stringify(next.map((page) => id(page)).sort());
+
 export async function createGroup(workspace, actor, body, context) {
   if (
     (await FacebookGroup.countDocuments({ workspace: workspace._id })) >= GROUP_LIMITS.GROUPS_MAX
@@ -288,6 +336,7 @@ export async function createGroup(workspace, actor, body, context) {
   }
   await assertCategory(workspace, body.categoryId);
   const fields = groupFields(body);
+  if (body.pageIds !== undefined) fields.pages = await assertPages(workspace, body.pageIds);
   let group;
   try {
     group = await FacebookGroup.create({
@@ -306,6 +355,7 @@ export async function createGroup(workspace, actor, body, context) {
     target: { type: 'facebook_group', id: group._id, label: group.name },
     context,
   });
+  await group.populate(GROUP_PAGES);
   return { group: groupView(group, { categories: await categoryMap(workspace._id) }) };
 }
 
@@ -318,6 +368,13 @@ export async function updateGroup(workspace, actor, groupId, body, context) {
       key !== 'urlKey' &&
       JSON.stringify(group[key] ?? null) !== JSON.stringify(fields[key] ?? null),
   );
+  if (body.pageIds !== undefined) {
+    const pages = await assertPages(workspace, body.pageIds);
+    if (!samePages(group.pages, pages)) {
+      fields.pages = pages;
+      changed.push('pageIds');
+    }
+  }
   if (changed.length > 0) {
     group.set(fields);
     try {
@@ -335,7 +392,79 @@ export async function updateGroup(workspace, actor, groupId, body, context) {
       context,
     });
   }
+  await group.populate(GROUP_PAGES);
   return { group: groupView(group, { categories: await categoryMap(workspace._id) }) };
+}
+
+/**
+ * Adds many groups by link. Each link is reported on its own: `added` (a new group, named
+ * after its link), `existing` (already listed: the Pages given are added to it) or `invalid`
+ * (not a Facebook Group link). A link listed twice counts once.
+ */
+export async function bulkCreateGroups(workspace, actor, body, context) {
+  await assertCategory(workspace, body.categoryId);
+  const pages = await assertPages(workspace, body.pageIds);
+  const invalid = [];
+  const wanted = new Map();
+  for (const raw of body.urls) {
+    const line = raw.trim();
+    if (!line) continue;
+    const parsed = parseFacebookGroupUrl(line);
+    if (!parsed) invalid.push(line);
+    else if (!wanted.has(parsed.key)) wanted.set(parsed.key, parsed);
+  }
+  if (wanted.size === 0 && invalid.length === 0) {
+    throw validationError({ fields: { urls: 'Paste at least one group link' } });
+  }
+  const existing = await FacebookGroup.find({
+    workspace: workspace._id,
+    urlKey: { $in: [...wanted.keys()] },
+  });
+  const existingKeys = new Set(existing.map((group) => group.urlKey));
+  const fresh = [...wanted.values()].filter((parsed) => !existingKeys.has(parsed.key));
+  const count = await FacebookGroup.countDocuments({ workspace: workspace._id });
+  if (count + fresh.length > GROUP_LIMITS.GROUPS_MAX) {
+    throw conflict(
+      `A workspace can have up to ${GROUP_LIMITS.GROUPS_MAX} groups in its directory. ${Math.max(0, GROUP_LIMITS.GROUPS_MAX - count)} more can be added.`,
+    );
+  }
+
+  const added = [];
+  for (const parsed of fresh) {
+    try {
+      const group = await FacebookGroup.create({
+        workspace: workspace._id,
+        name: groupNameFromUrl(parsed.url),
+        url: parsed.url,
+        urlKey: parsed.key,
+        category: body.categoryId ?? null,
+        pages,
+        createdBy: actor._id,
+      });
+      added.push(group);
+      await recordActivity({
+        workspace,
+        actor,
+        action: ACTIVITY_ACTIONS.FACEBOOK_GROUP_ADDED,
+        target: { type: 'facebook_group', id: group._id, label: group.name },
+        metadata: { bulk: true },
+        context,
+      });
+    } catch (err) {
+      // Added by someone else a moment ago: treated like a group that was already listed.
+      if (!isDuplicateKeyError(err)) throw err;
+      const raced = await FacebookGroup.findOne({ workspace: workspace._id, urlKey: parsed.key });
+      if (raced) existing.push(raced);
+    }
+  }
+  if (pages.length && existing.length) {
+    await FacebookGroup.updateMany(
+      { _id: { $in: existing.map((group) => group._id) } },
+      { $addToSet: { pages: { $each: pages } } },
+    );
+  }
+  const brief = (group) => ({ id: id(group), name: group.name, url: group.url });
+  return { added: added.map(brief), existing: existing.map(brief), invalid };
 }
 
 /**

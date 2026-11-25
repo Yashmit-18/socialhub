@@ -87,6 +87,20 @@ const envSchema = z.object({
   INSTAGRAM_APP_SECRET: z.string().min(16).optional(),
   INSTAGRAM_SCOPES: csv.default(['instagram_business_basic', 'instagram_business_content_publish']),
 
+  /*
+   * --- Meta: Instagram API with Unified Login ---
+   * The Configuration ID of the Unified Login configuration (App Dashboard › Use cases ›
+   * Manage messaging & content on Instagram › API setup with Unified login). It is NOT an app
+   * id. The flow runs under META_APP_ID / META_APP_SECRET; no Instagram app id is involved.
+   */
+  META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID: z
+    .string()
+    .regex(/^\d+$/, {
+      error:
+        'META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID must be the numeric Configuration ID of the Unified Login configuration',
+    })
+    .optional(),
+
   /* --- Media storage for the composer. Unset = uploads disabled. --- */
   STORAGE_DRIVER: z.enum(['s3', 'local']).optional(),
   STORAGE_S3_BUCKET: z.string().min(1).optional(),
@@ -195,6 +209,30 @@ export function loadConfig(source = process.env) {
     if (Boolean(env[id]) !== Boolean(env[secret])) {
       throw new Error(
         `Invalid environment configuration: set both ${id} and ${secret}, or neither`,
+      );
+    }
+  }
+
+  // A configuration id is not an app id, and the Unified Login configuration (system-user
+  // tokens) must never be sent by Facebook Login, whose Page discovery needs user tokens.
+  const unifiedConfigId = env.META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID;
+  if (unifiedConfigId) {
+    const clashes = [
+      ['META_APP_ID', 'it is a Configuration ID, not the Meta App ID'],
+      ['INSTAGRAM_APP_ID', 'it is a Configuration ID, not an Instagram App ID'],
+      [
+        'META_FACEBOOK_LOGIN_CONFIG_ID',
+        'Facebook Login needs its own User access token configuration; sending this one would break Facebook Page discovery',
+      ],
+    ].filter(([name]) => env[name] === unifiedConfigId);
+    if (clashes.length) {
+      throw new Error(
+        `Invalid environment configuration:\n${clashes
+          .map(
+            ([name, why]) =>
+              `  - ${name} has the same value as META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID (${why}). Remove it from ${name}.`,
+          )
+          .join('\n')}`,
       );
     }
   }
@@ -374,6 +412,18 @@ export function loadConfig(source = process.env) {
             redirectUri: `${publicApiUrl}/api/v1/oauth/instagram/callback`,
           }
         : null,
+      /** As set, also when the Meta app credentials are missing (for the setup diagnostics). */
+      instagramUnifiedConfigId: unifiedConfigId ?? null,
+      // Instagram API with Unified Login runs under the Meta app's own id and secret.
+      instagramUnified:
+        env.META_APP_ID && unifiedConfigId
+          ? {
+              appId: env.META_APP_ID,
+              appSecret: env.META_APP_SECRET,
+              configId: unifiedConfigId,
+              redirectUri: `${publicApiUrl}/api/v1/oauth/instagram-unified/callback`,
+            }
+          : null,
     },
   });
 }

@@ -20,6 +20,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useOptionalWorkspace } from '../../context/WorkspaceContext.jsx';
 import { clearLocalDraftsForUser } from '../../features/composer/services/localStore.js';
+import { useSharingTasks } from '../../features/groups/api.js';
 import { useActiveIndicator } from '../../hooks/useActiveIndicator.js';
 import { useThemeTransition } from '../../hooks/useThemeTransition.js';
 import { useWorkspaces } from '../../lib/queries.js';
@@ -32,7 +33,6 @@ import { CommandPalette } from './CommandPalette.jsx';
 import { currentNavItem, navItems, navSections } from './navigation.js';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '');
-const MOD_KEY = isMac ? '⌘' : 'Ctrl';
 
 function WorkspaceSwitcher({ current }) {
   const { data: workspaces = [] } = useWorkspaces();
@@ -48,9 +48,9 @@ function WorkspaceSwitcher({ current }) {
           onClick={toggle}
           {...props}
           className={cn(
-            'group flex w-full items-center gap-3 rounded-xl border bg-white/80 px-2.5 py-2 text-left shadow-[0_1px_2px_rgb(24_20_51/0.05)] transition-[border-color,box-shadow,background-color] duration-200',
-            'border-slate-200/80 hover:border-slate-300 hover:shadow-card dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:border-white/20',
-            open && 'border-brand-300 ring-4 ring-brand-500/10 dark:border-brand-400/40',
+            'group flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-left text-white transition-[border-color,background-color] duration-150',
+            'border-white/[0.09] bg-white/[0.05] hover:border-white/[0.16] hover:bg-white/[0.08]',
+            open && 'border-brand-300/50 ring-2 ring-brand-400/20',
           )}
         >
           {current ? (
@@ -58,16 +58,16 @@ function WorkspaceSwitcher({ current }) {
               <Avatar name={current.name} seed={current.id} square size="sm" className="ring-0" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{current.name}</span>
-                <span className="block text-xs text-muted">
+                <span className="block text-xs text-white/55">
                   {ROLE_LABELS[current.membership.role]}
                 </span>
               </span>
             </>
           ) : (
-            <span className="flex-1 text-sm text-muted">Choose a workspace</span>
+            <span className="flex-1 text-sm text-white/60">Choose a workspace</span>
           )}
           <ChevronsUpDown
-            className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-600 dark:group-hover:text-slate-200"
+            className="h-4 w-4 shrink-0 text-white/40 transition-colors group-hover:text-white/80"
             aria-hidden="true"
           />
         </button>
@@ -111,92 +111,98 @@ function WorkspaceSwitcher({ current }) {
   );
 }
 
-function SidebarContent({ workspace, can, onNavigate, onOpenPalette }) {
+/**
+ * Live counts shown next to sidebar pages: group sharing tasks still open for this person
+ * (theirs and unassigned). Nothing is shown while loading or when the count is zero.
+ */
+function useNavBadges(workspace, can) {
+  const enabled = Boolean(workspace) && can(PERMISSIONS.SHARING_TASKS_COMPLETE);
+  const tasks = useSharingTasks(
+    workspace?.id,
+    { status: 'OPEN', assignee: 'available', limit: 1 },
+    { enabled },
+  );
+  return { groupTasks: enabled ? (tasks.data?.total ?? 0) : 0 };
+}
+
+function SidebarContent({ workspace, can, onNavigate }) {
   const { pathname } = useLocation();
   const navRef = useRef(null);
   const pillRef = useRef(null);
   useActiveIndicator(navRef, pillRef, pathname);
+  const badges = useNavBadges(workspace, can);
 
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 pt-5 pb-4">
         <Link to="/" onClick={onNavigate} aria-label="SocialHub home">
-          <Logo />
+          <Logo light />
         </Link>
       </div>
       <div className="px-3">
         <WorkspaceSwitcher current={workspace} />
       </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          onNavigate?.();
-          onOpenPalette();
-        }}
-        className="group mx-3 mt-3 flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-slate-900/[0.025] px-3 py-2 text-left text-sm text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700 dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-slate-400 dark:hover:border-white/15 dark:hover:text-slate-200"
-      >
-        <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="flex-1">Jump to…</span>
-        <span className="flex items-center gap-1 pointer-coarse:hidden" aria-hidden="true">
-          <kbd className="kbd">{MOD_KEY}</kbd>
-          <kbd className="kbd">K</kbd>
-        </span>
-      </button>
-
       <nav
         ref={navRef}
-        className="relative mt-4 flex-1 overflow-y-auto px-3 pb-4"
+        className="relative mt-5 flex-1 overflow-y-auto px-3 pb-4"
         aria-label="Workspace"
       >
         <div
           ref={pillRef}
           aria-hidden="true"
-          className="pointer-events-none absolute top-0 right-3 left-3 rounded-xl bg-gradient-to-r from-brand-500/[0.12] via-violet-500/[0.07] to-fuchsia-500/[0.03] opacity-0 ring-1 ring-brand-500/15 ring-inset data-[ready]:transition-[transform,height,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo dark:from-brand-400/[0.16] dark:via-violet-400/[0.08] dark:ring-brand-400/20"
-        >
-          <span className="absolute inset-y-2 -left-px w-[3px] rounded-full bg-gradient-to-b from-brand-500 via-violet-500 to-fuchsia-500 shadow-[0_0_12px_rgb(139_92_246/0.6)]" />
-        </div>
+          className="pointer-events-none absolute top-0 right-3 left-3 rounded-lg bg-gradient-to-r from-brand-400/30 via-violet-400/15 to-transparent opacity-0 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.07)] before:absolute before:top-1/2 before:left-0 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-gradient-to-b before:from-brand-300 before:to-pink-400 data-[ready]:transition-[transform,height,opacity] data-[ready]:duration-300 data-[ready]:ease-out-expo"
+        />
         {workspace &&
           navSections(workspace.slug, can).map((section) => (
-            <div key={section.id} className={cn(section.label && 'mt-5')}>
+            <div key={section.id} className={cn(section.label && 'mt-6')}>
               {section.label && (
-                <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-[0.08em] text-slate-400 uppercase dark:text-slate-500">
+                <p className="mb-1.5 px-3 text-[11px] font-medium tracking-wide text-white/40 uppercase">
                   {section.label}
                 </p>
               )}
               <ul className="space-y-0.5">
-                {section.items.map(({ to, label, icon: Icon, end }) => (
-                  <li key={to}>
-                    <NavLink
-                      to={to}
-                      end={end}
-                      onClick={onNavigate}
-                      className={({ isActive }) =>
-                        cn(
-                          'group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors duration-200',
-                          isActive
-                            ? 'text-brand-700 dark:text-white'
-                            : 'text-slate-600 hover:bg-slate-900/[0.04] hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.04] dark:hover:text-white',
-                        )
-                      }
-                    >
-                      {({ isActive }) => (
-                        <>
-                          <Icon
-                            className={cn(
-                              'h-[18px] w-[18px] transition-[color,transform] duration-300 ease-spring group-hover:scale-110',
-                              isActive
-                                ? 'text-brand-600 dark:text-brand-300'
-                                : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200',
+                {section.items.map(({ to, label, icon: Icon, end, badge }) => {
+                  const count = badge ? badges[badge] : 0;
+                  return (
+                    <li key={to}>
+                      <NavLink
+                        to={to}
+                        end={end}
+                        onClick={onNavigate}
+                        className={({ isActive }) =>
+                          cn(
+                            'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150',
+                            isActive
+                              ? 'text-white'
+                              : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
+                          )
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <Icon
+                              className={cn(
+                                'h-[18px] w-[18px] transition-colors duration-150',
+                                isActive
+                                  ? 'text-brand-300'
+                                  : 'text-white/45 group-hover:text-white/80',
+                              )}
+                              aria-hidden="true"
+                            />
+                            <span className="flex-1">{label}</span>
+                            {count > 0 && (
+                              <span className="rounded-full bg-pink-600 px-1.5 py-px text-[11px] font-semibold text-white tabular-nums">
+                                {count > 99 ? '99+' : count}
+                                <span className="sr-only"> to share</span>
+                              </span>
                             )}
-                            aria-hidden="true"
-                          />
-                          {label}
-                        </>
-                      )}
-                    </NavLink>
-                  </li>
-                ))}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
@@ -331,21 +337,14 @@ export function AppShell({ children, workspace: workspaceOverride }) {
     ? currentNavItem(navItems(workspace.slug, can), location.pathname)
     : null;
   const canCompose = workspace && can(PERMISSIONS.CONTENT_CREATE);
-  const onCompose = current?.to === `/w/${workspace?.slug}/compose`;
+  // Compose and the Overview have their own "Create post" button.
+  const onCompose =
+    current?.to === `/w/${workspace?.slug}/compose` || current?.to === `/w/${workspace?.slug}`;
 
   return (
     <div className="min-h-screen">
-      <div className="app-ambient" aria-hidden="true">
-        <div className="app-glow app-glow-a" />
-        <div className="app-glow app-glow-b" />
-      </div>
-
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/70 bg-white/60 backdrop-blur-2xl lg:block dark:border-white/[0.06] dark:bg-slate-950/50">
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-brand-500/25 to-transparent"
-          aria-hidden="true"
-        />
-        <SidebarContent workspace={workspace} can={can} onOpenPalette={openPalette} />
+      <aside className="sidebar-ink fixed inset-y-0 left-0 z-30 hidden w-60 lg:block dark:border-r dark:border-white/[0.06]">
+        <SidebarContent workspace={workspace} can={can} />
       </aside>
 
       {mobileOpen && (
@@ -355,11 +354,11 @@ export function AppShell({ children, workspace: workspaceOverride }) {
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <aside className="absolute inset-y-0 left-0 w-72 animate-drawer-in border-r border-slate-200 bg-white shadow-pop dark:border-white/10 dark:bg-slate-950">
+          <aside className="sidebar-ink absolute inset-y-0 left-0 w-72 animate-drawer-in shadow-pop dark:border-r dark:border-white/10">
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              className="absolute top-4 right-3 rounded-lg p-1.5 text-slate-400 transition duration-300 ease-out-expo hover:rotate-90 hover:bg-slate-100 dark:hover:bg-white/5"
+              className="absolute top-4 right-3 rounded-lg p-1.5 text-white/50 transition duration-300 ease-out-expo hover:rotate-90 hover:bg-white/10 hover:text-white"
               aria-label="Close navigation"
             >
               <X className="h-5 w-5" />
@@ -368,18 +367,19 @@ export function AppShell({ children, workspace: workspaceOverride }) {
               workspace={workspace}
               can={can}
               onNavigate={() => setMobileOpen(false)}
-              onOpenPalette={openPalette}
             />
           </aside>
         </div>
       )}
 
-      <div className="lg:pl-64">
+      <div className="relative lg:pl-60">
+        {/* A soft wash of the brand colours behind the top of every page. */}
+        <div className="page-wash" aria-hidden="true" />
         <header
           className={cn(
-            'sticky top-0 z-20 flex h-16 items-center gap-2 border-b px-4 backdrop-blur-xl transition-[background-color,border-color,box-shadow] duration-300 sm:gap-3 sm:px-6 lg:px-8',
+            'sticky top-0 z-20 flex h-14 items-center gap-2 border-b px-4 transition-[border-color,background-color] duration-200 sm:gap-3 sm:px-6 lg:px-8',
             scrolled
-              ? 'border-slate-200/70 bg-slate-50/75 shadow-[0_8px_30px_-18px_rgb(24_20_51/0.25)] dark:border-white/[0.06] dark:bg-slate-950/70'
+              ? 'border-slate-200 bg-canvas/85 backdrop-blur-md dark:border-white/[0.07] dark:bg-slate-950/80'
               : 'border-transparent bg-transparent',
           )}
         >
@@ -417,7 +417,7 @@ export function AppShell({ children, workspace: workspaceOverride }) {
             type="button"
             onClick={openPalette}
             aria-label="Search and jump to"
-            className="group hidden h-9 items-center gap-2.5 rounded-full border border-slate-200/80 bg-white/70 pr-1.5 pl-3 text-sm text-slate-500 shadow-[0_1px_2px_rgb(24_20_51/0.04)] transition-[border-color,color,box-shadow] duration-200 hover:border-slate-300 hover:text-slate-700 hover:shadow-card sm:flex dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200"
+            className="group hidden h-9 items-center gap-2.5 rounded-lg border border-slate-200 bg-white pr-1.5 pl-3 text-sm text-slate-500 transition-[border-color,color] duration-150 hover:border-slate-300 hover:text-slate-700 sm:flex dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-200"
           >
             <Search className="h-4 w-4" aria-hidden="true" />
             <span className="w-28 text-left lg:w-36">Jump to…</span>
@@ -439,7 +439,7 @@ export function AppShell({ children, workspace: workspaceOverride }) {
             <ButtonLink
               to={`/w/${workspace.slug}/compose`}
               size="sm"
-              className="hidden h-9 rounded-full px-3.5 md:inline-flex"
+              className="hidden h-9 px-3.5 md:inline-flex"
             >
               <SquarePen className="h-3.5 w-3.5" aria-hidden="true" /> New post
             </ButtonLink>
@@ -448,7 +448,7 @@ export function AppShell({ children, workspace: workspaceOverride }) {
           <ThemeToggle isDark={isDark} onToggle={toggle} />
           <UserMenu />
         </header>
-        <main className="relative mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <main className="relative mx-auto w-full max-w-6xl px-4 pt-6 pb-10 sm:px-6 lg:px-8">
           <div className="page-enter">{children}</div>
         </main>
       </div>
@@ -468,22 +468,16 @@ export function AppShell({ children, workspace: workspaceOverride }) {
 
 export function PageHeader({ title, description, actions, eyebrow }) {
   return (
-    <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow && (
-          <p className="mb-2 inline-flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-brand-600 uppercase dark:text-brand-300">
-            <span
-              className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-brand-500 to-fuchsia-500 shadow-[0_0_10px_rgb(168_85_247/0.8)]"
-              aria-hidden="true"
-            />
-            {eyebrow}
-          </p>
+          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">{eyebrow}</p>
         )}
-        <h1 className="text-2xl font-semibold tracking-[-0.025em] text-slate-900 sm:text-[30px] sm:leading-tight dark:text-white">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900 dark:text-white">
           {title}
         </h1>
         {description && (
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">{description}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">{description}</p>
         )}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}

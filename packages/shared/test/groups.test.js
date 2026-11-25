@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  autoGroupShareSchema,
+  facebookGroupBulkCreateSchema,
   facebookGroupCreateSchema,
+  facebookGroupQuerySchema,
   facebookGroupUpdateSchema,
+  groupNameFromUrl,
   groupShareCreateSchema,
   isFacebookUrl,
   parseFacebookGroupUrl,
@@ -93,5 +97,41 @@ describe('group schemas', () => {
       sharingTaskUpdateSchema.safeParse({ status: 'DONE', postUrl: 'https://x.example' }).success,
     ).toBe(false);
     expect(sharingTaskUpdateSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('Pages in groups, bulk add and auto share', () => {
+  it('names a group after its link', () => {
+    expect(groupNameFromUrl('facebook.com/groups/london.fashion-lovers/posts/1')).toBe(
+      'London Fashion Lovers',
+    );
+    expect(groupNameFromUrl('https://m.facebook.com/groups/123456')).toBe('Facebook group 123456');
+    expect(groupNameFromUrl('https://example.com/groups/x')).toBeNull();
+  });
+
+  it('keeps each Page once, lower-cased, and limits how many', () => {
+    const parsed = facebookGroupCreateSchema.parse({
+      name: 'G',
+      url: 'facebook.com/groups/g',
+      pageIds: [ID, ID.toUpperCase(), 'b'.repeat(24)],
+    });
+    expect(parsed.pageIds).toEqual([ID, 'b'.repeat(24)]);
+    expect(
+      facebookGroupUpdateSchema.safeParse({
+        pageIds: Array.from({ length: 51 }, (_, i) => i.toString(16).padStart(24, '0')),
+      }).success,
+    ).toBe(false);
+    expect(facebookGroupQuerySchema.parse({ pageId: ID }).pageId).toBe(ID);
+  });
+
+  it('accepts 1 to 100 links in a bulk add and a job id for auto share', () => {
+    expect(facebookGroupBulkCreateSchema.safeParse({ urls: ['x'] }).success).toBe(true);
+    expect(facebookGroupBulkCreateSchema.safeParse({ urls: [] }).success).toBe(false);
+    expect(
+      facebookGroupBulkCreateSchema.safeParse({ urls: Array.from({ length: 101 }, () => 'x') })
+        .success,
+    ).toBe(false);
+    expect(autoGroupShareSchema.safeParse({ publishJobId: ID }).success).toBe(true);
+    expect(autoGroupShareSchema.safeParse({ publishJobId: 'nope' }).success).toBe(false);
   });
 });

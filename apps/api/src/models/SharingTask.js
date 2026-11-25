@@ -25,6 +25,13 @@ const sharingTaskSchema = new mongoose.Schema(
     /** Link to the post in the group, when the person who shared it added one. */
     postUrl: { type: String, default: null },
     note: { type: String, default: null },
+    /** Auto share: the Facebook Page to share as (a member of the group) and its live post. */
+    page: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialAccount', default: null },
+    publishDestination: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PublishDestination',
+      default: null,
+    },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },

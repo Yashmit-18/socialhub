@@ -15,8 +15,16 @@ const socialConnectionSchema = new mongoose.Schema(
   {
     workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
     provider: { type: String, enum: Object.values(SOCIAL_PROVIDERS), required: true },
-    /** The person's app-scoped user id (Facebook) or Instagram-scoped user id (Instagram Login). */
+    /**
+     * The identity that authorized SocialHub: the person's app-scoped user id (Facebook), the
+     * Instagram-scoped user id (Instagram Login) or, for Instagram Unified Login, the client's
+     * business portfolio id (client_business_id) that owns the system-user token.
+     */
     externalUserId: { type: String, required: true },
+    /** Unified Login: the business integration system user the token belongs to (`/me` id). */
+    metaSystemUserId: { type: String },
+    /** Unified Login: the login configuration (config_id) the authorization used. Not secret. */
+    loginConfigId: { type: String },
     displayName: { type: String, trim: true },
     pictureUrl: { type: String },
     grantedScopes: { type: [String], default: [] },

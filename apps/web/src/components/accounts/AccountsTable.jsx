@@ -1,4 +1,4 @@
-import { SOCIAL_PLATFORMS, SOCIAL_PROVIDERS } from '@socialhub/shared';
+import { SOCIAL_PLATFORMS, isInstagramDirectProvider } from '@socialhub/shared';
 import { ArrowDown, ArrowUp, ArrowUpDown, StickyNote } from 'lucide-react';
 import { Link } from 'react-router';
 import {
@@ -6,6 +6,7 @@ import {
   PLATFORM_LABELS,
   PROVIDER_LABELS,
   instagramTypeLabel,
+  loginFlowName,
 } from '../../lib/meta.js';
 import { formatFollowers } from '../../lib/followers.js';
 import { cn, formatDate, timeAgo } from '../../lib/utils.js';
@@ -210,11 +211,11 @@ function IdentityCell({ account, href }) {
 }
 
 function LinkedPageCell({ account, hrefFor }) {
-  if (account.connection?.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN && !account.linkedPage) {
+  if (isInstagramDirectProvider(account.connection?.provider) && !account.linkedPage) {
     return (
       <span
         className="text-xs text-muted"
-        title="Connected directly with Instagram Login, so it is not linked to a Facebook Page"
+        title={`Connected directly with ${loginFlowName(account.connection.provider)}, so it is not linked to a Facebook Page`}
       >
         Not linked
       </span>

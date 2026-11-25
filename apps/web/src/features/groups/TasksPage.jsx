@@ -9,11 +9,14 @@ import {
   RotateCcw,
   ShieldAlert,
   SkipForward,
+  UsersRound,
 } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { toast } from 'sonner';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { Button } from '../../components/ui/Button.jsx';
+import { buttonClass } from '../../components/ui/buttonClass.js';
 import { Card } from '../../components/ui/Card.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
 import { FormError } from '../../components/ui/Field.jsx';
@@ -24,7 +27,7 @@ import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { copyText } from '../../lib/accountOrganization.js';
 import { cn, formatDate, timeAgo } from '../../lib/utils.js';
 import { useSharingTasks, useUpdateTask } from './api.js';
-import { shareText } from './helpers.js';
+import { taskText } from './helpers.js';
 
 const PAGE_SIZE = 20;
 const { OPEN, DONE, SKIPPED } = SHARING_TASK_STATUS;
@@ -193,24 +196,47 @@ function TaskCard({ task, me, canComplete, canManage }) {
       },
     );
 
+  const postUrl = task.pagePost?.url ?? null;
+
   return (
     <li>
       <Card className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-medium tracking-wide text-muted uppercase">{share.title}</p>
-            <h3 className="mt-0.5 text-base font-semibold text-slate-900 dark:text-white">
-              {group ? (
-                <ExternalAnchor
-                  href={group.url}
-                  className="text-slate-900 hover:text-brand-600 dark:text-white"
-                >
-                  {group.name}
-                </ExternalAnchor>
-              ) : (
-                'Removed group'
-              )}
-            </h3>
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#1877F2]/10 text-[#1877F2] dark:bg-[#1877F2]/20 dark:text-[#6ea8ff]"
+            >
+              <UsersRound className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white">
+                {group ? (
+                  <ExternalAnchor
+                    href={group.url}
+                    className="text-slate-900 hover:text-brand-600 dark:text-white"
+                  >
+                    {group.name}
+                  </ExternalAnchor>
+                ) : (
+                  'Removed group'
+                )}
+              </h3>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                {task.page && (
+                  <>
+                    <span>
+                      Post as{' '}
+                      <span className="font-medium text-slate-700 dark:text-slate-200">
+                        {task.page.name}
+                      </span>
+                    </span>
+                    <span aria-hidden="true">·</span>
+                  </>
+                )}
+                <span className="min-w-0 truncate">{share.title}</span>
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {task.dueAt && task.status === OPEN && (
@@ -225,7 +251,7 @@ function TaskCard({ task, me, canComplete, canManage }) {
         </div>
 
         {group?.notes && (
-          <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+          <p className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>
               <span className="font-semibold">Group rules: </span>
@@ -234,20 +260,30 @@ function TaskCard({ task, me, canComplete, canManage }) {
           </p>
         )}
 
-        {task.status === OPEN && (
-          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
-            <p className="max-h-48 overflow-y-auto text-sm whitespace-pre-wrap break-words text-slate-800 dark:text-slate-100">
-              {share.message}
-            </p>
+        {task.status === OPEN && (share.message || share.link || postUrl) && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
+            {share.message && (
+              <p className="max-h-40 overflow-y-auto text-sm whitespace-pre-wrap break-words text-slate-800 dark:text-slate-100">
+                {share.message}
+              </p>
+            )}
             {share.link && (
               <p className="mt-2 text-sm break-all">
                 <ExternalAnchor href={share.link}>{share.link}</ExternalAnchor>
               </p>
             )}
+            {postUrl && (
+              <p className="mt-2 text-xs text-muted">
+                <ExternalAnchor href={postUrl} className="text-xs">
+                  View the Page post on Facebook
+                </ExternalAnchor>{' '}
+                · its link is included when you copy the text
+              </p>
+            )}
           </div>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted">
             {task.status === OPEN
               ? task.assignee
@@ -267,12 +303,23 @@ function TaskCard({ task, me, canComplete, canManage }) {
                 variant="secondary"
                 size="sm"
                 onClick={async () => {
-                  if (await copyText(shareText(share))) toast.success('Text copied');
+                  if (await copyText(taskText(task))) toast.success('Text copied');
                   else toast.error('Copying was blocked by the browser. Select the text instead.');
                 }}
               >
                 <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy text
               </Button>
+            )}
+            {task.status === OPEN && group && (
+              <a
+                href={group.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonClass({ variant: 'secondary', size: 'sm' })}
+              >
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> Open group
+                <span className="sr-only">(opens Facebook in a new tab)</span>
+              </a>
             )}
             {task.status === OPEN && canComplete && free && !canManage && (
               <Button
@@ -396,10 +443,18 @@ export default function TasksPage() {
             }
             description={
               status === OPEN
-                ? canManage
-                  ? 'Create a share on the Shares tab to send a post to your groups.'
-                  : 'New tasks appear here when an owner or admin creates a share.'
+                ? 'When a post goes live on a Facebook Page, each group that Page is in shows up here. Mark which Pages are in which groups on the Groups tab.'
                 : 'Finished tasks are listed here with who shared them and when.'
+            }
+            action={
+              status === OPEN && canManage ? (
+                <Link
+                  to={`/w/${workspace.slug}/groups/directory`}
+                  className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                >
+                  Manage groups
+                </Link>
+              ) : undefined
             }
           />
         </Card>

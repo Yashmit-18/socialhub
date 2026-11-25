@@ -245,7 +245,10 @@ describe('Meta configuration checks', () => {
       CLIENT_ORIGIN: 'https://app.example.com',
       META_FACEBOOK_LOGIN_CONFIG_ID: '999',
     });
-    expect(ids(cfg)).toEqual(['info:INSTAGRAM_NOT_CONFIGURED']);
+    expect(ids(cfg)).toEqual([
+      'info:INSTAGRAM_UNIFIED_NOT_CONFIGURED',
+      'info:INSTAGRAM_NOT_CONFIGURED',
+    ]);
     expect(metaIntegrationStatus(cfg).facebook).toMatchObject({
       configured: true,
       ready: true,
@@ -312,7 +315,11 @@ describe('Meta configuration checks', () => {
 
   it('only notes disabled logins when nothing is configured', () => {
     const cfg = loadConfig({ ...env, META_APP_ID: undefined, META_APP_SECRET: undefined });
-    expect(ids(cfg)).toEqual(['info:FACEBOOK_NOT_CONFIGURED', 'info:INSTAGRAM_NOT_CONFIGURED']);
+    expect(ids(cfg)).toEqual([
+      'info:FACEBOOK_NOT_CONFIGURED',
+      'info:INSTAGRAM_UNIFIED_NOT_CONFIGURED',
+      'info:INSTAGRAM_NOT_CONFIGURED',
+    ]);
   });
 });
 

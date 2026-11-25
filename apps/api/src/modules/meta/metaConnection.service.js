@@ -14,6 +14,7 @@ import {
   CONNECTION_STATUS,
   DISCOVERY_STATES,
   ERROR_CODES,
+  META_OAUTH_RESULTS,
   PUBLISHING_STATUS,
   SOCIAL_PLATFORMS,
   SOCIAL_PROVIDERS,
@@ -27,6 +28,8 @@ import { AppError, isDuplicateKeyError, notFound } from '../../lib/errors.js';
 import * as facebook from '../../integrations/meta/facebook.js';
 import { META_ERROR_KINDS, MetaApiError, classifyMetaError } from '../../integrations/meta/http.js';
 import * as instagram from '../../integrations/meta/instagram.js';
+import * as instagramUnified from '../../integrations/meta/instagramUnified.js';
+import { PROVIDER_NAMES, providerSettings } from '../../integrations/meta/settings.js';
 import {
   AccountInsight,
   AccountStar,
@@ -58,7 +61,23 @@ export const SYSTEM_ACTORS = Object.freeze({
 });
 
 export class IdentityMismatchError extends Error {}
-export class NotEligibleError extends Error {}
+/** The authorization worked but gives nothing SocialHub can connect. `result` names why. */
+export class NotEligibleError extends Error {
+  constructor(message, { result = META_OAUTH_RESULTS.NOT_ELIGIBLE } = {}) {
+    super(message);
+    this.result = result;
+  }
+}
+
+/** Runs one step of an authorization; a Meta failure is labelled with the step (for logs). */
+async function authorizationStep(stage, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof MetaApiError) err.stage = stage;
+    throw err;
+  }
+}
 
 export const reconnectRequired = (message) =>
   new AppError(
@@ -130,6 +149,76 @@ export async function authorizeInstagramIdentity(code, requestedScopes = []) {
   };
 }
 
+/** "@a", "@a, @b" or "@a, @b, @c +2": the accounts a Unified Login gave access to. */
+function unifiedDisplayName(accounts, clientBusinessId) {
+  const handles = accounts.map((a) => (a.username ? `@${a.username}` : a.name)).filter(Boolean);
+  if (handles.length === 0) return `Business portfolio …${clientBusinessId.slice(-4)}`;
+  const shown = handles.slice(0, 3).join(', ');
+  return handles.length > 3 ? `${shown} +${handles.length - 3}` : shown;
+}
+
+/**
+ * Exchanges an Instagram Unified Login code for the client's Business Integration System User
+ * token and checks, before anything is stored, that Meta accepts the token (debug_token), that
+ * it belongs to a business portfolio and that it reaches at least one Instagram professional
+ * account. Any failure throws: no connection is created or changed.
+ * The identity is the client's business portfolio (client_business_id): reconnecting must use
+ * the same portfolio, and a different portfolio is a different connection.
+ */
+export async function authorizeInstagramUnifiedIdentity(code) {
+  const settings = providerSettings(SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN);
+  const exchanged = await authorizationStep('code_exchange', () =>
+    instagramUnified.exchangeInstagramUnifiedCode(code),
+  );
+  const token = exchanged.accessToken;
+  const debug = await authorizationStep('debug_token', () => facebook.debugToken(token));
+  if (!debug.isValid || (debug.appId && debug.appId !== settings.appId)) {
+    throw Object.assign(
+      new MetaApiError({
+        message: 'Meta reported the new token as invalid for this app',
+        kind: META_ERROR_KINDS.TOKEN_REVOKED,
+      }),
+      { stage: 'debug_token' },
+    );
+  }
+  const business = await authorizationStep('business', () =>
+    instagramUnified.fetchBusinessIntegration(token),
+  );
+  if (!business.clientBusinessId) {
+    throw Object.assign(
+      new MetaApiError({
+        message: 'Meta did not report the business portfolio that owns this token',
+        kind: META_ERROR_KINDS.INVALID_REQUEST,
+      }),
+      { stage: 'business' },
+    );
+  }
+  const accounts = await authorizationStep('accounts', () =>
+    instagramUnified.fetchAssignedInstagramAccounts(token),
+  );
+  if (accounts.length === 0) {
+    throw new NotEligibleError(
+      'The authorization did not share any Instagram professional account with SocialHub',
+      { result: META_OAUTH_RESULTS.NO_INSTAGRAM_ACCOUNTS },
+    );
+  }
+  return {
+    provider: SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,
+    externalUserId: business.clientBusinessId,
+    metaSystemUserId: business.systemUserId,
+    loginConfigId: settings.configId,
+    displayName: unifiedDisplayName(accounts, business.clientBusinessId),
+    pictureUrl: accounts.find((a) => a.pictureUrl)?.pictureUrl ?? null,
+    accessToken: token,
+    // The expiry is chosen in the configuration (default: never); debug_token reports it.
+    tokenExpiresAt: debug.expiresAt ?? exchanged.expiresAt,
+    dataAccessExpiresAt: debug.dataAccessExpiresAt,
+    grantedScopes: debug.scopes,
+    // The permissions come from the configuration; Meta does not report declined ones.
+    declinedScopes: [],
+  };
+}
+
 /**
  * Persists an authorized identity. Re-authorizing the same identity updates its connection;
  * a different identity gets its own connection. A RECONNECT must be the same identity.
@@ -171,6 +260,9 @@ export async function saveAuthorizedConnection({
       lastRefreshedAt: now,
       disconnectedAt: undefined,
     });
+    // Unified Login only: the system user and configuration behind the token.
+    if (identity.metaSystemUserId) connection.set({ metaSystemUserId: identity.metaSystemUserId });
+    if (identity.loginConfigId) connection.set({ loginConfigId: identity.loginConfigId });
     connection.setAccessToken(identity.accessToken);
   };
 
@@ -277,6 +369,9 @@ const FOLLOWER_READ_BUDGET_MS = 30_000;
 function canReadFollowers(connection, candidate) {
   if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) return true; // required scope
   const granted = new Set(connection.grantedScopes ?? []);
+  // Unified Login: IG User followers_count on graph.facebook.com needs instagram_basic.
+  if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN)
+    return granted.has('instagram_basic');
   if (!granted.has('pages_read_engagement')) return false;
   return candidate.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE || granted.has('instagram_basic');
 }
@@ -348,6 +443,22 @@ async function fetchDestinations(connection) {
         accessToken: token,
       },
     ];
+  }
+
+  if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN) {
+    const accounts = await instagramUnified.fetchAssignedInstagramAccounts(token);
+    return accounts.map((account) => ({
+      platform: SOCIAL_PLATFORMS.INSTAGRAM_ACCOUNT,
+      externalId: account.id,
+      name: account.name || account.username || 'Instagram account',
+      username: account.username,
+      pictureUrl: account.pictureUrl,
+      // Only professional accounts can be assigned; Meta does not say Business vs Creator here.
+      instagramAccountType: null,
+      tasks: null,
+      // One system-user token covers every assigned account.
+      accessToken: token,
+    }));
   }
 
   const pages = await facebook.fetchManagedPages(token);
@@ -564,10 +675,15 @@ function discoveryWarnings(connection, candidates) {
     );
   }
   if (candidates.length === 0) {
+    const empty = {
+      [SOCIAL_PROVIDERS.FACEBOOK_LOGIN]:
+        'No Pages were found. The login needs a role on at least one Page, and the Pages must be selected during authorization.',
+      [SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN]:
+        'No Instagram professional account is shared with SocialHub through this business portfolio any more. Reconnect and select the Instagram account, or check Business Settings › Integrations › Connected apps in Meta Business Suite.',
+    };
     warnings.push(
-      connection.provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN
-        ? 'No Pages were found. The login needs a role on at least one Page, and the Pages must be selected during authorization.'
-        : 'No eligible Instagram professional account was found for this login.',
+      empty[connection.provider] ??
+        'No eligible Instagram professional account was found for this login.',
     );
   }
   // Through Facebook Login, Instagram accounts come only from the Pages they are linked to.
@@ -852,20 +968,39 @@ function shouldRefreshInstagramToken(connection, now) {
   );
 }
 
+/** Meta's answer for an invalid token, as the error a Meta call with it would have raised. */
+function invalidTokenError(debug) {
+  const code = debug.error?.code ?? 190;
+  const subcode = debug.error?.subcode;
+  const expired = debug.expiresAt && debug.expiresAt <= new Date();
+  return new MetaApiError({
+    message: debug.error?.message ?? 'Meta reports the token is no longer valid',
+    code,
+    subcode,
+    kind: expired ? META_ERROR_KINDS.TOKEN_EXPIRED : classifyMetaError({ code, subcode }),
+  });
+}
+
+/**
+ * Unified Login: Meta offers no refresh for Business Integration System User tokens (their
+ * expiry is chosen in the configuration, default never), so a sync re-checks the token with
+ * debug_token and takes over the permissions and expiry Meta reports. An expiring token is
+ * shown as "expires soon" and must be renewed by reconnecting.
+ */
+async function validateUnifiedToken(connection) {
+  const debug = await facebook.debugToken(connection.getAccessToken());
+  if (!debug.isValid) throw invalidTokenError(debug);
+  connection.set({
+    grantedScopes: debug.scopes,
+    tokenExpiresAt: debug.expiresAt ?? undefined,
+    dataAccessExpiresAt: debug.dataAccessExpiresAt ?? undefined,
+  });
+}
+
 async function validateFacebookToken(connection) {
   const token = connection.getAccessToken();
   const debug = await facebook.debugToken(token);
-  if (!debug.isValid) {
-    const code = debug.error?.code ?? 190;
-    const subcode = debug.error?.subcode;
-    const expired = debug.expiresAt && debug.expiresAt <= new Date();
-    throw new MetaApiError({
-      message: debug.error?.message ?? 'Meta reports the token is no longer valid',
-      code,
-      subcode,
-      kind: expired ? META_ERROR_KINDS.TOKEN_EXPIRED : classifyMetaError({ code, subcode }),
-    });
-  }
+  if (!debug.isValid) throw invalidTokenError(debug);
   const permissions = await facebook.fetchPermissions(token);
   connection.set({
     grantedScopes: permissions.granted,
@@ -934,19 +1069,17 @@ async function recordSyncRun(
 }
 
 export function providerConfigured(provider) {
-  return provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN
-    ? facebook.isFacebookConfigured()
-    : instagram.isInstagramConfigured();
+  return Boolean(providerSettings(provider));
 }
 
 /** Meta operations on a connection need its provider's app credentials on this server. */
 export function requireProviderConfigured(connection) {
   if (providerConfigured(connection.provider)) return;
-  const name = connection.provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN ? 'Facebook' : 'Instagram';
+  const name = PROVIDER_NAMES[connection.provider] ?? 'This login';
   throw new AppError(
     409,
     ERROR_CODES.META_NOT_CONFIGURED,
-    `${name} Login is not configured on this server, so SocialHub cannot contact Meta for this login. Add the Meta app credentials (see docs/META_SETUP_GUIDE.md) to enable synchronization.`,
+    `${name} is not configured on this server, so SocialHub cannot contact Meta for this login. Add the Meta app credentials (see docs/META_SETUP_GUIDE.md) to enable synchronization.`,
   );
 }
 
@@ -1016,6 +1149,8 @@ export async function syncConnection(
     try {
       if (connection.provider === SOCIAL_PROVIDERS.FACEBOOK_LOGIN) {
         await validateFacebookToken(connection);
+      } else if (connection.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN) {
+        await validateUnifiedToken(connection);
       } else if (shouldRefreshInstagramToken(connection, startedAt)) {
         const refreshed = await instagram.refreshInstagramToken(storedToken);
         connection.setAccessToken(refreshed.accessToken);

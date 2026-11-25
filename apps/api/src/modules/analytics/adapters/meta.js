@@ -42,6 +42,8 @@ export const INSIGHT_SCOPES = Object.freeze({
     'instagram_business_basic',
     'instagram_business_manage_insights',
   ]),
+  /** Unified Login: no Page involved, so pages_read_engagement is not needed. */
+  INSTAGRAM_UNIFIED_LOGIN: Object.freeze(['instagram_basic', 'instagram_manage_insights']),
 });
 
 const FACEBOOK_DAILY = Object.freeze({
@@ -80,8 +82,9 @@ const platformName = (account) =>
 
 function requiredScopes(account, connection) {
   if (account.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE) return INSIGHT_SCOPES.FACEBOOK_PAGE;
-  return viaInstagramLogin(connection)
-    ? INSIGHT_SCOPES.INSTAGRAM_LOGIN
+  if (viaInstagramLogin(connection)) return INSIGHT_SCOPES.INSTAGRAM_LOGIN;
+  return connection?.provider === SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN
+    ? INSIGHT_SCOPES.INSTAGRAM_UNIFIED_LOGIN
     : INSIGHT_SCOPES.INSTAGRAM_VIA_FACEBOOK;
 }
 

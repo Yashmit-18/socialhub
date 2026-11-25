@@ -17,11 +17,13 @@ import { legalLink } from './legalLinks.js';
  * ---------------------------------------------------------------------------------------
  */
 export const LEGAL_CONTACT = {
-  operator: 'SocialHub',
+  // The person responsible for the data. When a business is registered for Meta Business
+  // Verification, use exactly the legal name on its certificate here.
+  operator: 'Yashmit Jeminy (SocialHub)',
   email: 'workwithyashmit@gmail.com',
 };
 
-export const LAST_UPDATED = '24 November 2026';
+export const LAST_UPDATED = '25 November 2026';
 
 const privacy = legalLink('privacy');
 const terms = legalLink('terms');

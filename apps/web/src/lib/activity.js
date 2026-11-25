@@ -30,7 +30,8 @@ import {
 } from 'lucide-react';
 
 const role = (r) => ROLE_LABELS[r] ?? r;
-const provider = (p) => (p === 'INSTAGRAM_LOGIN' ? 'Instagram' : 'Facebook');
+const provider = (p) =>
+  p === 'INSTAGRAM_LOGIN' || p === 'INSTAGRAM_UNIFIED_LOGIN' ? 'Instagram' : 'Facebook';
 
 const quoted = (name) => `“${name ?? ''}”`;
 const accounts = (n) => (n === 1 ? '1 account' : `${n ?? 'some'} accounts`);

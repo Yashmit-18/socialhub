@@ -7,6 +7,7 @@ import {
   SOCIAL_PLATFORMS,
   SOCIAL_PROVIDERS,
   hasFullAccountAccess,
+  isInstagramDirectProvider,
 } from '@socialhub/shared';
 import {
   Activity,
@@ -69,6 +70,8 @@ import {
   createContentState,
   instagramTypeLabel,
   needsReconnect,
+  LOGIN_FLOW_NAMES,
+  loginFlowName,
 } from '../../../lib/meta.js';
 import { useAccountDetail, useMetaIntegration } from '../../../lib/queries.js';
 import { cn, formatDate, timeAgo } from '../../../lib/utils.js';
@@ -405,7 +408,7 @@ function HealthCard({ account, provider }) {
           <ReadinessBadge readiness={health.readiness} reasons={reasons} />
           {ready ? (
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              {provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN
+              {isInstagramDirectProvider(provider)
                 ? READY_TEXT.instagramLogin
                 : READY_TEXT.pageRole}
             </p>
@@ -490,8 +493,8 @@ function InfoCard({ account, provider }) {
             </InfoRow>
           )}
           <InfoRow label="Page tasks">
-            {provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN ? (
-              <span className="text-muted">Not applicable (Instagram Login)</span>
+            {isInstagramDirectProvider(provider) ? (
+              <span className="text-muted">Not applicable ({loginFlowName(provider)})</span>
             ) : tasks.length > 0 ? (
               <TaskBadges tasks={tasks} />
             ) : (
@@ -697,10 +700,10 @@ function LinkedAccountsCard({ detail, provider, accountUrl, seesAll }) {
         </p>
       </div>
     );
-  } else if (provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN) {
+  } else if (isInstagramDirectProvider(provider)) {
     body = (
       <p className="text-sm text-muted">
-        Connected directly with Instagram Login — no Facebook Page.
+        Connected directly with {loginFlowName(provider)} — no Facebook Page.
       </p>
     );
   } else {
@@ -814,9 +817,9 @@ function PermissionsCard({ detail, provider }) {
           <div>
             <CreateContentBadge account={account} />
           </div>
-          {provider === SOCIAL_PROVIDERS.INSTAGRAM_LOGIN ? (
+          {isInstagramDirectProvider(provider) ? (
             <p className="text-xs text-muted">
-              Instagram Login accounts are not managed through a Facebook Page role.
+              {loginFlowName(provider)} accounts are not managed through a Facebook Page role.
             </p>
           ) : tasks.length > 0 ? (
             <TaskBadges tasks={tasks} />
@@ -1105,7 +1108,7 @@ function AccountView({ detail }) {
       ? 'Refresh is unavailable: the login this account was added through has been removed.'
       : capabilities.providerConfigured
         ? null
-        : `${PROVIDER_LABELS[connection.provider] ?? 'This'} Login is not configured on this server, so SocialHub cannot refresh or reconnect this account.`;
+        : `${LOGIN_FLOW_NAMES[connection.provider] ?? 'This login'} is not configured on this server, so SocialHub cannot refresh or reconnect this account.`;
 
   const { reset: resetRemove } = remove;
   const closeRemove = useCallback(() => {

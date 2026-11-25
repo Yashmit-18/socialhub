@@ -21,6 +21,8 @@ const G2 = 'a10000000000000000000002';
 const S1 = 'b10000000000000000000001';
 const T1 = 'c10000000000000000000001';
 const T2 = 'c10000000000000000000002';
+const P1 = 'd10000000000000000000001';
+const P2 = 'd10000000000000000000002';
 
 const workspace = (role) => ({
   id: 'w1',
@@ -134,6 +136,14 @@ function setup(role, routes = {}, me = user) {
           status: { ACTIVE: 2 },
         },
       }),
+    'GET /workspaces/w1/social-accounts': () =>
+      jsonResponse(200, {
+        items: [
+          { id: P1, platform: 'FACEBOOK_PAGE', name: 'Acme Store' },
+          { id: P2, platform: 'FACEBOOK_PAGE', name: 'Acme Labs' },
+          { id: 'ig1', platform: 'INSTAGRAM_ACCOUNT', name: 'Acme IG' },
+        ],
+      }),
     'GET /workspaces/w1/members': () =>
       jsonResponse(200, {
         items: [
@@ -169,7 +179,7 @@ describe('Sharing tasks', () => {
     expect(within(card).getByText('Promotions on Fridays only')).toBeInTheDocument();
     expect(within(card).getByText('Our autumn menu is here')).toBeInTheDocument();
     expect(lastQuery(mock, 'GET /workspaces/w1/sharing-tasks').get('assignee')).toBe('available');
-    expect(screen.getByRole('link', { name: 'Group sharing' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Group sharing/ })).toBeInTheDocument();
 
     await ue.click(within(card).getByRole('button', { name: /Copy text/ }));
     // user-event installs its own clipboard, so read back what was copied.
@@ -386,6 +396,7 @@ describe('Group directory', () => {
       memberCount: null,
       minDaysBetweenShares: 14,
       notes: '',
+      pageIds: [],
     });
   });
 
@@ -404,6 +415,134 @@ describe('Group directory', () => {
     await ue.click(screen.getAllByRole('button', { name: 'bread' })[0]);
     await waitFor(() =>
       expect(lastQuery(mock, 'GET /workspaces/w1/facebook-groups').get('tag')).toBe('bread'),
+    );
+  });
+});
+
+describe('Pages in groups and auto share', () => {
+  it('links Pages to a group, shows them in the list and filters by Page', async () => {
+    const mock = setup('OWNER', {
+      'GET /workspaces/w1/facebook-groups': () =>
+        jsonResponse(200, {
+          ...page([group({ pages: [{ id: P1, name: 'Acme Store' }] })], { limit: 25 }),
+          facets: {
+            categories: { cat1: 1 },
+            tags: [],
+            status: { ACTIVE: 1 },
+            pages: { [P1]: 1 },
+          },
+        }),
+      [`PATCH /workspaces/w1/facebook-groups/${G1}`]: () =>
+        jsonResponse(200, { group: group({ pages: [{ id: P2, name: 'Acme Labs' }] }) }),
+    });
+    const ue = userEvent.setup();
+    renderApp('/w/acme/groups/directory');
+    const row = (await screen.findByRole('link', { name: /London Bakers/ })).closest('tr');
+    expect(within(row).getByText('Acme Store')).toBeInTheDocument();
+
+    const filter = await screen.findByRole('combobox', { name: 'Filter by Page' });
+    expect(within(filter).getByRole('option', { name: 'Acme Store (1)' })).toBeInTheDocument();
+    expect(within(filter).queryByRole('option', { name: /Acme IG/ })).not.toBeInTheDocument();
+    await ue.selectOptions(filter, P1);
+    await waitFor(() =>
+      expect(lastQuery(mock, 'GET /workspaces/w1/facebook-groups').get('pageId')).toBe(P1),
+    );
+
+    await ue.click(within(row).getByRole('button', { name: 'Actions for London Bakers' }));
+    await ue.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit London Bakers' });
+    const store = within(dialog).getByRole('checkbox', { name: 'Acme Store' });
+    expect(store).toHaveAttribute('aria-checked', 'true');
+    await ue.click(store);
+    await ue.click(within(dialog).getByRole('checkbox', { name: 'Acme Labs' }));
+    await ue.click(within(dialog).getByRole('button', { name: 'Save group' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Group saved'));
+    expect(bodyOf(mock, `PATCH /workspaces/w1/facebook-groups/${G1}`).pageIds).toEqual([P2]);
+  });
+
+  it('adds many groups from pasted links and reports what happened to each', async () => {
+    const mock = setup('ADMIN', {
+      'POST /workspaces/w1/facebook-groups/bulk': () =>
+        jsonResponse(200, {
+          added: [
+            { id: 'n1', name: 'First Group', url: 'https://www.facebook.com/groups/first-group/' },
+          ],
+          existing: [
+            { id: G1, name: 'London Bakers', url: 'https://www.facebook.com/groups/londonbakers/' },
+          ],
+          invalid: ['not a link'],
+        }),
+    });
+    const ue = userEvent.setup();
+    renderApp('/w/acme/groups/directory');
+    await screen.findByRole('link', { name: /London Bakers/ });
+    await ue.click(screen.getByRole('button', { name: /Add many/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add many groups' });
+    await ue.type(
+      within(dialog).getByLabelText('Group links'),
+      'facebook.com/groups/first-group{Enter}facebook.com/groups/londonbakers{Enter}not a link',
+    );
+    expect(within(dialog).getByText('2 of 3 lines are group links.')).toBeInTheDocument();
+    await ue.click(within(dialog).getByRole('checkbox', { name: 'Acme Store' }));
+    await ue.click(within(dialog).getByRole('button', { name: 'Add 2 groups' }));
+
+    expect(
+      await within(dialog).findByText(/These lines are not Facebook Group links/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText('not a link')).toBeInTheDocument();
+    expect(within(dialog).getByRole('status')).toHaveTextContent(
+      '1 added, 1 already in your list (your Pages were added to them).',
+    );
+    expect(toast.success).toHaveBeenCalledWith('1 group added');
+    expect(bodyOf(mock, 'POST /workspaces/w1/facebook-groups/bulk')).toEqual({
+      urls: ['facebook.com/groups/first-group', 'facebook.com/groups/londonbakers', 'not a link'],
+      categoryId: null,
+      pageIds: [P1],
+    });
+  });
+
+  it('shows an auto-shared task with the Page to post as and copies the live post link', async () => {
+    setup(
+      'EDITOR',
+      {
+        'GET /workspaces/w1/sharing-tasks': () =>
+          jsonResponse(
+            200,
+            page(
+              [
+                task({
+                  share: {
+                    id: S1,
+                    title: 'Winter sale',
+                    message: 'Winter sale today',
+                    link: '',
+                    auto: true,
+                  },
+                  page: { id: P1, name: 'Acme Store' },
+                  pagePost: { state: 'PUBLISHED', url: 'https://www.facebook.com/acme/posts/1' },
+                }),
+              ],
+              { counts },
+            ),
+          ),
+      },
+      EDITOR,
+    );
+    const ue = userEvent.setup();
+    renderApp('/w/acme/groups');
+    const card = (await screen.findByRole('link', { name: /London Bakers/ })).closest('li');
+    expect(within(card).getByText('Acme Store')).toBeInTheDocument();
+    expect(within(card).getByText(/Post as/)).toBeInTheDocument();
+    expect(
+      within(card).getByRole('link', { name: /View the Page post on Facebook/ }),
+    ).toHaveAttribute('href', 'https://www.facebook.com/acme/posts/1');
+    expect(within(card).getByRole('link', { name: /Open group/ })).toHaveAttribute(
+      'href',
+      'https://www.facebook.com/groups/londonbakers/',
+    );
+    await ue.click(within(card).getByRole('button', { name: /Copy text/ }));
+    expect(await navigator.clipboard.readText()).toBe(
+      'Winter sale today\n\nhttps://www.facebook.com/acme/posts/1',
     );
   });
 });

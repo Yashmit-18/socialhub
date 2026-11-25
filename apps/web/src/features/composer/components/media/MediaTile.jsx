@@ -216,7 +216,7 @@ function UploadStatus({ item, upload, uploadAvailable, onRetryUpload, onCancelUp
           className="h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-white/10"
         >
           <div
-            className="h-full rounded-full bg-gradient-to-r from-brand-500 to-fuchsia-500 transition-[width] duration-300 ease-out"
+            className="h-full rounded-full bg-brand-600 transition-[width] duration-300 ease-out"
             style={{ width: `${percent}%` }}
           />
         </div>

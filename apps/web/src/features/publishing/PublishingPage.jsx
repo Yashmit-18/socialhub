@@ -21,17 +21,21 @@ import {
   usePublishingStatus,
 } from './usePublishing.js';
 
+/** Tabs for states that are usually empty: shown only while they hold posts (or are open). */
+const OCCASIONAL_TABS = new Set(['queue', 'processing', 'partial', 'cancelled']);
+
 function Tabs({ active, summary, onSelect }) {
   return (
     <div
       role="group"
       aria-label="Show posts by status"
-      className="-mt-3 mb-6 overflow-x-auto border-b border-slate-200/80 dark:border-white/10"
+      className="-mt-3 mb-6 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-white/10"
     >
       <div className="flex min-w-max gap-1">
         {TABS.map((tab) => {
           const selected = tab.key === active.key;
           const count = tabCount(tab, summary);
+          if (OCCASIONAL_TABS.has(tab.key) && !selected && !(count > 0)) return null;
           return (
             <button
               key={tab.key}
@@ -106,8 +110,8 @@ export default function PublishingPage() {
   return (
     <>
       <PageHeader
-        title="Publishing"
-        description="See every post that was sent to your accounts, how it went for each account, and what is still waiting."
+        title="Posts"
+        description="Everything you published or scheduled, and how it went on each account."
         actions={
           canPublishNow && (
             <Button onClick={() => setDraftDialogOpen(true)}>

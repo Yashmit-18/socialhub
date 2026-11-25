@@ -30,6 +30,12 @@ const facebookGroupSchema = new mongoose.Schema(
     },
     /** When a sharing task for this group was last marked done (kept in step with tasks). */
     lastSharedAt: { type: Date, default: null },
+    /**
+     * The workspace's Facebook Pages that are members of this group, as entered by people
+     * (Meta has no API that lists a Page's groups). Real posts to these Pages can get their
+     * sharing tasks here automatically.
+     */
+    pages: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SocialAccount' }], default: [] },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },
@@ -42,6 +48,7 @@ facebookGroupSchema.index(
 facebookGroupSchema.index({ workspace: 1, status: 1, name: 1 });
 facebookGroupSchema.index({ workspace: 1, category: 1 });
 facebookGroupSchema.index({ workspace: 1, tags: 1 });
+facebookGroupSchema.index({ workspace: 1, pages: 1, status: 1 });
 
 jsonPlugin(facebookGroupSchema, { hidden: ['urlKey'] });
 

@@ -6,15 +6,16 @@ import {
   composeCaption as composeSharedCaption,
 } from '@socialhub/shared';
 import {
+  ChevronDown,
   Eye,
   FlaskConical,
   Hash,
-  ImagePlus,
   Lock,
   MessageCircle,
   PenLine,
   Search,
   Send,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Link } from 'react-router';
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
@@ -121,6 +122,9 @@ const FIELD_SECTIONS = {
   firstComment: 'composer-first-comment',
 };
 
+/** Fields kept under "More options" (opened when an issue there is selected). */
+const MORE_OPTION_FIELDS = new Set(['hashtags', 'firstComment']);
+
 /** Below xl, switch between the editor and the preview (side by side on xl screens). */
 function ViewSwitch({ view, onChange, issueCount }) {
   const select = (event, id) => {
@@ -183,6 +187,63 @@ function Section({ id, icon, title, description, action, children }) {
   );
 }
 
+/** A titled part inside a card (a jump target for the readiness check). */
+function SubSection({ id, title, hint, children, className }) {
+  return (
+    <div id={id} tabIndex={-1} className={cn('scroll-mt-24 focus:outline-none', className)}>
+      {title && (
+        <div className="mb-2.5 flex items-baseline justify-between gap-3">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+          {hint && <p className="text-xs text-muted">{hint}</p>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Hashtags, first comment and internal keywords: optional, so they sit behind one toggle.
+ * Open by default when the post already uses any of them.
+ */
+function MoreOptions({ open, onToggle, summary, children }) {
+  return (
+    <Card id="composer-more" tabIndex={-1} className="scroll-mt-24 focus:outline-none">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="composer-more-panel"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left sm:px-6"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-semibold text-slate-900 dark:text-white">
+            More options
+          </span>
+          <span className="block truncate text-sm text-muted">{summary}</span>
+        </span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200',
+            open && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      <div
+        id="composer-more-panel"
+        hidden={!open}
+        className="space-y-6 border-t border-slate-100 px-5 py-5 sm:px-6 dark:border-white/[0.06]"
+      >
+        {children}
+      </div>
+    </Card>
+  );
+}
+
 function Composer() {
   const { workspace, can } = useWorkspace();
   const { user } = useAuth();
@@ -195,6 +256,8 @@ function Composer() {
   /** Spoken confirmation after files are added (the grid announces moves and removals). */
   const [mediaAnnouncement, setMediaAnnouncement] = useState('');
   const [publishOpen, setPublishOpen] = useState(false);
+  /** "More options" (hashtags, first comment, keywords): null = follow the content. */
+  const [moreChoice, setMoreChoice] = useState(null);
   /** The job created by the last Publish, shown with its live per-account status. */
   const [createdJob, setCreatedJob] = useState(null);
 
@@ -374,6 +437,7 @@ function Composer() {
     (field) => {
       const id = FIELD_SECTIONS[field];
       if (!id) return;
+      if (MORE_OPTION_FIELDS.has(field)) setMoreChoice(true);
       changeView('compose');
       requestAnimationFrame(() => {
         const section = document.getElementById(id);
@@ -454,12 +518,24 @@ function Composer() {
 
   const previewIndex = previewId ? state.media.findIndex((m) => m.id === previewId) : null;
 
+  const usedOptions = [
+    state.hashtags.length > 0 &&
+      `${state.hashtags.length} ${state.hashtags.length === 1 ? 'hashtag' : 'hashtags'}`,
+    state.firstComment.trim() && 'first comment',
+    state.keywords.length > 0 &&
+      `${state.keywords.length} ${state.keywords.length === 1 ? 'keyword' : 'keywords'}`,
+  ].filter(Boolean);
+  const moreOpen = moreChoice ?? usedOptions.length > 0;
+  const moreSummary =
+    usedOptions.length > 0
+      ? usedOptions.join(' · ')
+      : 'Hashtags, a first comment and internal keywords';
+
   return (
     <>
       <PageHeader
-        eyebrow={workspace.name}
         title="Create post"
-        description="Write once, tailor it for each platform and preview it before it goes anywhere."
+        description="Choose where it goes, write it once and check the preview."
       />
 
       {autosave.restorable && (
@@ -512,73 +588,74 @@ function Composer() {
           </div>
 
           <Section
-            id="composer-media"
-            icon={ImagePlus}
-            title="Media"
-            description="Photos and videos, in the order they will appear. The first one is the cover."
-          >
-            <div className="space-y-4">
-              <MediaGrid
-                media={state.media}
-                onRemove={media.removeMedia}
-                onMove={(id, toIndex) => dispatch(composerActions.moveMedia(id, toIndex))}
-                onAltTextChange={(id, text) => dispatch(composerActions.setMediaAltText(id, text))}
-                onPreview={setPreviewId}
-                onRetryUpload={media.retryUpload}
-                onCancelUpload={media.cancelUpload}
-                uploadAvailable={media.uploadAvailable}
-              />
-              <p role="status" aria-live="polite" className="sr-only">
-                {mediaAnnouncement}
-              </p>
-              <MediaDropzone
-                onFiles={addFiles}
-                count={state.media.length}
-                max={MEDIA_MAX_ITEMS}
-                uploadAvailable={media.uploadAvailable}
-                compact={state.media.length > 0}
-                rejections={media.rejections}
-                onDismissRejection={media.dismissRejection}
-                onClearRejections={media.clearRejections}
-              />
-            </div>
-          </Section>
-
-          <Section
-            id="composer-caption"
+            id="composer-post"
             icon={PenLine}
-            title="Caption"
-            description="One caption for every platform, or customize it for Facebook and Instagram."
+            title="Your post"
+            description="One caption for every platform, or a different one for Facebook and Instagram."
           >
-            <CaptionEditor state={state} dispatch={dispatch} platforms={validation.platforms} />
+            <SubSection id="composer-caption">
+              <CaptionEditor state={state} dispatch={dispatch} platforms={validation.platforms} />
+            </SubSection>
+            <SubSection
+              id="composer-media"
+              title="Photos and videos"
+              hint="The first one is the cover"
+              className="mt-6"
+            >
+              <div className="space-y-4">
+                <MediaGrid
+                  media={state.media}
+                  onRemove={media.removeMedia}
+                  onMove={(id, toIndex) => dispatch(composerActions.moveMedia(id, toIndex))}
+                  onAltTextChange={(id, text) =>
+                    dispatch(composerActions.setMediaAltText(id, text))
+                  }
+                  onPreview={setPreviewId}
+                  onRetryUpload={media.retryUpload}
+                  onCancelUpload={media.cancelUpload}
+                  uploadAvailable={media.uploadAvailable}
+                />
+                <p role="status" aria-live="polite" className="sr-only">
+                  {mediaAnnouncement}
+                </p>
+                <MediaDropzone
+                  onFiles={addFiles}
+                  count={state.media.length}
+                  max={MEDIA_MAX_ITEMS}
+                  uploadAvailable={media.uploadAvailable}
+                  compact={state.media.length > 0}
+                  rejections={media.rejections}
+                  onDismissRejection={media.dismissRejection}
+                  onClearRejections={media.clearRejections}
+                />
+              </div>
+            </SubSection>
           </Section>
 
-          <Section
-            id="composer-hashtags"
-            icon={Hash}
-            title="Hashtags"
-            description="Added to the caption or the first comment when the post is composed."
+          <MoreOptions
+            open={moreOpen}
+            onToggle={() => setMoreChoice(!moreOpen)}
+            summary={moreSummary}
           >
-            <HashtagEditor state={state} dispatch={dispatch} platforms={validation.platforms} />
-          </Section>
-
-          <Section
-            id="composer-first-comment"
-            icon={MessageCircle}
-            title="First comment"
-            description="Posted from the same account right after the post, once publishing is available."
-          >
-            <FirstCommentField state={state} dispatch={dispatch} platforms={validation.platforms} />
-          </Section>
-
-          <Section
-            id="composer-keywords"
-            icon={Search}
-            title="Internal SEO keywords"
-            description="Your team’s own reference, saved with the draft. Never published."
-          >
-            <KeywordEditor state={state} dispatch={dispatch} />
-          </Section>
+            <OptionGroup id="composer-hashtags" icon={Hash} title="Hashtags">
+              <HashtagEditor state={state} dispatch={dispatch} platforms={validation.platforms} />
+            </OptionGroup>
+            <OptionGroup id="composer-first-comment" icon={MessageCircle} title="First comment">
+              <FirstCommentField
+                state={state}
+                dispatch={dispatch}
+                platforms={validation.platforms}
+              />
+            </OptionGroup>
+            <OptionGroup
+              id="composer-keywords"
+              icon={Search}
+              title="Internal SEO keywords"
+              hint="For your team only, never published"
+            >
+              <KeywordEditor state={state} dispatch={dispatch} />
+            </OptionGroup>
+          </MoreOptions>
         </div>
 
         <div
@@ -719,6 +796,20 @@ function Composer() {
   );
 }
 
+/** One optional field group inside "More options". */
+function OptionGroup({ id, icon: Icon, title, hint, children }) {
+  return (
+    <section id={id} tabIndex={-1} aria-label={title} className="scroll-mt-24 focus:outline-none">
+      <div className="mb-2.5 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-slate-400" aria-hidden="true" />
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+        {hint && <span className="text-xs text-muted">· {hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 /**
  * What Publish will do in this workspace, above the composer: simulate, publish for real
  * (after the person confirms each post), or nothing at all and why.
@@ -729,10 +820,12 @@ function PublishingNote({ simulated, live, unavailable, publishingHref }) {
     <div
       role="note"
       className={cn(
-        'mb-6 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm',
+        'mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm',
         simulated
-          ? 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-100'
-          : 'border-sky-200/80 bg-sky-50/70 text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100',
+          ? 'border-amber-200 bg-amber-50/70 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100'
+          : live
+            ? 'border-emerald-200 bg-emerald-50/60 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100'
+            : 'border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200',
       )}
     >
       <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />

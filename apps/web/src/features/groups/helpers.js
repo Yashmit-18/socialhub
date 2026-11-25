@@ -18,4 +18,35 @@ export const dueFromDate = (date) => (date ? new Date(`${date}T12:00:00`).toISOS
 
 /** The text a person pastes into the group: the message, then the link. */
 export const shareText = (share) =>
-  share.link ? `${share.message}\n\n${share.link}` : share.message;
+  [share.message, share.link].filter((part) => part?.trim()).join('\n\n');
+
+/**
+ * What a task's "Copy text" copies: the share's text and link, then the link to the live Page
+ * post (Facebook shows a preview of it, with its photo, in the group).
+ */
+export const taskText = (task) =>
+  [shareText(task.share ?? { message: '' }), task.pagePost?.url]
+    .filter((part) => part?.trim())
+    .join('\n\n');
+
+/** The toast after an auto share was set up: what happens now, in one sentence. */
+export function autoShareMessage({ tasksCreated = 0, pagesWaiting = 0 } = {}) {
+  if (tasksCreated > 0) {
+    return {
+      title: `${tasksCreated} ${tasksCreated === 1 ? 'group is' : 'groups are'} ready to share`,
+      description: 'Open Group sharing to copy the post and share it in each group.',
+    };
+  }
+  if (pagesWaiting > 0) {
+    return {
+      title: 'Group sharing is set up',
+      description:
+        'Each group your Pages are in gets a sharing task as soon as the post is live on Facebook.',
+    };
+  }
+  return {
+    title: 'No groups to share in',
+    description:
+      'None of these Pages is listed in a group yet, or the groups were shared in too recently.',
+  };
+}

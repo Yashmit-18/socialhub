@@ -15,6 +15,7 @@ import { formatDate, timeAgo } from '../../lib/utils.js';
 import {
   useAddShareGroups,
   useDeleteShare,
+  skipReasonText,
   useGroupShare,
   useUpdateShare,
   useUpdateTask,
@@ -248,13 +249,13 @@ export default function ShareDetailPage() {
         to={back}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
       >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Shares
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All posts
       </Link>
 
       <Card>
         <CardHeader
           title={share.title}
-          description={`Created by ${share.createdBy?.name ?? 'a former member'} ${timeAgo(share.createdAt)}`}
+          description={`${share.auto ? 'Shared automatically from a published post' : 'Created'} by ${share.createdBy?.name ?? 'a former member'} ${timeAgo(share.createdAt)}`}
           action={
             canManage ? (
               <div className="flex flex-wrap gap-2">
@@ -289,6 +290,18 @@ export default function ShareDetailPage() {
               </p>
             )}
           </div>
+          {share.skipped?.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+              <p className="font-medium">Not added to these groups:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                {share.skipped.map((skip) => (
+                  <li key={skip.groupId}>
+                    {skip.name}: {skipReasonText(skip)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Progress counts={share.counts} />
             <Button

@@ -14,8 +14,8 @@ export function CardHeader({ title, description, action, icon: Icon, className }
     <div className={cn('flex items-start justify-between gap-4 px-5 pt-5 sm:px-6', className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <div className="relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-50 to-violet-100/70 text-brand-600 ring-1 ring-brand-500/10 ring-inset dark:from-brand-500/15 dark:to-fuchsia-500/10 dark:text-brand-300 dark:ring-white/10">
-            <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-400/10 dark:text-brand-300">
+            <Icon className="h-4 w-4" aria-hidden="true" />
           </div>
         )}
         <div className="min-w-0">
@@ -38,7 +38,7 @@ export function CardFooter({ className, children }) {
   return (
     <div
       className={cn(
-        'flex flex-wrap items-center justify-end gap-3 rounded-b-2xl border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 sm:px-6 dark:border-white/[0.06] dark:bg-white/[0.02]',
+        'flex flex-wrap items-center justify-end gap-3 rounded-b-xl border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 sm:px-6 dark:border-white/[0.06] dark:bg-white/[0.02]',
         className,
       )}
     >

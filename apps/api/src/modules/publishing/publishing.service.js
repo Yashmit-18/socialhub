@@ -563,12 +563,20 @@ export async function createJob(
     const byId = new Map(accounts.map((a) => [String(a._id), a.name]));
     return [...new Set(rows.map((row) => byId.get(String(row.socialAccount))))];
   };
+  // An identical request that raced this one may have created its job since the lookup above;
+  // that job is what this request asked for, so it is answered with it, not with a conflict.
+  const racedTo = async () => {
+    const winner = await PublishJob.findOne(idempotent);
+    return winner ? replay(winner) : null;
+  };
   const inProgress = await PublishDestination.find({
     contentPackage: pkg._id,
     socialAccount: { $in: accountIds },
     active: true,
   }).select('socialAccount');
   if (inProgress.length) {
+    const raced = await racedTo();
+    if (raced) return raced;
     throw conflict('This post is already on its way to one or more of these accounts.', {
       reason: 'IN_PROGRESS',
       accounts: names(inProgress),
@@ -581,6 +589,8 @@ export async function createJob(
       state: D.PUBLISHED,
     }).select('socialAccount');
     if (published.length) {
+      const raced = await racedTo();
+      if (raced) return raced;
       throw conflict('This post was already published to one or more of these accounts.', {
         reason: 'ALREADY_PUBLISHED',
         accounts: names(published),
