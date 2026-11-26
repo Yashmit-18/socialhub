@@ -1,5 +1,9 @@
 # Deploying SocialHub: Vercel (website + API) and Render (publishing worker)
 
+> **The live deployment is different:** the website is on Vercel and the API runs as a Render
+> web service. Its exact settings are in [`LIVE_SETUP.md`](LIVE_SETUP.md). This guide is the
+> original plan.
+
 Status (2026-11-26): **not deployed yet.** [`vercel.json`](../../vercel.json) and
 [`render.yaml`](../../render.yaml) pass the providers' published schemas, and the API's Vercel
 entry point ([`apps/api/index.js`](../../apps/api/index.js)) is tested locally, but nothing
