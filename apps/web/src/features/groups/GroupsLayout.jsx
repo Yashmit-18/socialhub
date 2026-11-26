@@ -43,9 +43,10 @@ export default function GroupsLayout() {
                 end={tab.end}
                 className={({ isActive }) =>
                   cn(
-                    '-mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
+                    'relative -mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
+                    'after:absolute after:inset-x-2 after:-bottom-0.5 after:h-0.5 after:rounded-full',
                     isActive
-                      ? 'border-brand-500 text-brand-700 dark:border-brand-400 dark:text-brand-300'
+                      ? 'border-transparent text-brand-700 after:bg-gradient-to-r after:from-brand-500 after:to-pink-500 dark:text-brand-300'
                       : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-100',
                   )
                 }

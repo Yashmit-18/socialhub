@@ -15,7 +15,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useOptionalWorkspace } from '../../context/WorkspaceContext.jsx';
@@ -33,6 +33,9 @@ import { CommandPalette } from './CommandPalette.jsx';
 import { currentNavItem, navItems, navSections } from './navigation.js';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '');
+
+/** The sidebar page the current route belongs to, so PageHeader can show its icon and colour. */
+const CurrentPageContext = createContext(null);
 
 function WorkspaceSwitcher({ current }) {
   const { data: workspaces = [] } = useWorkspaces();
@@ -449,7 +452,9 @@ export function AppShell({ children, workspace: workspaceOverride }) {
           <UserMenu />
         </header>
         <main className="relative mx-auto w-full max-w-6xl px-4 pt-6 pb-10 sm:px-6 lg:px-8">
-          <div className="page-enter">{children}</div>
+          <CurrentPageContext.Provider value={current}>
+            <div className="page-enter">{children}</div>
+          </CurrentPageContext.Provider>
         </main>
       </div>
 
@@ -467,18 +472,35 @@ export function AppShell({ children, workspace: workspaceOverride }) {
 }
 
 export function PageHeader({ title, description, actions, eyebrow }) {
+  const page = useContext(CurrentPageContext);
+  // Every section has its own colour: an icon tile next to the title. The Overview greets the
+  // person instead, so it has none.
+  const Icon = page?.tone && !page.end ? page.icon : null;
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
-        {eyebrow && (
-          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">{eyebrow}</p>
+      <div className="flex min-w-0 items-start gap-4">
+        {Icon && (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg shadow-slate-900/10 ring-1 ring-white/20 ring-inset dark:shadow-black/30',
+              page.tone,
+            )}
+          >
+            <Icon className="h-5 w-5" />
+          </span>
         )}
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900 dark:text-white">
-          {title}
-        </h1>
-        {description && (
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">{description}</p>
-        )}
+        <div className="min-w-0">
+          {eyebrow && (
+            <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">{eyebrow}</p>
+          )}
+          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900 dark:text-white">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">{description}</p>
+          )}
+        </div>
       </div>
       {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
     </div>

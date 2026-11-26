@@ -59,7 +59,7 @@ export default function AccountsLayout() {
           <li
             ref={underlineRef}
             aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-brand-600 opacity-0 data-[ready]:transition-[transform,width,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo"
+            className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-gradient-to-r from-brand-500 to-pink-500 opacity-0 data-[ready]:transition-[transform,width,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo"
           />
           {tabs.map((tab) => (
             <li key={tab.to}>

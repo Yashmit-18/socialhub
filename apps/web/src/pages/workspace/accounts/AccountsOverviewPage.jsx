@@ -218,12 +218,17 @@ function SyncAllControl({ integration, sync }) {
 /* --------------------------------------------------------------------------- stats */
 
 /** A figure with a quiet icon. (`accent` from the stats list is no longer drawn.) */
-function StatCard({ label, value, icon: Icon, hint, loading }) {
+function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
   return (
     <Card className="h-full p-5">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-muted">{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-300">
+        <span
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md shadow-slate-900/10 ring-1 ring-white/20 ring-inset',
+            accent ?? 'bg-slate-500',
+          )}
+        >
           <Icon className="h-4 w-4" aria-hidden="true" />
         </span>
       </div>
@@ -297,7 +302,7 @@ function StatsSection({ summary, expectLoginStats, partialLoginStats, allScope }
       label: 'Instagram accounts',
       value: accounts?.instagramAccounts,
       icon: InstagramIcon,
-      accent: 'bg-gradient-to-br from-fuchsia-500 to-orange-400',
+      accent: 'bg-gradient-to-br from-fuchsia-500 to-pink-500',
     },
     {
       key: 'connected',
@@ -312,7 +317,7 @@ function StatsSection({ summary, expectLoginStats, partialLoginStats, allScope }
       label: 'Expired logins',
       value: logins?.expired,
       icon: Clock,
-      accent: 'bg-gradient-to-br from-amber-500 to-orange-500',
+      accent: 'bg-gradient-to-br from-amber-400 to-amber-600',
       hint: logins?.expiringSoon > 0 ? `${NUMBER.format(logins.expiringSoon)} expiring soon` : null,
     },
     showLogins && {
