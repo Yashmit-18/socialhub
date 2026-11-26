@@ -1,5 +1,6 @@
 @echo off
-rem Starts (or reuses) the Cloudflare Quick Tunnel in its own window and writes its URL to apps\api\.env.
+rem Starts (or reuses) the tunnel (ngrok or Cloudflare Quick Tunnel, see TUNNEL_PROVIDER in
+rem apps\api\.env) in its own window and writes its URL to apps\api\.env.
 setlocal
 cd /d "%~dp0"
 where node >nul 2>nul || (echo Node.js is not installed or not on PATH: https://nodejs.org & goto :end)

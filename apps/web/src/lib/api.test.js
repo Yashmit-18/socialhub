@@ -8,6 +8,7 @@ import {
   refreshSession,
   resolveApiLink,
   setAccessToken,
+  tunnelHeaders,
 } from './api.js';
 
 const session = (token = 'access-2') =>
@@ -119,6 +120,40 @@ describe('api client', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     setAccessToken('t');
     await expect(api.get('/x')).rejects.toMatchObject({ code: 'NETWORK_ERROR', status: 0 });
+  });
+});
+
+describe('tunnelHeaders (ngrok free-plan warning page)', () => {
+  const at = (href) => new URL(href);
+
+  it("skips ngrok's warning page for the app's own requests on an ngrok address", () => {
+    const page = at('https://calm-fox.ngrok-free.dev/workspaces');
+    expect(tunnelHeaders('/api/v1/workspaces', page)).toEqual({
+      'ngrok-skip-browser-warning': '1',
+    });
+    expect(tunnelHeaders('https://calm-fox.ngrok-free.dev/api/v1/x', page)).toEqual({
+      'ngrok-skip-browser-warning': '1',
+    });
+    expect(tunnelHeaders('/api/v1/x', at('https://name.ngrok.app/'))).toEqual({
+      'ngrok-skip-browser-warning': '1',
+    });
+  });
+
+  it('adds nothing elsewhere, or for another origin (that would need a CORS preflight)', () => {
+    expect(tunnelHeaders('/api/v1/x', at('http://localhost:4000/'))).toEqual({});
+    expect(tunnelHeaders('/api/v1/x', at('https://words.trycloudflare.com/'))).toEqual({});
+    expect(tunnelHeaders('/api/v1/x', at('https://ngrok-free.dev.evil.example/'))).toEqual({});
+    expect(
+      tunnelHeaders('https://api.example.com/v1/x', at('https://calm-fox.ngrok-free.dev/')),
+    ).toEqual({});
+    expect(tunnelHeaders('/api/v1/x', undefined)).toEqual({});
+  });
+
+  it('is not sent from the test page (localhost)', async () => {
+    const mock = mockFetch({ 'GET /workspaces': () => jsonResponse(200, { items: [] }) });
+    setAccessToken('access-1');
+    await api.get('/workspaces');
+    expect(mock.calls[0].headers['ngrok-skip-browser-warning']).toBeUndefined();
   });
 });
 

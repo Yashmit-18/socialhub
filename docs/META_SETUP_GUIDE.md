@@ -283,7 +283,8 @@ involved. SocialHub needs one more value: the configuration's **Configuration ID
    Business › Configurations** with the token type **System-user access token**.)
 2. **Redirect URL:** `{API_PUBLIC_URL}/api/v1/oauth/instagram-unified/callback`, exactly, then
    **Save**. With a Cloudflare quick tunnel the host changes on every run, so update it each
-   time (and keep **App Domains** in section 5 in step).
+   time (and keep **App Domains** in section 5 in step). With ngrok (`TUNNEL_PROVIDER=ngrok`,
+   README section 5) the host stays the same, so this is set once.
 3. **Permissions:** SocialHub uses `instagram_basic` (lists the shared accounts) and
    `instagram_content_publish` (publishing). Meta's default configuration also selects
    `instagram_manage_messages` (Meta marks it required) and offers

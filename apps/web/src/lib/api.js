@@ -64,6 +64,25 @@ export function resolveApiLink(url, base = BASE_URL) {
   return new URL(url, base).href;
 }
 
+const NGROK_HOST = /\.ngrok(?:-free)?\.(?:app|dev|io)$/i;
+
+/**
+ * ngrok's free plan shows browsers a warning page before the site; after "Visit Site" a cookie
+ * skips it for 7 days. When the app is served from an ngrok address, its own API requests also
+ * send ngrok's skip header, so they keep getting JSON if that cookie runs out while the app is
+ * open. Only same-origin requests get it, so no CORS preflight is added.
+ */
+export function tunnelHeaders(url, location = globalThis.location) {
+  if (!location || !NGROK_HOST.test(location.hostname)) return {};
+  try {
+    return new URL(url, location.href).origin === location.origin
+      ? { 'ngrok-skip-browser-warning': '1' }
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function buildUrl(path, query) {
   const url = `${BASE_URL}${path}`;
   if (!query) return url;
@@ -76,13 +95,14 @@ function buildUrl(path, query) {
 }
 
 async function send(path, { method = 'GET', body, query, token, signal } = {}) {
-  const headers = { Accept: 'application/json', [CLIENT_HEADER]: 'web' };
+  const url = buildUrl(path, query);
+  const headers = { Accept: 'application/json', [CLIENT_HEADER]: 'web', ...tunnelHeaders(url) };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let res;
   try {
-    res = await fetch(buildUrl(path, query), {
+    res = await fetch(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -182,11 +202,16 @@ export function fileNameFrom(disposition) {
  * errors are ApiErrors exactly like JSON requests (the API answers errors as JSON).
  */
 async function sendDownload(path, { query, token, signal } = {}) {
-  const headers = { Accept: 'text/csv, application/json', [CLIENT_HEADER]: 'web' };
+  const url = buildUrl(path, query);
+  const headers = {
+    Accept: 'text/csv, application/json',
+    [CLIENT_HEADER]: 'web',
+    ...tunnelHeaders(url),
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {
-    res = await fetch(buildUrl(path, query), { headers, credentials: 'include', signal });
+    res = await fetch(url, { headers, credentials: 'include', signal });
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
     throw new ApiError(

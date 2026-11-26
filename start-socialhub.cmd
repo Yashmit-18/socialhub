@@ -1,5 +1,6 @@
 @echo off
-rem Starts SocialHub: Cloudflare Quick Tunnel, updates apps\api\.env with its URL, then the API.
+rem Starts SocialHub: the tunnel (TUNNEL_PROVIDER in apps\api\.env: ngrok = permanent address,
+rem cloudflare = Quick Tunnel), updates apps\api\.env with its URL, then the API.
 rem The API and the tunnel each run in their own window. Stop them with stop-socialhub.cmd.
 setlocal
 cd /d "%~dp0"

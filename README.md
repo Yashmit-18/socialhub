@@ -139,18 +139,46 @@ Open <http://localhost:5173>, create an account and create your first workspace.
 >   Configure SMTP before relying on password reset.
 > - The invite dialog always shows the link and says whether it was emailed.
 
-### 5. One-click start on Windows (Cloudflare Quick Tunnel)
+### 5. One-click start on Windows (ngrok or Cloudflare Quick Tunnel)
 
 For using SocialHub through a public HTTPS address (needed for Facebook login and Meta's
-callbacks) without owning a domain. Needs Node.js, cloudflared, Redis (Memurai) when publishing
-is on, and a built web app (`npm run build`).
+callbacks) without owning a domain. Needs Node.js, a tunnel program (ngrok or cloudflared),
+Redis (Memurai) when publishing is on, and a built web app (`npm run build`).
 
-| Script (repository root)     | What it does                                                                                                                                                                                                                                              |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start-socialhub.cmd`        | Starts a Cloudflare Quick Tunnel to `http://localhost:4000` (or reuses one that is running), writes its URL to `apps/api/.env`, starts the API (restarting one it started if the URL changed), checks the local and public addresses and prints both URLs |
-| `start-socialhub-api.cmd`    | Starts only the API                                                                                                                                                                                                                                       |
-| `start-socialhub-tunnel.cmd` | Starts or reuses only the tunnel and updates `apps/api/.env`                                                                                                                                                                                              |
-| `stop-socialhub.cmd`         | Stops the API and the tunnel that the launcher started, and nothing else                                                                                                                                                                                  |
+`TUNNEL_PROVIDER` in `apps/api/.env` picks the tunnel (only the launcher reads it):
+
+| `TUNNEL_PROVIDER`      | Public address                                                                                   | Meta dashboard                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------ |
+| `ngrok`                | Your ngrok account's own domain (for example `name.ngrok-free.dev`), **the same on every start** | set once                       |
+| `cloudflare` (default) | A random `*.trycloudflare.com` name, new whenever a new tunnel starts                            | update after every new address |
+
+**One-time ngrok setup** (free account):
+
+1. Install ngrok: `winget install --id Ngrok.Ngrok -e`, then `ngrok update` (winget's package is
+   old; `ngrok update` fetches the current agent). Or download it from <https://ngrok.com/download>.
+2. Sign up at <https://dashboard.ngrok.com/signup>, copy the authtoken from
+   <https://dashboard.ngrok.com/get-started/your-authtoken>, and in a **new** terminal run
+   `ngrok config add-authtoken <your authtoken>`. The token stays in ngrok's own config file
+   (`%LOCALAPPDATA%\ngrok\ngrok.yml`); the launcher only checks that one is there.
+3. In `apps/api/.env`: `TUNNEL_PROVIDER=ngrok`. Optional: `NGROK_DOMAIN=<your domain>` (shown at
+   <https://dashboard.ngrok.com/domains>) pins the address; any other address is then refused.
+4. Run `start-socialhub.cmd`. It prints **THE PUBLIC URL CHANGED** one last time with every value
+   to paste into the Meta Developer Dashboard. After that, restarts keep the same address.
+
+ngrok free plan, as documented by ngrok (check <https://ngrok.com/docs/pricing-limits/free-plan-limits>):
+browsers see an ngrok warning page before the site on their first visit, and again every 7
+days (click **Visit Site**). Meta's server calls and SocialHub's own API requests are not
+affected. Usage is capped (about 20,000 HTTP requests and 1 GB of transfer a month); an open
+dashboard polls the publishing status every 30 s, about 120 requests an hour. For daily work,
+<http://localhost:4000> on this PC does not use the quota. Paid ngrok plans remove the
+warning page and raise the limits.
+
+| Script (repository root)     | What it does                                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `start-socialhub.cmd`        | Starts the tunnel to `http://localhost:4000` (or reuses one that is running), writes its URL to `apps/api/.env`, starts the API (restarting one it started if the URL changed), checks the local and public addresses and prints both URLs |
+| `start-socialhub-api.cmd`    | Starts only the API                                                                                                                                                                                                                        |
+| `start-socialhub-tunnel.cmd` | Starts or reuses only the tunnel and updates `apps/api/.env`                                                                                                                                                                               |
+| `stop-socialhub.cmd`         | Stops the API and the tunnel that the launcher started, and nothing else                                                                                                                                                                   |
 
 Double-click `start-socialhub.cmd`, or run it in a terminal from the project folder. The API and
 the tunnel each run in their own window ("SocialHub API", "SocialHub Tunnel"); closing a window
@@ -159,10 +187,17 @@ end (also in `API_PUBLIC_URL` in `apps/api/.env`). Stop it with `stop-socialhub.
 
 What the launcher does, and does not do:
 
-- **Checks first:** Node.js, npm and cloudflared; MongoDB (with `MONGODB_URI`) before it starts the
-  API; Redis when publishing uses it (a warning only: the API runs without it).
-- **Reads the tunnel URL from cloudflared** (its local status endpoint) and accepts only
-  `https://<name>.trycloudflare.com`. If no valid URL appears, `.env` is not changed.
+- **Checks first:** Node.js, npm and the selected tunnel program (for ngrok also its authtoken);
+  MongoDB (with `MONGODB_URI`) before it starts the API; Redis when publishing uses it (a
+  warning only: the API runs without it).
+- **Reads the tunnel URL from the tunnel program itself:** the ngrok agent's local API
+  (`/api/endpoints`, or `/api/tunnels` on older agents), which must show an HTTPS address
+  forwarding to this API (and equal to `NGROK_DOMAIN` when set); or cloudflared's local status
+  endpoint, accepting only `https://<name>.trycloudflare.com`. If no valid URL appears, `.env` is
+  not changed. When ngrok stops at start, the launcher names the `ERR_NGROK_…` code from its log
+  (`.socialhub/ngrok.log`) with what to do, without printing log lines.
+- **ngrok runs with `--inspect=false`**, so the agent keeps no copies of requests (sign-in forms,
+  tokens) for its local inspection page.
 - **Changes only `CLIENT_ORIGIN`, `APP_URL` and `API_PUBLIC_URL`** in `apps/api/.env`, and only when
   all three hold the same URL. Every other line stays exactly as it was. Secret values are never
   printed. `PUBLISHING_MODE` is never touched.
@@ -172,22 +207,25 @@ What the launcher does, and does not do:
   and leaves it to you to restart it.
 - **Starts nothing twice.** A running API on port 4000 or a running tunnel to it is reused.
 
-**The public URL is not permanent.** Every new Quick Tunnel gets a new random
-`*.trycloudflare.com` hostname. Reusing a running tunnel keeps the URL; stopping the tunnel
-(`stop-socialhub.cmd`, closing its window, restarting Windows) means the next start gets a new
-one. The API reads `.env` only when it starts, which is why the launcher restarts the API it
-started after a URL change.
+**With ngrok the public URL is permanent:** stopping the tunnel, closing its window or restarting
+Windows does not change it, so `.env` and the Meta dashboard stay as they are. **With a Quick
+Tunnel it is not:** every new Quick Tunnel gets a new random `*.trycloudflare.com` hostname.
+Reusing a running tunnel keeps the URL; stopping it means the next start gets a new one. The API
+reads `.env` only when it starts, which is why the launcher restarts the API it started after a
+URL change. Switching `TUNNEL_PROVIDER` makes the next start stop the launcher's tunnel of the
+other kind and start the selected one.
 
 When the URL changes, the launcher prints **THE PUBLIC URL CHANGED** with the exact values to
-paste into the Meta Developer Dashboard: the Valid OAuth Redirect URI
+paste into the Meta Developer Dashboard: App Domains, the Valid OAuth Redirect URI
 (`<url>/api/v1/oauth/facebook/callback`), the deauthorize and data-deletion callbacks
-(`<url>/api/v1/meta/facebook/deauthorize`, `…/data-deletion`), App Domains, and the Privacy Policy,
-Terms of Service and Data Deletion Instructions URLs (`/privacy.html`, `/terms.html`,
-`/data-deletion.html`). Facebook login fails, and Meta's checks of those pages fail, until they are
-updated. A permanent address needs a domain and a Cloudflare named tunnel.
+(`<url>/api/v1/meta/facebook/deauthorize`, `…/data-deletion`), the Instagram redirect URLs for
+the Instagram logins `.env` configures, and the Privacy Policy, Terms of Service and Data
+Deletion Instructions URLs (`/privacy.html`, `/terms.html`, `/data-deletion.html`). Facebook login
+fails, and Meta's checks of those pages fail, until they are updated.
 
-`node scripts/socialhub-launcher.js status` shows what is running;
-`start-socialhub.cmd --new-tunnel` forces a fresh tunnel.
+`node scripts/socialhub-launcher.js status` shows what is running and which tunnel `.env`
+selects; `start-socialhub.cmd --new-tunnel` restarts the tunnel (ngrok keeps its address, a Quick
+Tunnel gets a new one).
 
 ## Scripts (run from the repository root)
 
@@ -628,8 +666,10 @@ npm run build
 #   API_PUBLIC_URL=https://<tunnel-host>
 #   TRUST_PROXY=1                          # the tunnel is a reverse proxy
 npm start                                  # API + web on :4000
-cloudflared tunnel --url http://localhost:4000
+ngrok http http://localhost:4000           # same address every time (or: cloudflared tunnel --url …)
 ```
+
+On Windows, `start-socialhub.cmd` does all of this (section 5).
 
 Then open `https://<tunnel-host>` (not `localhost`), register the tunnel URLs in the
 dashboard (steps 2–6), and connect using an account that has a role on the app.
@@ -1119,6 +1159,7 @@ Hierarchy rules:
 | 2026-11-24 | Backups, key rotation, production checks          | db:backup/verify/restore (empty targets only); secrets:rotate-key; production refuses http/insecure cookies; FB-only login scopes; PC no longer sleeps                           |
 | 2026-11-24 | Edit and delete real Facebook posts               | Text edit + delete on Facebook from the post details; explicit confirmation enforced by the API; recorded only on Meta success; simulated Meta only                              |
 | 2026-11-25 | Simpler UI and automatic group sharing tasks      | Calmer design and fewer steps; real Page posts get one sharing task per group the Page is in. Posting in groups stays manual (no Meta API). Tested against a simulated Meta only |
+| 2026-11-26 | Permanent public URL with ngrok                   | Launcher option `TUNNEL_PROVIDER=ngrok`: one address across restarts (Meta dashboard set once); unit-tested; first real run waits for the ngrok authtoken                        |
 
 ### Simpler UI and automatic group sharing tasks (2026-11-25)
 
