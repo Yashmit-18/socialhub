@@ -249,6 +249,7 @@ export function PublishingPreview({ state, accounts, status = 'ready', className
     <Card aria-labelledby={titleId} className={cn('min-w-0', className)}>
       <CardHeader
         icon={Eye}
+        tone="from-sky-500 to-blue-600"
         title={
           // The badge sits with the title so the note below keeps the full width on phones.
           <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">

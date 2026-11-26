@@ -338,6 +338,7 @@ export function ReadinessPanel({
     <Card aria-labelledby={titleId} className={cn('min-w-0', className)}>
       <CardHeader
         icon={ListChecks}
+        tone="from-emerald-500 to-teal-600"
         title={<span id={titleId}>Readiness check</span>}
         description={
           <span role="status" aria-live="polite" aria-atomic="true">

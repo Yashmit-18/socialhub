@@ -178,10 +178,18 @@ function ViewSwitch({ view, onChange, issueCount }) {
   );
 }
 
-function Section({ id, icon, title, description, action, children }) {
+function Section({ id, icon, tone, step, stepClassName, title, description, action, children }) {
   return (
     <Card id={id} tabIndex={-1} className="scroll-mt-24 focus:outline-none">
-      <CardHeader icon={icon} title={title} description={description} action={action} />
+      <CardHeader
+        icon={icon}
+        tone={tone}
+        step={step}
+        stepClassName={stepClassName}
+        title={title}
+        description={description}
+        action={action}
+      />
       <CardBody>{children}</CardBody>
     </Card>
   );
@@ -216,10 +224,13 @@ function MoreOptions({ open, onToggle, summary, children }) {
         onClick={onToggle}
         className="flex w-full items-center gap-3 px-5 py-4 text-left sm:px-6"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-md ring-1 shadow-slate-900/10 ring-white/20 ring-inset">
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold text-pink-600 dark:text-pink-300">
+            Step 3 · optional
+          </span>
           <span className="block text-[15px] font-semibold text-slate-900 dark:text-white">
             More options
           </span>
@@ -590,6 +601,9 @@ function Composer() {
           <Section
             id="composer-post"
             icon={PenLine}
+            tone="from-violet-500 to-purple-600"
+            step="Step 2"
+            stepClassName="text-violet-600 dark:text-violet-300"
             title="Your post"
             description="One caption for every platform, or a different one for Facebook and Instagram."
           >

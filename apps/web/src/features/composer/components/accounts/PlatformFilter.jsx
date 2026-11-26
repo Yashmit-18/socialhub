@@ -61,21 +61,19 @@ export function PlatformFilter({
                   'flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-all duration-150 select-none',
                   'peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-slate-100 dark:peer-focus-visible:ring-offset-slate-900',
                   checked
-                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-800 dark:text-white dark:ring-white/10'
+                    ? cn(
+                        'text-white shadow-sm',
+                        option.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE
+                          ? 'bg-blue-600'
+                          : option.platform
+                            ? 'bg-gradient-to-r from-pink-600 to-fuchsia-600'
+                            : 'bg-gradient-to-r from-brand-600 to-violet-600',
+                      )
                     : 'text-slate-600 hover:bg-white/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white',
                 )}
               >
                 {option.platform && (
-                  <PlatformGlyph
-                    platform={option.platform}
-                    className={cn(
-                      'h-3.5 w-3.5 shrink-0',
-                      checked &&
-                        (option.platform === SOCIAL_PLATFORMS.FACEBOOK_PAGE
-                          ? 'text-[#1877F2] dark:text-[#4599FF]'
-                          : 'text-rose-500 dark:text-rose-400'),
-                    )}
-                  />
+                  <PlatformGlyph platform={option.platform} className="h-3.5 w-3.5 shrink-0" />
                 )}
                 <span className={cn('truncate', option.platform && '@max-[25rem]:hidden')}>
                   {option.label}
@@ -85,7 +83,7 @@ export function PlatformFilter({
                     className={cn(
                       'min-w-5 shrink-0 rounded-full px-1.5 text-center text-[11px] leading-[18px] tabular-nums',
                       checked
-                        ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
+                        ? 'bg-white/20 text-white'
                         : 'bg-slate-200/70 text-slate-600 dark:bg-white/10 dark:text-slate-300',
                     )}
                   >

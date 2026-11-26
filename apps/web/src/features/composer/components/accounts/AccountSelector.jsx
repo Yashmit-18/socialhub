@@ -368,10 +368,11 @@ export function AccountSelector({
     <Card className={className} aria-labelledby={titleId}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pt-5 sm:px-6">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md ring-1 shadow-slate-900/10 ring-white/20 ring-inset">
             <Share2 className="h-4.5 w-4.5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
+            <p className="text-xs font-semibold text-brand-600 dark:text-brand-300">Step 1</p>
             <h2
               id={titleId}
               className="text-base font-semibold tracking-tight text-slate-900 dark:text-white"

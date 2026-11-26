@@ -9,16 +9,49 @@ export function Card({ className, children, interactive = false, ...props }) {
   );
 }
 
-export function CardHeader({ title, description, action, icon: Icon, className }) {
+/**
+ * `tone` (gradient classes, e.g. 'from-indigo-500 to-violet-600') paints the icon tile in that
+ * colour; `step` adds a small label such as "Step 2" above the title, in `stepClassName`.
+ */
+export function CardHeader({
+  title,
+  description,
+  action,
+  icon: Icon,
+  tone,
+  step,
+  stepClassName,
+  className,
+}) {
   return (
     <div className={cn('flex items-start justify-between gap-4 px-5 pt-5 sm:px-6', className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-400/10 dark:text-brand-300">
+          <div
+            className={cn(
+              'mt-0.5 flex shrink-0 items-center justify-center',
+              tone
+                ? cn(
+                    'h-9 w-9 rounded-xl bg-gradient-to-br text-white shadow-md shadow-slate-900/10 ring-1 ring-white/20 ring-inset',
+                    tone,
+                  )
+                : 'h-8 w-8 rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-400/10 dark:text-brand-300',
+            )}
+          >
             <Icon className="h-4 w-4" aria-hidden="true" />
           </div>
         )}
         <div className="min-w-0">
+          {step && (
+            <p
+              className={cn(
+                'text-xs font-semibold text-brand-600 dark:text-brand-300',
+                stepClassName,
+              )}
+            >
+              {step}
+            </p>
+          )}
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
             {title}
           </h2>

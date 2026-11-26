@@ -242,7 +242,7 @@ export function MediaDropzone({
                 'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform duration-200',
                 blocked
                   ? 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500'
-                  : 'bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300',
+                  : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-slate-900/10',
                 active && 'scale-110',
               )}
             >
@@ -282,7 +282,7 @@ export function MediaDropzone({
                   'relative flex h-12 w-12 items-center justify-center rounded-2xl transition-transform duration-200',
                   blocked
                     ? 'bg-slate-200 text-slate-400 dark:bg-white/5 dark:text-slate-500'
-                    : 'border border-slate-200 bg-white text-slate-500 shadow-card dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300',
+                    : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-brand-600/25 ring-1 ring-white/20 ring-inset',
                   active && '-rotate-3 scale-110',
                 )}
               >
