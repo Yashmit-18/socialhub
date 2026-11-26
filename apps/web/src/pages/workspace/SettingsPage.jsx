@@ -74,23 +74,29 @@ function GeneralSettings() {
               error={errors.slug?.message}
               {...register('slug')}
             />
+            <Select
+              label="Time zone"
+              disabled={!editable}
+              error={errors.timezone?.message}
+              {...register('timezone')}
+            >
+              {[...new Set([workspace.timezone, ...zones])].map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </Select>
           </div>
-          <Select
-            label="Time zone"
-            disabled={!editable}
-            error={errors.timezone?.message}
-            {...register('timezone')}
-          >
-            {[...new Set([workspace.timezone, ...zones])].map((tz) => (
-              <option key={tz} value={tz}>
-                {tz.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </Select>
         </CardBody>
         {editable && (
           <CardFooter>
-            <Button type="submit" loading={isSubmitting} disabled={!formState.isDirty}>
+            {/* Quiet while there is nothing to save; the primary colour once something changed. */}
+            <Button
+              type="submit"
+              variant={formState.isDirty ? 'primary' : 'secondary'}
+              loading={isSubmitting}
+              disabled={!formState.isDirty}
+            >
               Save changes
             </Button>
           </CardFooter>
@@ -103,8 +109,9 @@ function GeneralSettings() {
 function TransferOwnership() {
   const { workspace } = useWorkspace();
   const queryClient = useQueryClient();
-  const { data: members = [] } = useMembers(workspace.id);
+  const { data: members = [], isPending } = useMembers(workspace.id);
   const candidates = members.filter((m) => m.role !== ROLES.OWNER);
+  const nobody = !isPending && candidates.length === 0;
   const [open, setOpen] = useState(false);
   const { register, submit, errors, isSubmitting, formError, reset } = useApiForm(
     transferOwnershipSchema,
@@ -126,11 +133,12 @@ function TransferOwnership() {
         <p className="mt-0.5 text-sm text-muted">
           Make another member the owner. You will become an admin.
         </p>
+        {/* Why the button is off, as text: a tooltip does not reach touch or keyboard users. */}
+        {nobody && <p className="mt-1 text-xs text-muted">Invite another member first</p>}
       </div>
       <Button
         variant="danger-outline"
         disabled={candidates.length === 0}
-        title={candidates.length === 0 ? 'Invite another member first' : undefined}
         onClick={() => {
           reset({ memberId: candidates[0]?.id ?? '', password: '' });
           setOpen(true);
@@ -203,8 +211,9 @@ function DeleteWorkspace() {
           connections.
         </p>
       </div>
+      {/* Outlined here; the solid red button is "Delete permanently" inside the dialog. */}
       <Button
-        variant="danger"
+        variant="danger-outline"
         onClick={() => {
           reset();
           setOpen(true);
@@ -266,13 +275,15 @@ export default function SettingsPage() {
         title="Workspace settings"
         description="Manage how this workspace is named, addressed and owned."
       />
-      <div className="space-y-6">
+      {/* A readable column: nothing here needs the full width of the page. */}
+      <div className="max-w-3xl space-y-6">
         <GeneralSettings />
         <PublishingModeSettings />
         {role === ROLES.OWNER && (
           <Card className="border-rose-200/80 dark:border-rose-500/20">
             <CardHeader
               icon={AlertTriangle}
+              iconTone="danger"
               title="Danger zone"
               description="Owner-only actions. Each one asks for your password."
             />

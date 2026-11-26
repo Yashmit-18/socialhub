@@ -280,66 +280,6 @@
 
   /* ---------- Backgrounds ---------- */
 
-  .lp-aurora {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .lp-blob {
-    position: absolute;
-    border-radius: 999px;
-    opacity: 0.6;
-    will-change: transform;
-  }
-
-  .lp-blob-a {
-    width: 62rem;
-    height: 62rem;
-    left: -22rem;
-    top: -30rem;
-    background: radial-gradient(closest-side, var(--lp-glow-a), transparent 70%);
-    animation: lp-drift-a 22s ease-in-out infinite alternate;
-  }
-
-  .lp-blob-b {
-    width: 54rem;
-    height: 54rem;
-    right: -20rem;
-    top: -18rem;
-    background: radial-gradient(closest-side, var(--lp-glow-b), transparent 70%);
-    animation: lp-drift-b 26s ease-in-out infinite alternate;
-  }
-
-  .lp-blob-c {
-    width: 46rem;
-    height: 46rem;
-    left: 30%;
-    top: 18rem;
-    background: radial-gradient(closest-side, var(--lp-glow-c), transparent 70%);
-    animation: lp-drift-c 30s ease-in-out infinite alternate;
-  }
-
-  /* Slowly turning light rays behind the hero headline. */
-  .lp-rays {
-    position: absolute;
-    left: 50%;
-    top: -38rem;
-    width: 96rem;
-    height: 96rem;
-    margin-left: -48rem;
-    background: repeating-conic-gradient(
-      from 0deg,
-      transparent 0deg 7deg,
-      var(--lp-ray) 8deg 9.5deg,
-      transparent 10.5deg 15deg
-    );
-    -webkit-mask-image: radial-gradient(closest-side, transparent 18%, #000 34%, transparent 72%);
-    mask-image: radial-gradient(closest-side, transparent 18%, #000 34%, transparent 72%);
-    animation: lp-spin 140s linear infinite;
-  }
-
   .lp-grid {
     position: absolute;
     inset: 0;
@@ -994,7 +934,10 @@
     filter: none;
   }
 
-  /* Staggered rows inside a revealed parent. */
+  /*
+   * Staggered rows, switched on by `.is-on` on the illustration's own root (not `.is-visible`,
+   * which an outer Reveal would set too early).
+   */
   .lp-tick {
     opacity: 0;
     translate: -10px 0;
@@ -1010,12 +953,12 @@
     transition-delay: calc(var(--i, 0) * 260ms + 380ms);
   }
 
-  .is-visible .lp-tick {
+  .is-on .lp-tick {
     opacity: 1;
     translate: 0 0;
   }
 
-  .is-visible .lp-tick .lp-tick-dot {
+  .is-on .lp-tick .lp-tick-dot {
     scale: 1;
   }
 
@@ -1226,6 +1169,83 @@
     animation: lp-lock 2.8s ease-in-out infinite;
   }
 
+  /* ---------- Social illustrations (LandingSocial.jsx) ---------- */
+
+  /* Hero posts and glyphs lean with the pointer: --px/--py on the hero section, 0 by default. */
+  .lp-social-depth {
+    transform: translate3d(
+      calc(var(--px, 0) * var(--depth, 12) * 1px),
+      calc(var(--py, 0) * var(--depth, 12) * 1px),
+      0
+    );
+    transition: transform 1000ms var(--lp-ease);
+  }
+
+  /* Large outline glyphs in the hero gutters, drifting very slowly. */
+  .lp-glyph-drift {
+    animation: lp-glyph-drift 18s ease-in-out infinite alternate;
+    animation-delay: var(--lp-delay, 0ms);
+  }
+
+  /* Group board: one state fades out as the next fades in, at --at, once the board is on. */
+  .lp-swap-in {
+    opacity: 0;
+  }
+
+  .is-on .lp-swap-out {
+    animation: lp-swap-out 300ms ease forwards;
+    animation-delay: var(--at, 0ms);
+  }
+
+  .is-on .lp-swap-in {
+    animation: lp-swap-in 450ms var(--lp-ease) both;
+    animation-delay: var(--at, 0ms);
+  }
+
+  .is-on .lp-share-press {
+    animation: lp-share-press 320ms ease both;
+  }
+
+  /* A pointer that comes in, presses "Mark as shared" and leaves (delay set inline). */
+  .lp-share-pointer {
+    opacity: 0;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35));
+  }
+
+  .is-on .lp-share-pointer {
+    animation: lp-share-pointer 1100ms var(--lp-ease) both;
+  }
+
+  /* The closing card's phone: cut by the card's bottom edge, its feed drifting upward. */
+  .lp-phone {
+    position: relative;
+    overflow: hidden;
+    border: 6px solid #26245e;
+    border-bottom: 0;
+    border-radius: 2.25rem 2.25rem 0 0;
+    background: var(--lp-window-inset);
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.08),
+      var(--lp-shadow-xl);
+  }
+
+  /* Two identical copies of the feed: moving up by half is one seamless loop. */
+  .lp-feed {
+    animation: lp-feed 48s linear infinite;
+  }
+
+  .lp-phone:hover .lp-feed {
+    animation-play-state: paused;
+  }
+
+  /* usePauseOffscreen marks sections outside the viewport: nothing animates where unseen. */
+  .lp-root [data-offscreen] *,
+  .lp-root [data-offscreen] *::before,
+  .lp-root [data-offscreen] *::after {
+    animation-play-state: paused !important;
+  }
+
   /* ---------- FAQ ---------- */
 
   .lp-faq summary {
@@ -1345,24 +1365,6 @@ html.lp-vt::view-transition-new(root) {
   30%,
   100% {
     translate: 120% 0;
-  }
-}
-
-@keyframes lp-drift-a {
-  to {
-    transform: translate(14rem, 8rem) scale(1.1);
-  }
-}
-
-@keyframes lp-drift-b {
-  to {
-    transform: translate(-12rem, 10rem) scale(0.92);
-  }
-}
-
-@keyframes lp-drift-c {
-  to {
-    transform: translate(-10rem, -6rem) scale(1.15);
   }
 }
 
@@ -1599,6 +1601,65 @@ html.lp-vt::view-transition-new(root) {
   }
 }
 
+@keyframes lp-glyph-drift {
+  to {
+    transform: translate(14px, -20px) rotate(8deg);
+  }
+}
+
+@keyframes lp-swap-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes lp-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes lp-share-press {
+  50% {
+    transform: scale(0.92);
+  }
+}
+
+@keyframes lp-share-pointer {
+  0% {
+    opacity: 0;
+    transform: translate(18px, 16px);
+  }
+  35% {
+    opacity: 1;
+    transform: none;
+  }
+  50% {
+    transform: scale(0.8);
+  }
+  62%,
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+@keyframes lp-feed {
+  to {
+    transform: translateY(-50%);
+  }
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1646,60 +1707,16 @@ html.lp-vt::view-transition-new(root) {
   .lp-beam,
   .lp-beam-v,
   .lp-caret,
-  .lp-rays,
   .lp-hero-glow,
   .lp-beam-border,
-  .lp-grid-spot {
+  .lp-share-pointer {
     display: none;
   }
 }
 
-/* ---------- Hero: cursor spotlight, border beam, scroll-linked depth ---------- */
+/* ---------- Hero: border beam, scroll-linked depth ---------- */
 
 @layer components {
-  /*
-   * A brighter patch of the grid and a soft glow follow the pointer across the hero.
-   * usePointerParallax writes --hx/--hy (pixels) and `.is-pointer-in` on the hero section.
-   */
-  .lp-grid-spot {
-    --lp-grid-hot: rgb(99 102 241 / 0.32);
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-      radial-gradient(
-        480px circle at var(--hx, 50%) var(--hy, 30%),
-        var(--lp-spot),
-        transparent 70%
-      ),
-      linear-gradient(to right, var(--lp-grid-hot) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--lp-grid-hot) 1px, transparent 1px);
-    background-size:
-      100% 100%,
-      64px 64px,
-      64px 64px;
-    -webkit-mask-image: radial-gradient(
-      360px circle at var(--hx, 50%) var(--hy, 30%),
-      #000 0%,
-      transparent 100%
-    );
-    mask-image: radial-gradient(
-      360px circle at var(--hx, 50%) var(--hy, 30%),
-      #000 0%,
-      transparent 100%
-    );
-    opacity: 0;
-    transition: opacity 700ms ease;
-  }
-
-  .dark .lp-grid-spot {
-    --lp-grid-hot: rgb(165 180 252 / 0.3);
-  }
-
-  .is-pointer-in > .lp-grid-spot {
-    opacity: 1;
-  }
-
   /* A light that keeps travelling around the hero dashboard's frame. */
   .lp-beam-border {
     position: absolute;
@@ -1726,8 +1743,9 @@ html.lp-vt::view-transition-new(root) {
 }
 
 /*
- * Scroll-linked depth (browsers with scroll-driven animations): the hero copy recedes as the
- * page scrolls, and the dashboard starts tilted back and settles flat as it comes into view.
+ * Scroll-linked depth (browsers with scroll-driven animations): the hero copy and its sample
+ * posts recede as the page scrolls, and the dashboard starts tilted back and settles flat as it
+ * comes into view.
  */
 @supports (animation-timeline: scroll()) {
   @media (prefers-reduced-motion: no-preference) {
@@ -1743,6 +1761,13 @@ html.lp-vt::view-transition-new(root) {
       animation-timeline: view();
       animation-range: entry 0% cover 42%;
     }
+
+    /* The hero's sample posts rise away faster than the copy, then fade. */
+    .lp-hero-social {
+      animation: lp-social-recede linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 70vh;
+    }
   }
 }
 
@@ -1751,6 +1776,13 @@ html.lp-vt::view-transition-new(root) {
     opacity: 0.15;
     transform: translateY(-56px) scale(0.97);
     filter: blur(4px);
+  }
+}
+
+@keyframes lp-social-recede {
+  to {
+    opacity: 0;
+    transform: translateY(-110px);
   }
 }
 

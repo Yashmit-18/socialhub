@@ -31,6 +31,7 @@ import {
   PublishJob,
   SocialAccount,
   SocialConnection,
+  User,
   Workspace,
 } from '../../models/index.js';
 import { getPublishQueue } from '../../queue/publishQueue.js';
@@ -381,9 +382,10 @@ async function markInterrupted(destination, now) {
 /**
  * The member this send relies on (the job's creator, or whoever retried or rescheduled it)
  * must still be allowed to make it: a scheduled post can wait for weeks, during which that
- * person may leave, lose the publish permission or lose access to the account. Checked with
- * the same rules as the API (roles.js, accessibleAccountFilter). Throws AUTHOR_NOT_AUTHORIZED;
- * nothing has been sent at this point.
+ * person may leave, lose the publish permission, lose access to the account, or have their
+ * SocialHub account suspended. Checked with the same rules as the API (roles.js,
+ * accessibleAccountFilter, authenticate.js). Throws AUTHOR_NOT_AUTHORIZED; nothing has been
+ * sent at this point.
  */
 async function assertStillAuthorized(destination, job) {
   const userId = destination.authorizedBy ?? job.createdBy;
@@ -392,14 +394,24 @@ async function assertStillAuthorized(destination, job) {
     error.blockReason = reason;
     return error;
   };
-  const [workspaceExists, membership] = await Promise.all([
+  const [workspaceExists, membership, author] = await Promise.all([
     Workspace.exists({ _id: destination.workspace }),
     Membership.findOne({ workspace: destination.workspace, user: userId })
       .select('workspace role accountAccess')
       .lean(),
+    // Hydrated on purpose: a missing stored status reads ACTIVE, as in authenticate.js.
+    User.findById(userId).select('status'),
   ]);
   if (!workspaceExists) {
     throw blocked(R.WORKSPACE_DELETED, 'The workspace no longer exists.');
+  }
+  // A suspended account sends nothing, whatever its role still says (docs/ADMIN_PANEL.md).
+  // The same rule as authenticate.js; an account that no longer exists is treated alike.
+  if (author?.status !== 'ACTIVE') {
+    throw blocked(
+      R.AUTHOR_SUSPENDED,
+      'The account of the person who scheduled this post is suspended, so it was not sent.',
+    );
   }
   if (!membership) {
     throw blocked(

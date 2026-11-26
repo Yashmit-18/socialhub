@@ -6,9 +6,11 @@ import {
   facebookGroupQuerySchema,
   facebookGroupUpdateSchema,
   groupNameFromUrl,
+  groupRelevance,
   groupShareCreateSchema,
   isFacebookUrl,
   parseFacebookGroupUrl,
+  relevanceKey,
   sharingTaskUpdateSchema,
 } from '../src/index.js';
 
@@ -133,5 +135,34 @@ describe('Pages in groups, bulk add and auto share', () => {
     ).toBe(false);
     expect(autoGroupShareSchema.safeParse({ publishJobId: ID }).success).toBe(true);
     expect(autoGroupShareSchema.safeParse({ publishJobId: 'nope' }).success).toBe(false);
+  });
+});
+
+describe('auto share relevance', () => {
+  it('compares tags, hashtags and keywords by letters and digits only, ignoring case', () => {
+    expect(relevanceKey('#NewYork')).toBe('newyork');
+    expect(relevanceKey(' New-York ')).toBe('newyork');
+    expect(relevanceKey('plant_based')).toBe('plantbased');
+    expect(relevanceKey('Café')).toBe('café');
+    expect(relevanceKey('मुंबई')).toBe('मुंबई');
+    expect(relevanceKey('#!?')).toBe('');
+    expect(relevanceKey(null)).toBe('');
+  });
+
+  it('is relevant when a tag matches a topic, or when the group has no usable tags', () => {
+    const topics = new Set(['vegan', 'newyork']);
+    expect(groupRelevance(['Vegan', 'cars'], topics)).toEqual({
+      relevant: true,
+      matched: ['Vegan'],
+    });
+    expect(groupRelevance(['new york'], ['newyork'])).toEqual({
+      relevant: true,
+      matched: ['new york'],
+    });
+    expect(groupRelevance(['cars'], topics)).toEqual({ relevant: false, matched: [] });
+    expect(groupRelevance(['cars'], [])).toEqual({ relevant: false, matched: [] });
+    expect(groupRelevance([], topics)).toEqual({ relevant: true, matched: [] });
+    expect(groupRelevance(undefined, topics)).toEqual({ relevant: true, matched: [] });
+    expect(groupRelevance(['!!'], topics)).toEqual({ relevant: true, matched: [] });
   });
 });

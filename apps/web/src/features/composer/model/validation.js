@@ -330,7 +330,13 @@ function mediaIssues(state, platform, rules, push) {
       message: `${label} posts can include photos or a video, not both.`,
     });
   }
-  if (m.maxVideos !== null && m.maxVideos !== undefined && videos.length > m.maxVideos) {
+  if (m.separateVideoPosts && m.maxVideos === 1 && videos.length > 1 && images.length === 0) {
+    // Not a problem: SocialHub publishes each video as a post of its own.
+    add('video-posts', {
+      severity: SEVERITY.INFO,
+      message: `${label} takes one video per post, so each of the ${videos.length} videos is published as its own post, with the same text.`,
+    });
+  } else if (m.maxVideos !== null && m.maxVideos !== undefined && videos.length > m.maxVideos) {
     add('video-count', {
       ...limit(rules, 'media.maxVideos'),
       message: `${label} posts can include ${plural(m.maxVideos, 'video')}. This post has ${videos.length}.`,

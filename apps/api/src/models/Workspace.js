@@ -31,6 +31,8 @@ const workspaceSchema = new mongoose.Schema(
 );
 
 workspaceSchema.index({ slug: 1 }, { unique: true });
+// Operator console: workspaces by publishing mode, newest first.
+workspaceSchema.index({ publishingMode: 1, _id: -1 });
 
 jsonPlugin(workspaceSchema);
 

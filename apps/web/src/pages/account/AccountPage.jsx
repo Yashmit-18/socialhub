@@ -1,13 +1,16 @@
 import { changePasswordSchema, updateProfileSchema } from '@socialhub/shared';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound, MonitorSmartphone, UserRound } from 'lucide-react';
+import { IdCard, KeyRound, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { AppShell, PageHeader } from '../../components/layout/AppShell.jsx';
 import { Avatar } from '../../components/ui/Avatar.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardBody, CardFooter, CardHeader } from '../../components/ui/Card.jsx';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { FormError, Input, PasswordInput } from '../../components/ui/Field.jsx';
+import { GRADIENT_TONES } from '../../components/ui/tones.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useApiForm } from '../../hooks/useApiForm.js';
 import { api } from '../../lib/api.js';
@@ -17,10 +20,12 @@ import { LAST_WORKSPACE_KEY } from '../../components/layout/WorkspaceLayout.jsx'
 
 function ProfileCard() {
   const { user, updateUser } = useAuth();
-  const { register, submit, errors, isSubmitting, formError, formState, reset } = useApiForm(
+  const { register, submit, errors, isSubmitting, formError, formState, reset, watch } = useApiForm(
     updateProfileSchema,
     { defaultValues: { name: user.name } },
   );
+  // The preview follows the field as it is typed; an emptied field shows the saved name.
+  const shown = watch('name')?.trim() || user.name;
 
   const onSubmit = submit(async (values) => {
     const { user: updated } = await api.patch('/users/me', values);
@@ -31,14 +36,14 @@ function ProfileCard() {
 
   return (
     <Card>
-      <CardHeader icon={UserRound} title="Profile" description="How you appear to teammates." />
+      <CardHeader icon={IdCard} title="Profile" description="How you appear to teammates." />
       <form onSubmit={onSubmit} noValidate>
         <CardBody className="space-y-5">
           <FormError message={formError} />
-          <div className="flex items-center gap-4">
-            <Avatar name={user.name} seed={user.id} size="lg" />
+          <div className="flex items-center gap-4 rounded-xl border border-slate-100 bg-slate-50/60 p-4 dark:border-white/[0.06] dark:bg-white/[0.02]">
+            <Avatar name={shown} seed={user.id} size="lg" />
             <div className="min-w-0">
-              <p className="truncate font-semibold">{user.name}</p>
+              <p className="truncate font-semibold">{shown}</p>
               <p className="truncate text-sm text-muted">{user.email}</p>
             </div>
           </div>
@@ -59,7 +64,13 @@ function ProfileCard() {
           </div>
         </CardBody>
         <CardFooter>
-          <Button type="submit" loading={isSubmitting} disabled={!formState.isDirty}>
+          {/* Quiet while there is nothing to save; the primary colour once something changed. */}
+          <Button
+            type="submit"
+            variant={formState.isDirty ? 'primary' : 'secondary'}
+            loading={isSubmitting}
+            disabled={!formState.isDirty}
+          >
             Save profile
           </Button>
         </CardFooter>
@@ -116,16 +127,19 @@ function PasswordCard() {
   );
 }
 
+const SIGN_OUT_EVERYWHERE =
+  'Sign out of SocialHub on every browser and device, including this one.';
+
 function SessionsCard() {
   const { forgetSession } = useAuth();
   const navigate = useNavigate();
+  const [confirming, setConfirming] = useState(false);
   const signOutEverywhere = useMutation({
     mutationFn: () => api.post('/auth/logout-all'),
     onSuccess: () => {
       forgetSession();
       navigate('/login', { replace: true });
     },
-    onError: (err) => toast.error(err.message),
   });
 
   return (
@@ -136,17 +150,25 @@ function SessionsCard() {
         description="Signed in on a shared or lost device?"
       />
       <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted">
-          Sign out of SocialHub on every browser and device, including this one.
-        </p>
-        <Button
-          variant="danger-outline"
-          loading={signOutEverywhere.isPending}
-          onClick={() => signOutEverywhere.mutate()}
-        >
-          Sign out everywhere
+        <p className="text-sm text-muted">{SIGN_OUT_EVERYWHERE}</p>
+        <Button variant="danger-outline" onClick={() => setConfirming(true)}>
+          <LogOut className="h-4 w-4" aria-hidden="true" /> Sign out everywhere
         </Button>
       </CardBody>
+      {/* It ends this session too, so it asks first. */}
+      <ConfirmDialog
+        open={confirming}
+        title="Sign out everywhere?"
+        description={SIGN_OUT_EVERYWHERE}
+        confirmLabel="Sign out everywhere"
+        loading={signOutEverywhere.isPending}
+        error={signOutEverywhere.error}
+        onConfirm={() => signOutEverywhere.mutate()}
+        onClose={() => {
+          signOutEverywhere.reset();
+          setConfirming(false);
+        }}
+      />
     </Card>
   );
 }
@@ -159,10 +181,13 @@ export default function AccountPage() {
   return (
     <AppShell workspace={workspace}>
       <PageHeader
+        icon={UserRound}
+        tone={GRADIENT_TONES.brand}
         title="Account settings"
         description="Your personal profile and security settings, shared across all workspaces."
       />
-      <div className="space-y-6">
+      {/* A readable column: nothing here needs the full width of the page. */}
+      <div className="max-w-3xl space-y-6">
         <ProfileCard />
         <PasswordCard />
         <SessionsCard />

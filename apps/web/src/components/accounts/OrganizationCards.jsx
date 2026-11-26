@@ -7,6 +7,7 @@ import { Link } from 'react-router';
 import { AccountPicture } from './AccountBadges.jsx';
 import { LabelChip, LabelChips, StarButton } from './AccountLabels.jsx';
 import { Button } from '../ui/Button.jsx';
+import { Callout } from '../ui/Callout.jsx';
 import { Card, CardBody, CardHeader } from '../ui/Card.jsx';
 import { Skeleton } from '../ui/Feedback.jsx';
 import { PLATFORM_LABELS } from '../../lib/meta.js';
@@ -39,12 +40,17 @@ export function StarredAccountsCard({ list, hrefFor, onShowAll }) {
             <Skeleton className="h-8 w-40" />
           </div>
         ) : list.error ? (
-          <p className="text-sm text-rose-600 dark:text-rose-400">
-            Your starred accounts could not be loaded.{' '}
-            <button type="button" className="font-medium underline" onClick={() => list.refetch()}>
-              Try again
-            </button>
-          </p>
+          <Callout
+            tone="danger"
+            size="sm"
+            action={
+              <Button variant="ghost" size="sm" onClick={() => list.refetch()}>
+                Try again
+              </Button>
+            }
+          >
+            Your starred accounts could not be loaded.
+          </Callout>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted">
             No starred accounts yet. Star the Pages and Instagram accounts you work with most to
@@ -116,16 +122,17 @@ export function LabelsCard({ labels, canManage, onShow, onManage }) {
             <Skeleton className="h-6 w-28" />
           </div>
         ) : labels.error ? (
-          <p className="text-sm text-rose-600 dark:text-rose-400">
-            The labels could not be loaded.{' '}
-            <button
-              type="button"
-              className="font-medium underline"
-              onClick={() => labels.refetch()}
-            >
-              Try again
-            </button>
-          </p>
+          <Callout
+            tone="danger"
+            size="sm"
+            action={
+              <Button variant="ghost" size="sm" onClick={() => labels.refetch()}>
+                Try again
+              </Button>
+            }
+          >
+            The labels could not be loaded.
+          </Callout>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted">
             {canManage

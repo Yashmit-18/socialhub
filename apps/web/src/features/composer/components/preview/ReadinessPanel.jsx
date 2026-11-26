@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  Circle,
   CircleCheck,
   CircleX,
   FileText,
@@ -44,11 +45,31 @@ const SEVERITY_STYLES = {
   },
 };
 
+/*
+ * Before the person has chosen an account or written anything, the errors are a to-do list,
+ * not failures: same sentences (and the same "Error: " for screen readers), no red.
+ */
+const QUIET_ERROR_STYLE = {
+  icon: Circle,
+  label: 'Error',
+  row: 'bg-slate-50 dark:bg-white/[0.03]',
+  hover: 'hover:bg-slate-100 dark:hover:bg-white/[0.06]',
+  tint: 'text-slate-400 dark:text-slate-500',
+};
+
+/** Both "nothing yet" errors at once: no account is chosen and there is no caption or media. */
+const UNTOUCHED_ISSUES = ['accounts-required', 'content-required'];
+const isUntouched = (validation) =>
+  UNTOUCHED_ISSUES.every((id) => (validation?.issues ?? []).some((issue) => issue.id === id));
+
 /** Issues shown per group before "Show N more". */
 const VISIBLE_ISSUES = 4;
 
 const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
-const styleOf = (severity) => SEVERITY_STYLES[severity] ?? SEVERITY_STYLES[SEVERITY.INFO];
+const styleOf = (severity, quiet = false) =>
+  quiet && severity === SEVERITY.ERROR
+    ? QUIET_ERROR_STYLE
+    : (SEVERITY_STYLES[severity] ?? SEVERITY_STYLES[SEVERITY.INFO]);
 const bySeverity = (issues) =>
   [...issues].sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3));
 const countOf = (issues, severity) => issues.filter((i) => i.severity === severity).length;
@@ -121,7 +142,7 @@ function GroupIcon({ group }) {
   );
 }
 
-function GroupCounts({ issues }) {
+function GroupCounts({ issues, quiet }) {
   const counts = [SEVERITY.ERROR, SEVERITY.WARNING, SEVERITY.INFO]
     .map((severity) => ({ severity, n: countOf(issues, severity) }))
     .filter(({ n }) => n > 0);
@@ -129,7 +150,7 @@ function GroupCounts({ issues }) {
   return (
     <span className="flex shrink-0 items-center gap-2.5">
       {counts.map(({ severity, n }) => {
-        const style = styleOf(severity);
+        const style = styleOf(severity, quiet);
         const Icon = style.icon;
         const noun = style.label.toLowerCase();
         return (
@@ -147,8 +168,8 @@ function GroupCounts({ issues }) {
   );
 }
 
-function IssueRow({ issue, prefix, onSelect }) {
-  const style = styleOf(issue.severity);
+function IssueRow({ issue, prefix, onSelect, quiet }) {
+  const style = styleOf(issue.severity, quiet);
   const Icon = style.icon;
   const message =
     prefix && issue.message.startsWith(prefix) ? issue.message.slice(prefix.length) : issue.message;
@@ -182,7 +203,7 @@ function IssueRow({ issue, prefix, onSelect }) {
   );
 }
 
-function IssueGroup({ group, onIssueSelect }) {
+function IssueGroup({ group, onIssueSelect, quiet }) {
   const headingId = useId();
   const listId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -206,7 +227,7 @@ function IssueGroup({ group, onIssueSelect }) {
             <p className="truncate text-xs text-muted">{describeAccount(group.account)}</p>
           )}
         </div>
-        <GroupCounts issues={group.issues} />
+        <GroupCounts issues={group.issues} quiet={quiet} />
       </div>
 
       {group.issues.length === 0 ? (
@@ -217,7 +238,13 @@ function IssueGroup({ group, onIssueSelect }) {
       ) : (
         <ul id={listId} className="mt-2 space-y-1.5">
           {visible.map((issue) => (
-            <IssueRow key={issue.id} issue={issue} prefix={prefix} onSelect={onIssueSelect} />
+            <IssueRow
+              key={issue.id}
+              issue={issue}
+              prefix={prefix}
+              onSelect={onIssueSelect}
+              quiet={quiet}
+            />
           ))}
         </ul>
       )}
@@ -241,12 +268,16 @@ function IssueGroup({ group, onIssueSelect }) {
   );
 }
 
-function Summary({ errors, warnings, infos }) {
+function Summary({ errors, warnings, infos, quiet }) {
   const suggestions = infos > 0 ? ` · ${plural(infos, 'suggestion')}` : '';
   if (errors + warnings === 0) return `No problems found${suggestions}`;
   return (
     <>
-      <span className={errors > 0 ? 'font-medium text-rose-600 dark:text-rose-400' : undefined}>
+      <span
+        className={
+          errors > 0 && !quiet ? 'font-medium text-rose-600 dark:text-rose-400' : undefined
+        }
+      >
         {plural(errors, 'error')}
       </span>
       {' · '}
@@ -264,6 +295,8 @@ function Summary({ errors, warnings, infos }) {
  * `status` ('ready' | 'loading' | 'error') reflects the account list, which the checks depend
  * on: pass 'loading' while it loads so selected accounts aren't reported as missing.
  * `onIssueSelect(issue)` (optional) turns each issue into a button, e.g. to focus its field.
+ * `quiet`: nothing has been started yet, so errors are listed as things to do, without red.
+ * Left out, it is read from the check itself (no account chosen and nothing written or added).
  */
 export function ReadinessPanel({
   validation,
@@ -272,12 +305,14 @@ export function ReadinessPanel({
   error,
   onRetry,
   onIssueSelect,
+  quiet: quietProp,
   className,
 }) {
   const titleId = useId();
   const loading = status === 'loading' || (!validation && status !== 'error');
   const failed = status === 'error';
   const ready = !loading && !failed;
+  const quiet = quietProp ?? isUntouched(validation);
 
   const errors = validation?.errors?.length ?? 0;
   const warnings = validation?.warnings?.length ?? 0;
@@ -328,17 +363,27 @@ export function ReadinessPanel({
     body = (
       <div className="space-y-5">
         {groups.map((group) => (
-          <IssueGroup key={group.key} group={group} onIssueSelect={onIssueSelect} />
+          <IssueGroup key={group.key} group={group} onIssueSelect={onIssueSelect} quiet={quiet} />
         ))}
       </div>
     );
   }
 
+  // The tile reports the state: green only when the summary says "No problems found".
+  const tone =
+    !ready || quiet
+      ? 'from-slate-400 to-slate-500'
+      : errors > 0
+        ? 'from-rose-500 to-pink-600'
+        : warnings > 0
+          ? 'from-amber-500 to-orange-500'
+          : 'from-emerald-500 to-teal-600';
+
   return (
     <Card aria-labelledby={titleId} className={cn('min-w-0', className)}>
       <CardHeader
         icon={ListChecks}
-        tone="from-emerald-500 to-teal-600"
+        tone={tone}
         title={<span id={titleId}>Readiness check</span>}
         description={
           <span role="status" aria-live="polite" aria-atomic="true">
@@ -347,7 +392,7 @@ export function ReadinessPanel({
             ) : failed ? (
               'Not checked'
             ) : (
-              <Summary errors={errors} warnings={warnings} infos={infos} />
+              <Summary errors={errors} warnings={warnings} infos={infos} quiet={quiet} />
             )}
           </span>
         }

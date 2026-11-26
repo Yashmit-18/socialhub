@@ -92,7 +92,10 @@ export function SearchBox({ value, onSearch, placeholder, label, delay = 300, cl
             send(e.currentTarget.value);
           }
         }}
-        className={cn(controlClass, 'w-full pl-9 pr-8 text-sm font-normal')}
+        className={cn(
+          controlClass,
+          'w-full pr-8 pl-9 text-sm font-normal [&::-webkit-search-cancel-button]:hidden',
+        )}
       />
       {text !== '' && (
         <button
@@ -114,7 +117,8 @@ export function SearchBox({ value, onSearch, placeholder, label, delay = 300, cl
 
 /**
  * Compact labelled select used by the filter toolbars. `options` is `[[value, label], …]`.
- * `highlight` (default: a value is chosen) gives it the active-filter border.
+ * `highlight` (default: a value is chosen) gives it the active-filter border. A long chosen
+ * option is cut at the width cap; the open list shows it in full.
  */
 export function FilterSelect({ label, value, onChange, options, highlight = Boolean(value) }) {
   return (
@@ -122,7 +126,11 @@ export function FilterSelect({ label, value, onChange, options, highlight = Bool
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={cn(controlBase, highlight ? SELECTED : NEUTRAL, 'pr-8')}
+      className={cn(
+        controlBase,
+        highlight ? SELECTED : NEUTRAL,
+        'select-chevron max-w-48 shrink-0 truncate pr-9',
+      )}
     >
       {options.map(([optionValue, optionLabel]) => (
         <option key={optionValue} value={optionValue}>
@@ -141,7 +149,7 @@ const withCount = (label, count) => (count === undefined ? label : `${label} (${
  * `connections` (managers only) enables the login filter; `workspaces` the workspace filter;
  * `labels` (the workspace labels) the label filter; `showPlatform` the platform filter (pages
  * that list both platforms); `showStarred` the "Starred" toggle. `actions` are extra controls
- * placed at the end of the row (export, manage labels).
+ * placed after the sort, at the end of the first row (export, manage labels).
  */
 export function AccountFilters({
   state,
@@ -192,17 +200,37 @@ export function AccountFilters({
     <div
       role="search"
       aria-label="Filter accounts"
-      className={cn('flex flex-col gap-3 px-5 py-4 sm:px-6 lg:flex-row lg:items-start', className)}
+      className={cn('space-y-3 px-5 py-4 sm:px-6', className)}
     >
-      <SearchBox
-        value={state.q}
-        onSearch={(q) => update({ q })}
-        placeholder={searchPlaceholder}
-        label="Search accounts"
-        // Fixed width beside the filters: the filter row wraps instead of squeezing the search.
-        className="lg:w-72 lg:flex-none"
-      />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      {/* Row 1: find, then what you do to the list (sort, export, manage). */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchBox
+          value={state.q}
+          onSearch={(q) => update({ q })}
+          placeholder={searchPlaceholder}
+          label="Search accounts"
+          className="basis-full sm:max-w-sm sm:basis-0"
+        />
+        {active && (
+          <Button variant="ghost" size="sm" onClick={clear}>
+            Clear filters
+          </Button>
+        )}
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <FilterSelect
+            label="Sort accounts"
+            // A sort is always set; only filters are highlighted when active.
+            highlight={false}
+            value={state.sort}
+            onChange={(sort) => update({ sort })}
+            options={SORT_OPTIONS}
+          />
+          {actions}
+        </div>
+      </div>
+      {/* Row 2: filters only. Wraps from sm up; one swipeable rail on phones (the vertical
+          padding keeps the focus ring inside the scrolling box). */}
+      <div className="no-scrollbar flex items-center gap-2 max-sm:-mx-5 max-sm:overflow-x-auto max-sm:px-5 max-sm:py-1 sm:flex-wrap">
         {showPlatform && (
           <FilterSelect
             label="Filter by platform"
@@ -274,7 +302,7 @@ export function AccountFilters({
             className={cn(
               controlBase,
               starredOn ? PRESSED : NEUTRAL,
-              'inline-flex items-center gap-1.5',
+              'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap',
             )}
           >
             <Star
@@ -292,26 +320,12 @@ export function AccountFilters({
           className={cn(
             controlBase,
             attentionOn ? PRESSED : NEUTRAL,
-            'inline-flex items-center gap-1.5',
+            'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap',
           )}
         >
           <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
           {withCount('Needs attention', facets?.attention)}
         </button>
-        <FilterSelect
-          label="Sort accounts"
-          // A sort is always set; only filters are highlighted when active.
-          highlight={false}
-          value={state.sort}
-          onChange={(sort) => update({ sort })}
-          options={SORT_OPTIONS}
-        />
-        {active && (
-          <Button variant="ghost" size="sm" onClick={clear}>
-            Clear filters
-          </Button>
-        )}
-        {actions && <div className="flex flex-wrap items-center gap-2 lg:ml-auto">{actions}</div>}
       </div>
     </div>
   );

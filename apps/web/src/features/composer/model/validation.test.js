@@ -526,6 +526,42 @@ describe('validateComposer: media rules', () => {
     ).toBeUndefined();
   });
 
+  it('says several videos become one post each where the platform publishes them that way', () => {
+    const rules = testRules();
+    rules[FB].media.separateVideoPosts = true;
+    const videos = [video('v1'), video('v2'), video('v3')];
+    const result = check({ media: videos, selectedAccountIds: [FB_ID] }, { rules });
+    expect(find(result, `${FB}:video-count`)).toBeUndefined();
+    expect(find(result, `${FB}:video-posts`)).toMatchObject({
+      severity: SEVERITY.INFO,
+      message:
+        'Facebook takes one video per post, so each of the 3 videos is published as its own post, with the same text.',
+    });
+    // One video is a normal post; photos mixed in are still refused.
+    expect(
+      find(
+        check({ media: [video('v1')], selectedAccountIds: [FB_ID] }, { rules }),
+        `${FB}:video-posts`,
+      ),
+    ).toBeUndefined();
+    const mixed = check(
+      { media: [video('v1'), video('v2'), image('m1')], selectedAccountIds: [FB_ID] },
+      { rules },
+    );
+    expect(find(mixed, `${FB}:video-posts`)).toBeUndefined();
+    expect(find(mixed, `${FB}:video-count`)).toBeDefined();
+    expect(find(mixed, `${FB}:media-mixed`)).toBeDefined();
+  });
+
+  it('publishes several Facebook videos as separate posts with the researched rules', () => {
+    const result = check(
+      { media: [video('v1'), video('v2')], selectedAccountIds: [FB_ID] },
+      { rules: PLATFORM_RULES },
+    );
+    expect(find(result, `${FB}:video-posts`)?.severity).toBe(SEVERITY.INFO);
+    expect(find(result, `${FB}:video-count`)).toBeUndefined();
+  });
+
   it('reports formats a platform does not accept, per file', () => {
     const png = image('m1', { fileName: 'photo.png', mimeType: 'image/png' });
     const result = check({ media: [png], selectedAccountIds: [FB_ID, IG_ID] });

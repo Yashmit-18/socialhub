@@ -50,7 +50,31 @@ export const SHARE_SKIP_REASONS = Object.freeze({
   TOO_SOON: 'TOO_SOON',
   /** Archived groups receive no new tasks. */
   ARCHIVED: 'ARCHIVED',
+  /** Auto share: the group has relevance tags and none matches the post's topics. */
+  NOT_RELEVANT: 'NOT_RELEVANT',
 });
+
+/**
+ * The form a relevance tag, hashtag or keyword is compared in: lower case, letters and digits
+ * only, so "#NewYork", "new york" and "New-York" all match. Empty for text with neither.
+ */
+export const relevanceKey = (value) =>
+  String(value ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '');
+
+/**
+ * Auto share relevance. A group's tags that match the post's topics (relevance keys of its
+ * hashtags and keywords). `relevant` is true when one matches, and also when the group has no
+ * usable tags: an untagged group takes every post, so adding tags is how a team narrows it.
+ */
+export function groupRelevance(groupTags, topicKeys) {
+  const topics = topicKeys instanceof Set ? topicKeys : new Set(topicKeys ?? []);
+  const tags = (groupTags ?? []).filter((tag) => relevanceKey(tag));
+  const matched = tags.filter((tag) => topics.has(relevanceKey(tag)));
+  return { relevant: tags.length === 0 || matched.length > 0, matched };
+}
 
 const FACEBOOK_HOSTS = /^(?:www\.|m\.|web\.|mbasic\.)?facebook\.com$/i;
 

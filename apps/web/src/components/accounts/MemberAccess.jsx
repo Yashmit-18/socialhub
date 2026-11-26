@@ -20,6 +20,7 @@ import {
 import { keys, useSocialAccounts } from '../../lib/queries.js';
 import { cn } from '../../lib/utils.js';
 import { Button } from '../ui/Button.jsx';
+import { Callout } from '../ui/Callout.jsx';
 import { Modal } from '../ui/Modal.jsx';
 import { AccountAccessEditor } from './AccountAccessEditor.jsx';
 
@@ -164,22 +165,23 @@ function MemberAccessForm({ member: openedMember, onClose }) {
     >
       <div className="space-y-4">
         {error && (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 dark:border-rose-500/30 dark:bg-rose-500/10">
-            <p role="alert" className="min-w-0 flex-1 text-sm text-rose-700 dark:text-rose-300">
-              {saveErrorMessage(error)}
-            </p>
-            <Button variant="secondary" size="sm" loading={reloading} onClick={reload}>
-              {!reloading && <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
-              Reload
-            </Button>
-          </div>
+          <Callout
+            tone="danger"
+            action={
+              <Button variant="secondary" size="sm" loading={reloading} onClick={reload}>
+                {!reloading && <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                Reload
+              </Button>
+            }
+          >
+            <p role="alert">{saveErrorMessage(error)}</p>
+          </Callout>
         )}
         {fullAccess ? (
-          <p className="flex items-start gap-2 rounded-xl bg-brand-50 px-3.5 py-3 text-sm text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <Callout tone="brand" icon={ShieldCheck}>
             {name} has the {ROLE_LABELS[member.role] ?? member.role} role, which always includes
             every social account in this workspace.
-          </p>
+          </Callout>
         ) : (
           <>
             <AccountAccessEditor

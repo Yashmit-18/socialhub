@@ -6,7 +6,7 @@ import {
   hasFullAccountAccess,
 } from '@socialhub/shared';
 import {
-  AlertTriangle,
+  Info,
   KeyRound,
   Lock,
   Search,
@@ -23,6 +23,7 @@ import { AccessSummary, MemberAccessDialog } from '../../../components/accounts/
 import { Avatar } from '../../../components/ui/Avatar.jsx';
 import { Badge, RoleBadge } from '../../../components/ui/Badge.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
+import { Callout } from '../../../components/ui/Callout.jsx';
 import { Card, CardHeader } from '../../../components/ui/Card.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../components/ui/Feedback.jsx';
 import { Pagination } from '../../../components/ui/Pagination.jsx';
@@ -177,23 +178,22 @@ const RULES = [
   },
 ];
 
+/** The rules as a footnote under the data: a plain two-column list, no tiles. */
 function AccessRules() {
   return (
     <Card>
       <CardHeader
-        icon={ShieldCheck}
+        icon={Info}
         title="How account access works"
         description="Decide which Facebook Pages and Instagram accounts each teammate can see and use."
       />
-      <ul className="grid gap-3 px-5 pb-5 pt-4 sm:grid-cols-2 sm:px-6">
+      <ul className="grid gap-x-8 gap-y-4 px-5 pt-4 pb-5 sm:grid-cols-2 sm:px-6">
         {RULES.map((rule) => (
-          <li
-            key={rule.title}
-            className="flex gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3.5 dark:border-white/5 dark:bg-white/[0.02]"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-brand-600 shadow-xs ring-1 ring-slate-200/80 dark:bg-white/5 dark:text-brand-300 dark:ring-white/10">
-              <rule.icon className="h-4 w-4" aria-hidden="true" />
-            </span>
+          <li key={rule.title} className="flex gap-3">
+            <rule.icon
+              className="mt-0.5 h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500"
+              aria-hidden="true"
+            />
             <div className="min-w-0">
               <p className="text-sm font-medium text-slate-900 dark:text-white">{rule.title}</p>
               <p className="mt-0.5 text-xs leading-relaxed text-muted">{rule.body}</p>
@@ -220,14 +220,14 @@ function MemberAccessRow({ member, self, editable, onEdit }) {
         <p className="truncate text-xs text-muted">{member.user?.email}</p>
       </div>
       <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 md:w-auto md:flex-nowrap">
-        <div className="md:w-16">
-          <RoleBadge role={member.role} />
-        </div>
         <AccessSummary
           role={member.role}
           accountAccess={member.accountAccess}
-          className="md:w-28"
+          className="md:w-32"
         />
+        <div className="md:w-20">
+          <RoleBadge role={member.role} />
+        </div>
         <div className="ml-auto flex md:ml-0 md:w-32 md:justify-end">
           {editable && (
             <Button
@@ -438,12 +438,11 @@ function CoverageCard({ accounts, members }) {
     body = (
       <>
         {uncovered > 0 && (
-          <p className="mx-5 mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800 sm:mx-6 dark:bg-amber-500/10 dark:text-amber-300">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <Callout tone="warning" className="mx-5 mt-4 sm:mx-6">
             {hasTeam
               ? `${plural(uncovered, 'account')} can only be used by owners and admins — no editor or viewer has access.`
               : 'This workspace has no editors or viewers yet, so only owners and admins can use its accounts.'}
-          </p>
+          </Callout>
         )}
         <div className="flex flex-col gap-3 px-5 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <SearchField
@@ -467,7 +466,7 @@ function CoverageCard({ accounts, members }) {
                 setUncoveredOnly(e.target.checked);
                 setPage(1);
               }}
-              className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+              className="h-4 w-4 checkbox"
             />
             Only accounts without editors or viewers ({uncovered})
           </label>
@@ -525,6 +524,7 @@ function AccessRestricted() {
     <Card>
       <EmptyState
         icon={Lock}
+        tone="neutral"
         title="Only owners and admins can manage team access"
         description="Owners and admins choose which Facebook Pages and Instagram accounts each editor and viewer can use. Ask one of them if you need access to another account."
         action={
@@ -551,7 +551,6 @@ function TeamAccess() {
 
   return (
     <div className="space-y-6">
-      <AccessRules />
       <MembersCard
         members={members}
         isSelf={isSelf}
@@ -560,6 +559,7 @@ function TeamAccess() {
         inviteTo={can(PERMISSIONS.MEMBERS_INVITE) ? `/w/${workspace.slug}/team?invite=1` : null}
       />
       <CoverageCard accounts={accounts} members={members} />
+      <AccessRules />
       <MemberAccessDialog member={editing} onClose={closeEditor} />
     </div>
   );

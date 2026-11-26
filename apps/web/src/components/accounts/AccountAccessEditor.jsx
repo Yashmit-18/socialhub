@@ -170,7 +170,7 @@ export function AccountAccessEditor({
                               type="checkbox"
                               checked={selectedIds.has(a.id)}
                               onChange={() => toggle(a.id)}
-                              className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+                              className="h-4 w-4 checkbox"
                             />
                             <AccountPicture account={a} size="sm" showPlatform={false} />
                             <span className="min-w-0 flex-1">

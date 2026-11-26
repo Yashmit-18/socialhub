@@ -27,7 +27,7 @@ function LabelOption({ label, state, onToggle }) {
       <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.03]">
         <input
           type="checkbox"
-          className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+          className="h-4 w-4 checkbox"
           checked={state === 'all'}
           ref={(el) => {
             if (el) el.indeterminate = state === 'some';

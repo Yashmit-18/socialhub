@@ -2,7 +2,14 @@ import { SOCIAL_PROVIDERS } from '@socialhub/shared';
 import { Layers } from 'lucide-react';
 import { DestinationTab } from '../../../components/accounts/DestinationTab.jsx';
 
-const COLUMNS = ['account', 'platform', 'identity', 'followers', 'readiness', 'status', 'lastSync'];
+const COLUMNS = [
+  { id: 'account', secondary: 'platform' },
+  'identity',
+  'followers',
+  'readiness',
+  'status',
+  'lastSync',
+];
 const PROVIDERS = [
   SOCIAL_PROVIDERS.FACEBOOK_LOGIN,
   SOCIAL_PROVIDERS.INSTAGRAM_UNIFIED_LOGIN,

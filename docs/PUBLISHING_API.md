@@ -447,7 +447,9 @@ the storage driver would reveal other workspaces' activity and the setup, so the
 Activity log entries: `publish_job.created`, `publish_job.rescheduled`,
 `publish_job.cancelled`, `publish_job.finished`, `publish_destination.retried`,
 `publish_destination.cancelled`, `publish_destination.blocked` (with `reason`:
-`NOT_A_MEMBER`, `NO_PUBLISH_PERMISSION` or `NO_ACCOUNT_ACCESS`).
+`NOT_A_MEMBER`, `NO_PUBLISH_PERMISSION`, `NO_ACCOUNT_ACCESS` or `AUTHOR_SUSPENDED`; the last
+one means a platform admin suspended the author's SocialHub account: the post is refused at
+send time with `AUTHOR_NOT_AUTHORIZED` and nothing is sent, see `docs/ADMIN_PANEL.md`).
 
 ## 6. Redis
 

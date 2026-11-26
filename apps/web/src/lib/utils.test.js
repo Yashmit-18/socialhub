@@ -64,6 +64,7 @@ describe('cn', () => {
     expect(cn('shadow-card', 'shadow-pop')).toBe('shadow-pop');
     expect(cn('shadow-card shadow-brand-500/25')).toBe('shadow-card shadow-brand-500/25');
     expect(cn('animate-fade-in', 'animate-scale-in')).toBe('animate-scale-in');
+    expect(cn('animate-bar-grow', 'animate-column-grow')).toBe('animate-column-grow');
   });
 
   it('passes through classes it does not know', () => {

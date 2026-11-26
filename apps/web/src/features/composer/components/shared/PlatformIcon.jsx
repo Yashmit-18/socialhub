@@ -3,6 +3,7 @@ import { FacebookIcon, InstagramIcon } from '../../../../components/ui/Brand.jsx
 import { cn } from '../../../../lib/utils.js';
 
 const SIZES = {
+  '2xs': 'h-3.5 w-3.5 rounded-[4px] [&_svg]:h-2 [&_svg]:w-2',
   xs: 'h-4 w-4 rounded [&_svg]:h-2.5 [&_svg]:w-2.5',
   sm: 'h-5 w-5 rounded-md [&_svg]:h-3 [&_svg]:w-3',
   md: 'h-8 w-8 rounded-lg [&_svg]:h-4 [&_svg]:w-4',

@@ -1,14 +1,17 @@
 import { GROUP_LIMITS, PERMISSIONS, SHARING_TASK_STATUS } from '@socialhub/shared';
-import { ArrowLeft, Copy, Pencil, Plus, SearchX, Trash2 } from 'lucide-react';
+import { Copy, Pencil, Plus, SearchX, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { BackLink } from '../../components/ui/BackLink.jsx';
 import { Button, ButtonLink } from '../../components/ui/Button.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
 import { FormError } from '../../components/ui/Field.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
+import { TBody, THead, Table, Td, Th, Tr } from '../../components/ui/Table.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { copyText } from '../../lib/accountOrganization.js';
 import { formatDate, timeAgo } from '../../lib/utils.js';
@@ -181,7 +184,7 @@ function AssigneeSelect({ task, members }) {
   return (
     <select
       aria-label={`Who posts in ${task.group?.name ?? 'this group'}`}
-      className="h-8 max-w-[11rem] rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-white/10 dark:bg-slate-900/60"
+      className="select-chevron h-8 max-w-[11rem] rounded-lg border border-slate-200 bg-white px-2 pr-7 text-xs dark:border-white/10 dark:bg-slate-900/60"
       value={task.assignee?.id ?? ''}
       disabled={update.isPending}
       onChange={(e) =>
@@ -201,6 +204,28 @@ function AssigneeSelect({ task, members }) {
   );
 }
 
+/** First load: the share card and the groups card, in their shape. */
+function ShareSkeleton() {
+  return (
+    <div role="status" className="space-y-6">
+      <span className="sr-only">Loading…</span>
+      <Skeleton className="h-5 w-24" />
+      <div aria-hidden="true" className="surface space-y-4 p-5 sm:p-6">
+        <Skeleton className="h-5 w-64 max-w-full" />
+        <Skeleton className="h-3 w-80 max-w-full" />
+        <Skeleton className="h-2 w-full max-w-sm rounded-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+      <div aria-hidden="true" className="surface p-5 sm:p-6">
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="mt-4 h-9 w-full" />
+        <Skeleton className="mt-4 h-9 w-full" />
+        <Skeleton className="mt-4 h-9 w-full" />
+      </div>
+    </div>
+  );
+}
+
 /** One share: its text, progress and the task of every group. */
 export default function ShareDetailPage() {
   const { shareId } = useParams();
@@ -215,7 +240,7 @@ export default function ShareDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const back = `/w/${workspace.slug}/groups/shares`;
 
-  if (detail.isPending) return <Skeleton className="h-64 w-full rounded-2xl" />;
+  if (detail.isPending) return <ShareSkeleton />;
   if (detail.error) {
     return (
       <Card>
@@ -245,15 +270,12 @@ export default function ShareDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link
-        to={back}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All posts
-      </Link>
+      <BackLink to={back}>All posts</BackLink>
 
       <Card>
         <CardHeader
+          // On a phone the buttons go under the title instead of squeezing it.
+          className="flex-col sm:flex-row"
           title={share.title}
           description={`${share.auto ? 'Shared automatically from a published post' : 'Created'} by ${share.createdBy?.name ?? 'a former member'} ${timeAgo(share.createdAt)}`}
           action={
@@ -281,17 +303,41 @@ export default function ShareDetailPage() {
             ) : null
           }
         />
-        <CardBody className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
-            <p className="text-sm whitespace-pre-wrap break-words">{share.message}</p>
-            {share.link && (
-              <p className="mt-2 text-sm break-all">
-                <ExternalAnchor href={share.link}>{share.link}</ExternalAnchor>
-              </p>
-            )}
+        <CardBody className="space-y-5">
+          <Progress counts={share.counts} size="lg" />
+          {/* "Copy text" sits on the text it copies. */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/[0.03]">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 py-1.5 pr-2 pl-3.5 dark:border-white/10">
+              <p className="text-xs font-medium text-muted">Text to post</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  if (await copyText(shareText(share))) toast.success('Text copied');
+                  else toast.error('Copying was blocked by the browser. Select the text instead.');
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy text
+              </Button>
+            </div>
+            <div className="p-3.5">
+              <p className="text-sm whitespace-pre-wrap break-words">{share.message}</p>
+              {share.link && (
+                <p className="mt-2 text-sm break-all">
+                  <ExternalAnchor href={share.link}>{share.link}</ExternalAnchor>
+                </p>
+              )}
+            </div>
           </div>
+          {share.auto && Array.isArray(share.topics) && (
+            <p className="text-xs text-muted">
+              {share.topics.length > 0
+                ? `Matched to groups by: ${share.topics.map((topic) => `#${topic}`).join(' ')}, plus groups without tags.`
+                : 'This post has no hashtags or keywords, so only groups without tags got it.'}
+            </p>
+          )}
           {share.skipped?.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+            <Callout tone="warning">
               <p className="font-medium">Not added to these groups:</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
                 {share.skipped.map((skip) => (
@@ -300,21 +346,8 @@ export default function ShareDetailPage() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </Callout>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Progress counts={share.counts} />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={async () => {
-                if (await copyText(shareText(share))) toast.success('Text copied');
-                else toast.error('Copying was blocked by the browser. Select the text instead.');
-              }}
-            >
-              <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy text
-            </Button>
-          </div>
         </CardBody>
       </Card>
 
@@ -323,56 +356,55 @@ export default function ShareDetailPage() {
           title="Groups"
           description="One task per group. Each is posted by hand on Facebook."
         />
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Tasks of this share</caption>
-            <thead>
-              <tr className="border-y border-slate-100 bg-slate-50/60 text-[11px] tracking-wider text-slate-500 uppercase dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-400">
-                <th scope="col" className="py-2.5 pr-4 pl-5 font-semibold sm:pl-6">
-                  Group
-                </th>
-                <th scope="col" className="py-2.5 pr-4 font-semibold">
-                  Status
-                </th>
-                <th scope="col" className="hidden py-2.5 pr-4 font-semibold md:table-cell">
-                  Who posts it
-                </th>
-                <th scope="col" className="py-2.5 pr-5 font-semibold sm:pr-6">
-                  Result
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-              {tasks.map((task) => (
-                <tr key={task.id} className="align-middle">
-                  <td className="py-3 pr-4 pl-5 sm:pl-6">
+        <Table caption="Tasks of this share" className="mt-4">
+          <THead>
+            <Th>Group</Th>
+            <Th>Status</Th>
+            <Th hide="md">Who posts it</Th>
+            <Th>Result</Th>
+          </THead>
+          <TBody>
+            {tasks.map((task) => {
+              const open = task.status === SHARING_TASK_STATUS.OPEN;
+              // Late is flagged as on the Tasks tab: rose "Overdue", not a grey date.
+              const overdue = open && task.dueAt && new Date(task.dueAt) < new Date();
+              return (
+                <Tr key={task.id}>
+                  <Td>
                     {task.group ? (
                       <ExternalAnchor
                         href={task.group.url}
-                        className="text-slate-900 dark:text-white"
+                        className="text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                       >
                         {task.group.name}
                       </ExternalAnchor>
                     ) : (
                       'Removed group'
                     )}
-                    {task.dueAt && task.status === SHARING_TASK_STATUS.OPEN && (
-                      <span className="block text-xs text-muted">
-                        Due {formatDate(task.dueAt, { dateStyle: 'medium' })}
+                    {task.dueAt && open && (
+                      <span
+                        className={
+                          overdue
+                            ? 'block text-xs font-medium text-rose-600 dark:text-rose-400'
+                            : 'block text-xs text-muted'
+                        }
+                      >
+                        {overdue ? 'Overdue · ' : 'Due '}
+                        {formatDate(task.dueAt, { dateStyle: 'medium' })}
                       </span>
                     )}
-                  </td>
-                  <td className="py-3 pr-4">
+                  </Td>
+                  <Td>
                     <TaskStatusBadge status={task.status} />
-                  </td>
-                  <td className="hidden py-3 pr-4 text-xs md:table-cell">
-                    {canManage && task.status === SHARING_TASK_STATUS.OPEN ? (
+                  </Td>
+                  <Td hide="md" className="text-xs">
+                    {canManage && open ? (
                       <AssigneeSelect task={task} members={members} />
                     ) : (
                       (task.assignee?.name ?? 'Anyone')
                     )}
-                  </td>
-                  <td className="py-3 pr-5 text-xs sm:pr-6">
+                  </Td>
+                  <Td className="text-xs">
                     {task.status === SHARING_TASK_STATUS.OPEN ? (
                       <span className="text-muted">Not posted yet</span>
                     ) : (
@@ -387,12 +419,12 @@ export default function ShareDetailPage() {
                         {task.note && <span className="block text-muted">“{task.note}”</span>}
                       </span>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </Td>
+                </Tr>
+              );
+            })}
+          </TBody>
+        </Table>
       </Card>
 
       {editing && <EditShareDialog share={share} onClose={() => setEditing(false)} />}

@@ -68,6 +68,8 @@
   --animate-ping-soft: ping-soft 2.4s var(--ease-out-expo) infinite;
   --animate-gradient-pan: gradient-pan 8s ease-in-out infinite alternate;
   --animate-bar-grow: bar-grow 1100ms var(--ease-out-expo) backwards;
+  /* Chart columns rising from the baseline (pair with origin-bottom and [transform-box:fill-box]). */
+  --animate-column-grow: column-grow 700ms var(--ease-out-expo) backwards;
 
   @keyframes fade-in {
     from {
@@ -180,6 +182,14 @@
       transform: none;
     }
   }
+  @keyframes column-grow {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: none;
+    }
+  }
 }
 
 @layer base {
@@ -243,6 +253,26 @@
 
 @utility text-muted {
   @apply text-slate-500 dark:text-slate-400;
+}
+
+/* Scrolls, but draws no scrollbar: tab strips people swipe on a phone. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* One chevron for every native select, in both themes. Callers keep the right padding (pr-9). */
+@utility select-chevron {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236d7185' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+  &:where(.dark, .dark *) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239b9eb0' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  }
 }
 
 /* Brand gradient text for highlights. */
@@ -357,6 +387,48 @@
     background:
       radial-gradient(55% 100% at 20% 0%, rgb(99 102 241 / 0.14), transparent 72%),
       radial-gradient(40% 85% at 92% 0%, rgb(236 72 153 / 0.07), transparent 72%);
+  }
+
+  /*
+   * Checkboxes drawn by us: a native box tinted with accent-color reads as a grey, disabled
+   * square in dark mode. Brand fill when checked or partly checked; native under forced colours.
+   */
+  .checkbox {
+    appearance: none;
+    flex-shrink: 0;
+    cursor: pointer;
+    border-radius: 0.25rem;
+    border: 1px solid var(--color-slate-300);
+    background: #fff center / 0.75rem no-repeat;
+  }
+  .checkbox:checked,
+  .checkbox:indeterminate {
+    border-color: var(--color-brand-600);
+    background-color: var(--color-brand-600);
+  }
+  .checkbox:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+  }
+  .checkbox:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.25' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E");
+  }
+  .checkbox:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .dark .checkbox {
+    border-color: rgb(255 255 255 / 0.25);
+    background-color: rgb(255 255 255 / 0.04);
+  }
+  .dark .checkbox:checked,
+  .dark .checkbox:indeterminate {
+    border-color: var(--color-brand-500);
+    background-color: var(--color-brand-500);
+  }
+  @media (forced-colors: active) {
+    .checkbox {
+      appearance: auto;
+    }
   }
 
   /* Small keyboard hint (⌘K). */

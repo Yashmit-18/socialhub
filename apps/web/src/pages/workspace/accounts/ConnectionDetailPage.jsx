@@ -8,7 +8,6 @@ import {
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   HeartPulse,
   History,
@@ -16,7 +15,6 @@ import {
   Layers,
   ListChecks,
   Loader2,
-  Lock,
   MoreHorizontal,
   Plug,
   RefreshCw,
@@ -41,10 +39,17 @@ import { MetaSetupNotice } from '../../../components/accounts/MetaSetupNotice.js
 import { SyncRunList } from '../../../components/accounts/SyncRunList.jsx';
 import { PageHeader } from '../../../components/layout/AppShell.jsx';
 import { Badge } from '../../../components/ui/Badge.jsx';
+import { BackLink } from '../../../components/ui/BackLink.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
+import { Callout } from '../../../components/ui/Callout.jsx';
 import { Card, CardBody, CardFooter, CardHeader } from '../../../components/ui/Card.jsx';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog.jsx';
-import { EmptyState, ErrorState, Skeleton } from '../../../components/ui/Feedback.jsx';
+import {
+  EmptyState,
+  ErrorState,
+  RestrictedState,
+  Skeleton,
+} from '../../../components/ui/Feedback.jsx';
 import { Menu, MenuItem } from '../../../components/ui/Menu.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
 import { useDisconnectConnection, useRemoveConnection } from '../../../hooks/useAccountActions.js';
@@ -107,37 +112,26 @@ function DateTime({ value }) {
   return <time dateTime={value}>{formatDate(value, DATE_TIME)}</time>;
 }
 
-function BackLink({ to, children = 'Logins' }) {
-  return (
-    <Link
-      to={to}
-      className="mb-4 inline-flex items-center gap-1.5 rounded text-sm font-medium text-muted hover:text-slate-900 dark:hover:text-white"
-    >
-      <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {children}
-    </Link>
-  );
-}
-
 function DetailSkeleton() {
   return (
     <div role="status">
       <span className="sr-only">Loading login details…</span>
-      <div className="mb-8 flex items-center gap-4">
-        <Skeleton className="h-14 w-14 rounded-full" />
-        <div className="space-y-2">
+      <div className="mb-6 flex items-start gap-4">
+        <Skeleton className="h-14 w-14 shrink-0 rounded-full" />
+        <div className="min-w-0 space-y-2 pt-0.5">
           <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-7 w-48 max-w-full" />
           <Skeleton className="h-4 w-64 max-w-full" />
         </div>
       </div>
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Skeleton className="h-44 w-full rounded-2xl" />
-          <Skeleton className="h-72 w-full rounded-2xl" />
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+        <div className="min-w-0 space-y-6 lg:col-span-3">
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
         </div>
-        <div className="space-y-6">
-          <Skeleton className="h-80 w-full rounded-2xl" />
-          <Skeleton className="h-56 w-full rounded-2xl" />
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <Skeleton className="h-80 w-full rounded-xl" />
+          <Skeleton className="h-56 w-full rounded-xl" />
         </div>
       </div>
     </div>
@@ -183,19 +177,16 @@ function HealthCard({ connection, setupReason, syncing }) {
           </p>
         )}
         {lastError?.message && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3 dark:border-rose-500/20 dark:bg-rose-500/[0.07]">
-            <p className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-300">
-              Last error
-            </p>
-            <p className="mt-1 text-sm text-rose-800 dark:text-rose-200">{lastError.message}</p>
+          <Callout tone="danger" title="Last error:">
+            <span>{lastError.message}</span>
             {(lastError.code || lastError.at) && (
-              <p className="mt-1 text-xs text-rose-700/80 dark:text-rose-300/80">
+              <span className="mt-0.5 block text-xs opacity-80">
                 {lastError.code && <code className="font-mono">{lastError.code}</code>}
                 {lastError.code && lastError.at && ' · '}
                 {lastError.at && <When value={lastError.at} />}
-              </p>
+              </span>
             )}
-          </div>
+          </Callout>
         )}
         {setupReason && (
           <p className="flex items-start gap-2 text-sm text-muted">
@@ -311,7 +302,7 @@ function ScopeGroup({ label, scopes, tone, note, noteClassName, emptyText }) {
     <div>
       <h3
         id={id}
-        className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+        className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400"
       >
         {label}
       </h3>
@@ -319,7 +310,10 @@ function ScopeGroup({ label, scopes, tone, note, noteClassName, emptyText }) {
         <ul aria-labelledby={id} className="mt-2 flex flex-wrap gap-1.5">
           {list.map((scope) => (
             <li key={scope}>
-              <Badge tone={tone}>{scope}</Badge>
+              {/* Mono: permission names are identifiers people copy, as on the account page. */}
+              <Badge tone={tone} className="font-mono">
+                {scope}
+              </Badge>
             </li>
           ))}
         </ul>
@@ -362,7 +356,7 @@ function PermissionsCard({ permissions }) {
           label="Missing: for publishing"
           scopes={missing.publishing}
           tone="warning"
-          note="Not granted — needed for publishing in a later phase. Reconnect and allow them to prepare."
+          note="Not granted — needed for publishing. Reconnect and allow them."
           noteClassName="text-amber-700 dark:text-amber-400"
         />
         <ScopeGroup
@@ -371,10 +365,11 @@ function PermissionsCard({ permissions }) {
           tone="sky"
           note="Optional, but recommended."
         />
+        {/* Neutral: colour marks only what is missing; the line above says when all is well. */}
         <ScopeGroup
           label="Granted"
           scopes={permissions?.granted}
-          tone="success"
+          tone="neutral"
           emptyText="Meta has not reported any granted permission."
         />
         <ScopeGroup
@@ -446,7 +441,6 @@ function AccountsCard({ accounts, connection, slug, selectHref }) {
             ? `${loginDestinationsText(connection)}${needAttention > 0 ? ` · ${needAttentionText(needAttention)}` : ''}`
             : undefined
         }
-        action={active && accounts.length > 0 ? chooseLink : undefined}
       />
       {accounts.length === 0 ? (
         <EmptyState
@@ -574,7 +568,7 @@ function ConnectionDetail({ workspace, connectionId }) {
   if (detail.isPending) {
     return (
       <>
-        <BackLink to={loginsUrl} />
+        <BackLink to={loginsUrl}>Logins</BackLink>
         <DetailSkeleton />
       </>
     );
@@ -583,7 +577,7 @@ function ConnectionDetail({ workspace, connectionId }) {
   if (!detail.data) {
     return (
       <>
-        <BackLink to={loginsUrl} />
+        <BackLink to={loginsUrl}>Logins</BackLink>
         <Card>
           {isMissing(detail.error) ? (
             <EmptyState
@@ -662,15 +656,11 @@ function ConnectionDetail({ workspace, connectionId }) {
 
   return (
     <>
-      <BackLink to={loginsUrl} />
       <PageHeader
+        back={{ to: loginsUrl, label: 'Logins' }}
+        media={<IdentityPicture connection={connection} size="lg" />}
         eyebrow={`${provider} login`}
-        title={
-          <span className="flex min-w-0 items-center gap-3">
-            <IdentityPicture connection={connection} size="lg" />
-            <span className="min-w-0 break-words">{name}</span>
-          </span>
-        }
+        title={<span className="min-w-0 break-words">{name}</span>}
         description={
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <ConnectionStatusBadge status={connection.status} reason={connection.statusReason} />
@@ -712,7 +702,7 @@ function ConnectionDetail({ workspace, connectionId }) {
               <Menu
                 trigger={({ toggle, props }) => (
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="icon"
                     onClick={toggle}
                     {...props}
@@ -756,8 +746,9 @@ function ConnectionDetail({ workspace, connectionId }) {
 
       {!configured && <MetaSetupNotice integration={integration.data} className="mb-6" />}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 space-y-6 lg:col-span-2">
+      {/* Main (3/5): state, accounts and what happened; side (2/5): the login's facts. */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+        <div className="min-w-0 space-y-6 lg:col-span-3">
           <HealthCard connection={connection} setupReason={setupReason} syncing={syncing} />
           <AccountsCard
             accounts={accounts ?? []}
@@ -766,11 +757,11 @@ function ConnectionDetail({ workspace, connectionId }) {
             selectHref={selectHref}
           />
           <SyncHistoryCard runs={runs} />
+          <ActivityCard activity={activity} />
         </div>
-        <div className="min-w-0 space-y-6">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <DetailsCard connection={connection} />
           <PermissionsCard permissions={permissions} />
-          <ActivityCard activity={activity} />
         </div>
       </div>
 
@@ -809,13 +800,10 @@ export default function ConnectionDetailPage() {
     return (
       <>
         <BackLink to={`/w/${workspace.slug}/accounts`}>Social accounts</BackLink>
-        <Card>
-          <EmptyState
-            icon={Lock}
-            title="Login details are restricted"
-            description="Only workspace owners and admins can see and manage the Facebook and Instagram logins connected to this workspace."
-          />
-        </Card>
+        <RestrictedState
+          title="Login details are restricted"
+          description="Only workspace owners and admins can see and manage the Facebook and Instagram logins connected to this workspace."
+        />
       </>
     );
   }

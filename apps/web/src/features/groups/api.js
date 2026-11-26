@@ -67,13 +67,17 @@ export function useGroupShare(ws, shareId) {
   });
 }
 
-/** `{ items, total, page, limit, pages, counts: { open, done, skipped, total } }` */
-export function useSharingTasks(ws, params = {}) {
+/**
+ * `{ items, total, page, limit, pages, counts: { open, done, skipped, total } }`. Off without a
+ * workspace (the shell outside one, the admin console), so nothing asks for `/workspaces/undefined`.
+ */
+export function useSharingTasks(ws, params = {}, { enabled = true } = {}) {
   const query = clean(params);
   return useQuery({
     queryKey: groupKeys.tasks(ws, query),
     queryFn: () => api.get(`${base(ws)}/sharing-tasks`, { query }),
     placeholderData: keepPreviousData,
+    enabled: enabled && Boolean(ws),
   });
 }
 
@@ -162,6 +166,8 @@ export function skipReasonText(skip) {
       return 'already has this share';
     case 'ARCHIVED':
       return 'archived';
+    case 'NOT_RELEVANT':
+      return 'none of its tags is in this post’s hashtags or keywords';
     case 'TOO_SOON':
       return skip.nextShareAllowedAt
         ? `its rules allow the next share on ${new Date(skip.nextShareAllowedAt).toLocaleDateString()}`

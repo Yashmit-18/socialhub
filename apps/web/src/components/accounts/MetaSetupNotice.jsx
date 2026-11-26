@@ -49,11 +49,11 @@ export function MetaSetupNotice({ integration, className, compact = false }) {
     <section
       aria-label={title}
       className={cn(
-        'flex items-start gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/70 px-4 py-3.5 dark:border-amber-500/20 dark:bg-amber-500/[0.07]',
+        'flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3.5 dark:border-amber-500/20 dark:bg-amber-500/[0.07]',
         className,
       )}
     >
-      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
         <Plug className="h-4 w-4" aria-hidden="true" />
       </span>
       <div className="min-w-0 text-sm">

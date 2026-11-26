@@ -20,7 +20,7 @@ export const CONNECTION_TONE = {
   [CONNECTION_STATUS.DISCONNECTED]: ['neutral', 'Disconnected'],
 };
 
-/** Publishing is not implemented yet: these labels describe permissions only. */
+/** These labels describe permissions only: whether the login could publish, not what was posted. */
 export const PUBLISHING_TONE = {
   [PUBLISHING_STATUS.READY]: ['brand', 'Publishing permissions OK'],
   [PUBLISHING_STATUS.RESTRICTED]: ['warning', 'Missing publishing access'],
@@ -30,7 +30,7 @@ export const PUBLISHING_TONE = {
 /** Longer explanations of the readiness states (tooltips, legends). */
 export const READINESS_HINTS = {
   [PUBLISHING_STATUS.READY]:
-    'The login has every publishing permission and, for Page-based accounts, a Page role that can create content. Publishing itself arrives in a later phase.',
+    'The login has every publishing permission and, for Page-based accounts, a Page role that can create content.',
   [PUBLISHING_STATUS.RESTRICTED]:
     'A publishing permission or the Page role needed to create content is missing.',
   [PUBLISHING_STATUS.UNAVAILABLE]:

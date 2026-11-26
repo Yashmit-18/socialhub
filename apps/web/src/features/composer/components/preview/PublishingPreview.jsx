@@ -4,6 +4,8 @@ import { useId, useState } from 'react';
 import { Badge } from '../../../../components/ui/Badge.jsx';
 import { Card, CardHeader } from '../../../../components/ui/Card.jsx';
 import { EmptyState, Skeleton } from '../../../../components/ui/Feedback.jsx';
+import { PreviewArt } from '../../../../components/ui/illustrations.jsx';
+import { segmentItem, segmentTrack } from '../../../../components/ui/segmented.js';
 import { cn } from '../../../../lib/utils.js';
 import { PLATFORM_RULES, platformLabel } from '../../constants/platformRules.js';
 import { accountBlocker } from '../../model/accounts.js';
@@ -52,11 +54,11 @@ function AccountSwitcher({ accounts, value, onChange }) {
       <p id={labelId} className="mb-2 text-xs font-medium text-muted">
         Preview for
       </p>
-      {/* contain:inline-size stops the row's full width from widening a grid/flex column. */}
+      {/* Chips wrap (no sideways scroller inside the card); past three rows the list scrolls. */}
       <div
         role="group"
         aria-labelledby={labelId}
-        className="-m-1 flex gap-2 overflow-x-auto p-1 [contain:inline-size]"
+        className="-m-1 flex max-h-[9.5rem] flex-wrap gap-2 overflow-y-auto p-1"
       >
         {accounts.map((account) => {
           const pressed = account.id === value;
@@ -69,9 +71,9 @@ function AccountSwitcher({ accounts, value, onChange }) {
               onClick={() => onChange(account.id)}
               title={account.name}
               className={cn(
-                // relative: keeps the sr-only text inside the scroll row (absolute children of an
-                // unpositioned button would escape its clipping and widen the page).
-                'relative inline-flex max-w-[14rem] shrink-0 items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm transition',
+                // relative: keeps the sr-only text inside the scrolling list (absolute children
+                // of an unpositioned button would escape its clipping and grow the page).
+                'relative inline-flex max-w-full shrink-0 items-center gap-2 rounded-full border py-1 pr-3 pl-1 text-sm transition sm:max-w-[14rem]',
                 pressed
                   ? 'border-brand-500 bg-brand-50 text-brand-800 shadow-xs dark:border-brand-400/60 dark:bg-brand-500/15 dark:text-white'
                   : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:border-white/20',
@@ -96,11 +98,7 @@ function AccountSwitcher({ accounts, value, onChange }) {
 function SamplePlatformToggle({ value, onChange, failed }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div
-        role="group"
-        aria-label="Preview platform"
-        className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-white/5"
-      >
+      <div role="group" aria-label="Preview platform" className={segmentTrack}>
         {COMPOSER_PLATFORMS.map((platform) => {
           const pressed = platform === value;
           return (
@@ -109,12 +107,7 @@ function SamplePlatformToggle({ value, onChange, failed }) {
               type="button"
               aria-pressed={pressed}
               onClick={() => onChange(platform)}
-              className={cn(
-                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition',
-                pressed
-                  ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-white'
-                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
-              )}
+              className={cn(segmentItem(pressed, 'lg'), 'gap-2 text-sm')}
             >
               <PlatformGlyph platform={platform} className="h-3.5 w-3.5" />
               {platformLabel(platform)}
@@ -216,7 +209,8 @@ export function PublishingPreview({ state, accounts, status = 'ready', className
         <div className={STAGE_CLASS}>
           {isEmpty ? (
             <EmptyState
-              icon={Eye}
+              art={PreviewArt}
+              className="py-8"
               title="Your preview appears here"
               description="Write a caption or add a photo or video to see how this post could look."
             />

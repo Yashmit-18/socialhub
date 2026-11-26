@@ -1,8 +1,11 @@
 import { lazy, Suspense } from 'react';
-import { Link, Outlet, createBrowserRouter } from 'react-router';
+import { Outlet, createBrowserRouter } from 'react-router';
 import { GuestOnly, RequireAuth } from './components/auth/RouteGuards.jsx';
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout.jsx';
 import { PageLoader } from './components/ui/Feedback.jsx';
+// The operator console (platform admins only); its pages load only when /admin is opened.
+import { adminRoute } from './features/admin/adminRoutes.js';
+import { NotFoundPage } from './pages/NotFoundPage.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
 import RegisterPage from './pages/auth/RegisterPage.jsx';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/auth/PasswordResetPages.jsx';
@@ -48,31 +51,14 @@ const ActivityPage = lazy(() => import('./pages/workspace/ActivityPage.jsx'));
 const SettingsPage = lazy(() => import('./pages/workspace/SettingsPage.jsx'));
 const AccountPage = lazy(() => import('./pages/account/AccountPage.jsx'));
 
+// The not-found page lives in its own file (the admin area shows it too); still exported here.
+export { NotFoundPage };
+
 function Suspended() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Outlet />
     </Suspense>
-  );
-}
-
-export function NotFoundPage() {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-      <p className="bg-gradient-to-br from-brand-500 to-fuchsia-500 bg-clip-text text-6xl font-bold text-transparent">
-        404
-      </p>
-      <h1 className="mt-4 text-xl font-semibold">Page not found</h1>
-      <p className="mt-1.5 text-sm text-muted">
-        The page you are looking for does not exist or has moved.
-      </p>
-      <Link
-        to="/"
-        className="mt-6 text-sm font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
-      >
-        Back to SocialHub
-      </Link>
-    </div>
   );
 }
 
@@ -102,6 +88,7 @@ export const routes = [
         children: [
           { path: '/onboarding', element: <OnboardingPage /> },
           { path: '/account', element: <AccountPage /> },
+          adminRoute,
           { path: '/oauth/meta/result', element: <MetaOAuthResultPage /> },
           {
             path: '/w/:slug',

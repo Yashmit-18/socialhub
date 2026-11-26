@@ -3,9 +3,22 @@ import { Avatar } from '../../../../components/ui/Avatar.jsx';
 import { cn } from '../../../../lib/utils.js';
 import { PlatformIcon } from './PlatformIcon.jsx';
 
+// The badge is small and pushed past the corner so it never covers the second initial.
 const SIZES = {
-  sm: { box: 'h-8 w-8', avatar: 'sm', badge: 'xs', offset: '-bottom-1 -right-1' },
-  md: { box: 'h-10 w-10', avatar: 'md', badge: 'sm', offset: '-bottom-1 -right-1' },
+  sm: {
+    box: 'h-8 w-8',
+    avatar: 'sm',
+    badge: '2xs',
+    offset: '-right-1.5 -bottom-1.5',
+    ring: 'ring-[1.5px]',
+  },
+  md: {
+    box: 'h-10 w-10',
+    avatar: 'md',
+    badge: 'xs',
+    offset: '-right-1.5 -bottom-1.5',
+    ring: 'ring-2',
+  },
 };
 
 /**
@@ -37,7 +50,7 @@ export function AccountAvatar({ account, size = 'md', showPlatform = true, class
           <PlatformIcon
             platform={account.platform}
             size={s.badge}
-            className="ring-2 ring-white dark:ring-slate-900"
+            className={cn(s.ring, 'ring-white dark:ring-slate-900')}
           />
         </span>
       )}

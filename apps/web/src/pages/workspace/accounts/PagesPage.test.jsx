@@ -234,7 +234,7 @@ describe('Facebook Pages tab', () => {
     const legend = screen.getByText('How publishing readiness is decided').closest('details');
     expect(legend).toHaveTextContent(/granted pages_manage_posts and pages_read_engagement and/);
     expect(legend).toHaveTextContent(/Page role with the CREATE_CONTENT task/);
-    expect(legend).toHaveTextContent(/publishing itself arrives in a later phase/);
+    expect(legend).toHaveTextContent(/nothing is posted by this check/);
 
     const query = listCalls(mock)[0].url.searchParams;
     expect(query.get('platform')).toBe('FACEBOOK_PAGE');

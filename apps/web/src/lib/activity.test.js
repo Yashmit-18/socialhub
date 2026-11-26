@@ -52,6 +52,17 @@ describe('describeActivity', () => {
     );
   });
 
+  it('says so when the author of a post has been suspended', () => {
+    const d = describeActivity({
+      action: 'publish_destination.blocked',
+      target: { type: 'publish_job', label: 'Acme Store' },
+      metadata: { reason: 'AUTHOR_SUSPENDED', simulated: false },
+    });
+    expect(`${d.actor} ${d.text}`).toBe(
+      'SocialHub did not send a post to Acme Store: the account of the person who scheduled it is suspended',
+    );
+  });
+
   it('falls back gracefully for unknown actions', () => {
     expect(describeActivity({ action: 'future.thing' }).text).toBe('future.thing');
   });

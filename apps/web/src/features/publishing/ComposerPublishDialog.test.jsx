@@ -378,3 +378,192 @@ describe('ComposerPublishDialog: sharing in Facebook Groups', () => {
     expect(simulated.count(GROUPS)).toBe(0);
   });
 });
+
+describe('ComposerPublishDialog: several videos for a Facebook Page, one post each', () => {
+  const CREATE = `POST ${BASE}/publish-jobs`;
+  const MAIN_DRAFT = 'c00000000000000000000001';
+  const copyOf = (name) => name.repeat(24);
+  const video = (name) => ({
+    id: `m-${name}`,
+    kind: 'VIDEO',
+    fileName: `${name}.mp4`,
+    previewUrl: `blob:video-${name}`,
+    posterUrl: null,
+    altText: '',
+  });
+  const photo = { id: 'm-p', kind: 'IMAGE', fileName: 'p.png', previewUrl: 'blob:p', altText: '' };
+  const bodies = (mock) =>
+    mock.calls.filter((c) => c.key === CREATE).map((c) => JSON.parse(c.init.body));
+  const simulatedJob = ({ init }) =>
+    jsonResponse(201, {
+      publishJob: job({
+        simulated: true,
+        mode: 'SIMULATED',
+        contentPackageId: JSON.parse(init.body).contentPackageId,
+      }),
+      created: true,
+    });
+
+  /** Stands in for composer/hooks/useVideoPosts.js: one draft copy per video. */
+  function videoPostsFor(names, { sent = [] } = {}) {
+    const done = new Set(sent);
+    return {
+      get pending() {
+        return names.filter((name) => !done.has(name)).length;
+      },
+      prepare: vi.fn(async ({ again = false } = {}) =>
+        names
+          .filter((name) => again || !done.has(name))
+          .map((name) => ({ key: name, label: `${name}.mp4`, contentPackageId: copyOf(name) })),
+      ),
+      markSent: vi.fn((key) => done.add(key)),
+    };
+  }
+
+  function renderVideos({ names = ['a', 'b', 'c'], videoPosts, ...rest } = {}) {
+    const posts = videoPosts ?? videoPostsFor(names);
+    const prepare = vi.fn().mockResolvedValue(MAIN_DRAFT);
+    const onCreated = vi.fn();
+    const mock = renderDialog({
+      media: names.map(video),
+      prepare,
+      videoPosts: posts,
+      onCreated,
+      ...rest,
+    });
+    return { mock, prepare, onCreated, videoPosts: posts };
+  }
+
+  it('says why, then creates one job per video, one after the other, to every account', async () => {
+    const { toast } = await import('sonner');
+    const { mock, prepare, onCreated, videoPosts } = renderVideos({
+      accounts: [account(1), account(2)],
+      routes: { [CREATE]: simulatedJob },
+    });
+    expect(await screen.findByText('3 videos, so 3 posts.')).toBeInTheDocument();
+    expect(screen.getByText(/Facebook takes one video per post/)).toBeInTheDocument();
+    const send = await screen.findByRole('button', { name: 'Simulate 3 posts' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await userEvent.click(send);
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(null));
+    // The team draft is saved first (it keeps every video), then each copy gets its own job.
+    expect(prepare).toHaveBeenCalledTimes(1);
+    const sent = bodies(mock);
+    expect(sent.map((body) => body.contentPackageId)).toEqual(['a', 'b', 'c'].map(copyOf));
+    for (const body of sent) {
+      expect(body.socialAccountIds).toEqual([account(1).id, account(2).id]);
+      expect(body).not.toHaveProperty('confirmRealPost');
+    }
+    expect(new Set(sent.map((body) => body.idempotencyKey)).size).toBe(3);
+    expect(videoPosts.markSent.mock.calls.map(([key]) => key)).toEqual(['a', 'b', 'c']);
+    expect(toast.success).toHaveBeenCalledWith('3 simulations started', {
+      description: 'One per video. Nothing will be posted to Facebook or Instagram.',
+    });
+  });
+
+  it('stops at a refusal, says how many were created, and carries on with the rest', async () => {
+    let refuse = true;
+    const { mock, onCreated } = renderVideos({
+      routes: {
+        [CREATE]: (request) => {
+          if (refuse && JSON.parse(request.init.body).contentPackageId === copyOf('b')) {
+            return apiError(422, 'VALIDATION_ERROR', 'Some fields are invalid', {
+              fields: { content: 'The file is MOV; Facebook accepts MP4 videos.' },
+            });
+          }
+          return simulatedJob(request);
+        },
+      },
+    });
+    const send = await screen.findByRole('button', { name: 'Simulate 3 posts' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await userEvent.click(send);
+    expect(
+      await screen.findByText(/1 of 3 posts was created\. The post for “b\.mp4” was not/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Facebook accepts MP4 videos/)).toBeInTheDocument();
+    expect(bodies(mock).map((body) => body.contentPackageId)).toEqual([copyOf('a'), copyOf('b')]);
+    expect(onCreated).not.toHaveBeenCalled();
+
+    // Publishing again sends only the two posts not created, with the same request for the
+    // refused one.
+    refuse = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Simulate 2 posts' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(null));
+    const all = bodies(mock);
+    expect(all.map((body) => body.contentPackageId)).toEqual(['a', 'b', 'b', 'c'].map(copyOf));
+    expect(all[2].idempotencyKey).toBe(all[1].idempotencyKey);
+  });
+
+  it('counts a post that is already on its way as sent and goes on', async () => {
+    const { mock, onCreated, videoPosts } = renderVideos({
+      names: ['a', 'b'],
+      routes: {
+        [CREATE]: (request) =>
+          JSON.parse(request.init.body).contentPackageId === copyOf('a')
+            ? apiError(409, 'CONFLICT', 'This post is already on its way.', {
+                reason: 'IN_PROGRESS',
+              })
+            : simulatedJob(request),
+      },
+    });
+    const send = await screen.findByRole('button', { name: 'Simulate 2 posts' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await userEvent.click(send);
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(null));
+    expect(mock.count(CREATE)).toBe(2);
+    expect(videoPosts.markSent.mock.calls.map(([key]) => key)).toEqual(['a', 'b']);
+  });
+
+  it('catches videos already sent from here, and sends them again only when asked', async () => {
+    const videoPosts = videoPostsFor(['a', 'b'], { sent: ['a', 'b'] });
+    const { mock, onCreated } = renderVideos({
+      names: ['a', 'b'],
+      videoPosts,
+      routes: { [CREATE]: simulatedJob },
+    });
+    const send = await screen.findByRole('button', { name: 'Simulate 2 posts' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await userEvent.click(send);
+    expect(
+      await screen.findByText('These videos were already sent from here, one post each.'),
+    ).toBeInTheDocument();
+    expect(mock.count(CREATE)).toBe(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish again anyway' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(null));
+    expect(videoPosts.prepare).toHaveBeenLastCalledWith({ again: true });
+    expect(bodies(mock).map((body) => body.republish)).toEqual([true, true]);
+  });
+
+  it('in real publishing, the confirmation names the number of posts', async () => {
+    const { mock } = renderVideos({
+      mode: 'LIVE',
+      routes: { [CREATE]: () => jsonResponse(201, { publishJob: job(), created: true }) },
+    });
+    expect(await screen.findByText('This creates 3 REAL public posts.')).toBeInTheDocument();
+    const publish = screen.getByRole('button', { name: 'Publish 3 posts' });
+    expect(publish).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /publishes 3 real posts on these accounts/ }),
+    );
+    await userEvent.click(publish);
+    await waitFor(() => expect(mock.count(CREATE)).toBe(3));
+    expect(bodies(mock).every((body) => body.confirmRealPost === true)).toBe(true);
+  });
+
+  it.each([
+    ['one video', { names: ['a'] }],
+    [
+      'no Facebook Page',
+      { names: ['a', 'b'], accounts: [{ ...account(1), platform: 'INSTAGRAM_ACCOUNT' }] },
+    ],
+    ['a photo mixed in', { names: ['a', 'b'], media: [video('a'), video('b'), photo] }],
+  ])('publishes the post as it is with %s', async (_label, extra) => {
+    renderVideos(extra);
+    await waitFor(() => expect(sendButton()).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Start simulation' })).toBeInTheDocument();
+    expect(screen.queryByText(/videos, so .* posts/)).toBeNull();
+  });
+});

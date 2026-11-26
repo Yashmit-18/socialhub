@@ -12,7 +12,7 @@ export const LandingPage = lazy(() => import('./LandingPage.jsx'));
  */
 export function HomeRoute() {
   const { status } = useAuth();
-  if (status === 'loading') return <PageLoader label="Restoring your session…" />;
+  if (status === 'loading') return <PageLoader label="Restoring your session…" fullScreen />;
   if (status === 'authenticated') return <RootRedirect />;
   return <LandingPage />;
 }

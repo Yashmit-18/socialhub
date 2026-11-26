@@ -13,21 +13,24 @@ import {
   Pencil,
   Plus,
   StickyNote,
+  SearchX,
   Trash2,
-  UsersRound,
 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { FilterSelect, SearchBox } from '../../components/accounts/AccountFilters.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { Button } from '../../components/ui/Button.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { Card } from '../../components/ui/Card.jsx';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
 import { FormError } from '../../components/ui/Field.jsx';
+import { GroupsArt } from '../../components/ui/illustrations.jsx';
 import { Menu, MenuItem, MenuSeparator } from '../../components/ui/Menu.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { Pagination } from '../../components/ui/Pagination.jsx';
+import { TBody, THead, Table, Td, Th, Tr } from '../../components/ui/Table.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { formatDate, timeAgo } from '../../lib/utils.js';
 import {
@@ -42,6 +45,7 @@ import {
   useRenameCategory,
   useUpdateGroup,
 } from './api.js';
+import { inputClass, selectClass } from './helpers.js';
 import { PagePicker } from './PagePicker.jsx';
 import { ExternalAnchor } from './TasksPage.jsx';
 
@@ -55,9 +59,6 @@ const SORTS = [
   ['-memberCount', 'Most members'],
   ['-createdAt', 'Newest first'],
 ];
-const inputClass =
-  'block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100';
-
 function TextField({ id, label, hint, error, children }) {
   return (
     <div className="space-y-1.5">
@@ -194,7 +195,7 @@ export function GroupFormDialog({ group, categories, onClose }) {
           <TextField id="group-category" label="Category">
             <select
               id="group-category"
-              className={inputClass}
+              className={selectClass}
               value={form.categoryId}
               onChange={set('categoryId')}
             >
@@ -219,7 +220,7 @@ export function GroupFormDialog({ group, categories, onClose }) {
         <TextField
           id="group-tags"
           label="Relevance tags"
-          hint="Comma separated, for example: vegan, london, events"
+          hint="Comma separated, for example: vegan, london, events. Posts are shared here automatically only when one of these is in the post’s hashtags or keywords; with no tags, every post is."
           error={shown('tags')}
         >
           <input id="group-tags" className={inputClass} value={form.tags} onChange={set('tags')} />
@@ -333,14 +334,14 @@ export function BulkAddDialog({ categories, onClose }) {
             .
           </p>
           {result.invalid.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+            <Callout tone="warning">
               <p className="font-medium">These lines are not Facebook Group links:</p>
               <ul className="mt-1 list-disc pl-5 text-xs break-all">
                 {result.invalid.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
               </ul>
-            </div>
+            </Callout>
           )}
         </div>
       ) : (
@@ -373,7 +374,7 @@ export function BulkAddDialog({ categories, onClose }) {
           <TextField id="bulk-category" label="Category">
             <select
               id="bulk-category"
-              className={inputClass}
+              className={selectClass}
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
             >
@@ -540,6 +541,28 @@ function LastShared({ group }) {
   );
 }
 
+/** First load: rows in the shape of the groups table. */
+function GroupsSkeleton() {
+  return (
+    <div role="status" className="border-t border-slate-100 dark:border-white/5">
+      <span className="sr-only">Loading groups…</span>
+      <ul aria-hidden="true" className="divide-y divide-slate-100 dark:divide-white/5">
+        {[0, 1, 2, 3].map((n) => (
+          <li key={n} className="flex items-center gap-4 px-5 py-3.5 sm:px-6">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-56 max-w-full" />
+              <Skeleton className="h-3 w-28" />
+            </div>
+            <Skeleton className="hidden h-5 w-24 rounded-full md:block" />
+            <Skeleton className="hidden h-4 w-16 sm:block" />
+            <Skeleton className="h-4 w-20" />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The workspace's Facebook Group directory. */
 export default function DirectoryPage() {
   const { workspace, can } = useWorkspace();
@@ -554,6 +577,11 @@ export default function DirectoryPage() {
     page: 1,
   });
   const update = (patch) => setFilters((f) => ({ ...f, page: 1, ...patch }));
+  const filtersActive =
+    Boolean(filters.q || filters.category || filters.tag || filters.pageId) ||
+    filters.status !== 'ACTIVE';
+  // The sort is a view choice, not a filter: it stays.
+  const clearFilters = () => update({ q: '', category: '', tag: '', pageId: '', status: 'ACTIVE' });
   const groups = useFacebookGroups(workspace.id, { ...filters, limit: PAGE_SIZE });
   const categories = useGroupCategories(workspace.id);
   const updateGroup = useUpdateGroup(workspace.id);
@@ -584,15 +612,55 @@ export default function DirectoryPage() {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="flex flex-col gap-3 px-5 py-4 sm:px-6 lg:flex-row lg:items-start">
-          <SearchBox
-            value={filters.q}
-            onSearch={(q) => update({ q })}
-            placeholder="Search name, tag, notes or link"
-            label="Search groups"
-            className="lg:w-72 lg:flex-none"
-          />
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {/* Row one: find, then what you do to the list. Row two: filters only. */}
+        <div className="space-y-3 px-5 py-4 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchBox
+              value={filters.q}
+              onSearch={(q) => update({ q })}
+              placeholder="Search name, tag, notes or link"
+              label="Search groups"
+              className="basis-full sm:max-w-sm sm:basis-0"
+            />
+            {filtersActive && (
+              <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            )}
+            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+              <FilterSelect
+                label="Sort groups"
+                value={filters.sort}
+                highlight={false}
+                onChange={(sort) => update({ sort })}
+                options={SORTS}
+              />
+              {canManage && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setCategoriesOpen(true)}
+                  >
+                    <FolderTree className="h-3.5 w-3.5" aria-hidden="true" /> Categories
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setBulkOpen(true)}
+                  >
+                    <ListPlus className="h-3.5 w-3.5" aria-hidden="true" /> Add many
+                  </Button>
+                  <Button size="sm" className="h-9" onClick={() => setEditing('new')}>
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add group
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <FilterSelect
               label="Filter by status"
               value={filters.status}
@@ -642,34 +710,11 @@ export default function DirectoryPage() {
                 ]}
               />
             )}
-            <FilterSelect
-              label="Sort groups"
-              value={filters.sort}
-              highlight={false}
-              onChange={(sort) => update({ sort })}
-              options={SORTS}
-            />
-            {canManage && (
-              <div className="flex flex-wrap gap-2 lg:ml-auto">
-                <Button variant="secondary" size="sm" onClick={() => setCategoriesOpen(true)}>
-                  <FolderTree className="h-3.5 w-3.5" aria-hidden="true" /> Categories
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => setBulkOpen(true)}>
-                  <ListPlus className="h-3.5 w-3.5" aria-hidden="true" /> Add many
-                </Button>
-                <Button size="sm" onClick={() => setEditing('new')}>
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add group
-                </Button>
-              </div>
-            )}
           </div>
         </div>
 
         {groups.isPending ? (
-          <div className="space-y-2 px-5 pb-5 sm:px-6">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <GroupsSkeleton />
         ) : groups.error ? (
           <ErrorState
             title="Could not load the groups"
@@ -677,64 +722,59 @@ export default function DirectoryPage() {
             onRetry={() => groups.refetch()}
           />
         ) : data.items.length === 0 ? (
-          <EmptyState
-            icon={UsersRound}
-            title={
-              data.total === 0 && !filters.q && !filters.category && !filters.tag && !filters.pageId
-                ? 'No groups yet'
-                : 'No groups match these filters'
-            }
-            description={
-              canManage
-                ? 'Add the Facebook Groups your Pages are in. Posts to those Pages then get a sharing task for each group.'
-                : 'Owners and admins add the groups your team shares in.'
-            }
-            action={
-              canManage ? (
-                <Button onClick={() => setEditing('new')}>
-                  <Plus className="h-4 w-4" aria-hidden="true" /> Add group
+          filtersActive ? (
+            <EmptyState
+              icon={SearchX}
+              title="No groups match these filters"
+              action={
+                <Button variant="secondary" onClick={clearFilters}>
+                  Clear filters
                 </Button>
-              ) : null
-            }
-          />
+              }
+            />
+          ) : (
+            <EmptyState
+              art={GroupsArt}
+              title="No groups yet"
+              description={
+                canManage
+                  ? 'Add the Facebook Groups your Pages are in. Posts to those Pages then get a sharing task for each group.'
+                  : 'Owners and admins add the groups your team shares in.'
+              }
+              action={
+                canManage ? (
+                  <Button onClick={() => setEditing('new')}>
+                    <Plus className="h-4 w-4" aria-hidden="true" /> Add group
+                  </Button>
+                ) : null
+              }
+            />
+          )
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <caption className="sr-only">Facebook Groups</caption>
-              <thead>
-                <tr className="border-y border-slate-100 bg-slate-50/60 text-[11px] tracking-wider text-slate-500 uppercase dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-400">
-                  <th scope="col" className="py-2.5 pr-4 pl-5 font-semibold sm:pl-6">
-                    Group
-                  </th>
-                  <th scope="col" className="hidden py-2.5 pr-4 font-semibold md:table-cell">
-                    Your Pages
-                  </th>
-                  <th scope="col" className="hidden py-2.5 pr-4 font-semibold xl:table-cell">
-                    Category
-                  </th>
-                  <th scope="col" className="hidden py-2.5 pr-4 font-semibold lg:table-cell">
-                    Tags
-                  </th>
-                  <th scope="col" className="hidden py-2.5 pr-4 font-semibold sm:table-cell">
-                    Members
-                  </th>
-                  <th scope="col" className="py-2.5 pr-4 font-semibold">
-                    Last shared
-                  </th>
-                  {canManage && (
-                    <th scope="col" className="w-12 py-2.5 pr-5 sm:pr-6">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+          <>
+            <Table caption="Facebook Groups" fetching={groups.isPlaceholderData}>
+              <THead>
+                <Th>Group</Th>
+                <Th hide="md">Your Pages</Th>
+                <Th hide="xl">Category</Th>
+                <Th hide="lg">Tags</Th>
+                <Th hide="sm" align="right">
+                  Members
+                </Th>
+                <Th>Last shared</Th>
+                {canManage && (
+                  <Th className="w-12">
+                    <span className="sr-only">Actions</span>
+                  </Th>
+                )}
+              </THead>
+              <TBody>
                 {data.items.map((group) => (
-                  <tr key={group.id} className="align-middle">
-                    <td className="max-w-[18rem] py-3 pr-4 pl-5 sm:pl-6">
+                  <Tr key={group.id}>
+                    <Td className="max-w-[18rem]">
                       <ExternalAnchor
                         href={group.url}
-                        className="text-slate-900 hover:text-brand-600 dark:text-white"
+                        className="text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                       >
                         {group.name}
                       </ExternalAnchor>
@@ -749,52 +789,55 @@ export default function DirectoryPage() {
                           </span>
                         )}
                       </span>
-                    </td>
-                    <td className="hidden py-3 pr-4 md:table-cell">
+                    </Td>
+                    <Td hide="md">
                       {group.pages?.length ? (
                         <span className="flex flex-wrap gap-1">
                           {group.pages.map((page) => (
                             <span
                               key={page.id}
-                              className="rounded-md bg-[#1877F2]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#1464d8] dark:bg-[#1877F2]/20 dark:text-[#8ab8ff]"
+                              className="rounded-full bg-[#1877F2]/10 px-2 py-0.5 text-[11px] font-medium text-[#1464d8] dark:bg-[#1877F2]/20 dark:text-[#8ab8ff]"
                             >
                               {page.name}
                             </span>
                           ))}
                         </span>
                       ) : (
-                        <span className="text-xs text-muted">None</span>
+                        <span className="text-muted">
+                          <span aria-hidden="true">—</span>
+                          <span className="sr-only">No Pages</span>
+                        </span>
                       )}
-                    </td>
-                    <td className="hidden py-3 pr-4 text-xs xl:table-cell">
+                    </Td>
+                    <Td hide="xl" className="text-xs">
                       {group.category?.name ?? <span className="text-muted">—</span>}
-                    </td>
-                    <td className="hidden py-3 pr-4 lg:table-cell">
+                    </Td>
+                    <Td hide="lg">
                       <span className="flex flex-wrap gap-1">
                         {group.tags.map((tag) => (
                           <button
                             key={tag}
                             type="button"
                             onClick={() => update({ tag })}
-                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200"
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/20"
                           >
                             {tag}
                           </button>
                         ))}
                       </span>
-                    </td>
-                    <td className="hidden py-3 pr-4 text-xs tabular-nums sm:table-cell">
+                    </Td>
+                    <Td hide="sm" numeric className="text-xs">
                       {typeof group.memberCount === 'number' ? (
                         NUMBER.format(group.memberCount)
                       ) : (
                         <span className="text-muted">—</span>
                       )}
-                    </td>
-                    <td className="py-3 pr-4">
+                    </Td>
+                    <Td>
                       <LastShared group={group} />
-                    </td>
+                    </Td>
                     {canManage && (
-                      <td className="py-3 pr-5 text-right sm:pr-6">
+                      <Td align="right">
                         <Menu
                           portal
                           trigger={({ toggle, props }) => (
@@ -856,12 +899,13 @@ export default function DirectoryPage() {
                             </>
                           )}
                         </Menu>
-                      </td>
+                      </Td>
                     )}
-                  </tr>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
+            {/* Outside the table's scroller, so it stays put while the table scrolls sideways. */}
             <Pagination
               page={data.page}
               pages={data.pages}
@@ -870,7 +914,7 @@ export default function DirectoryPage() {
               noun={data.total === 1 ? 'group' : 'groups'}
               onPageChange={(page) => setFilters((f) => ({ ...f, page }))}
             />
-          </div>
+          </>
         )}
       </Card>
 

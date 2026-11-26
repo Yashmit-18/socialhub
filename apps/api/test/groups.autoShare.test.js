@@ -332,3 +332,88 @@ describe('auto share', () => {
     expect((await autoShare(team.owner.token, '6a0000000000000000000000')).status).toBe(404);
   });
 });
+
+describe('auto share relevance (group tags against the post’s hashtags and keywords)', () => {
+  /** Page 0's groups: four tagged, one without tags. */
+  async function taggedDirectory() {
+    const mk = (name, tags) =>
+      addGroup({
+        name,
+        url: `https://www.facebook.com/groups/${name.toLowerCase()}`,
+        pageIds: [pageId(0)],
+        tags,
+      });
+    await mk('Vegan', ['vegan', 'plant based']);
+    await mk('Nyc', ['New York']);
+    await mk('Markets', ['markets']);
+    await mk('Cars', ['cars', 'motors']);
+    await mk('Local', []);
+  }
+  const groupsWithTasks = async (shareId) =>
+    (await SharingTask.find({ share: shareId }).populate('group', 'name'))
+      .map((t) => t.group.name)
+      .sort();
+
+  it('gives tasks to groups whose tags match a hashtag or keyword, and to untagged groups', async () => {
+    await taggedDirectory();
+    const draft = await createDraft(team.owner.token, ws, {
+      accounts: [pages[0]],
+      caption: 'Fresh menu today #Vegan',
+      hashtags: ['NewYork'],
+      keywords: ['Markets'],
+    });
+    const job = (await publish({ contentPackageId: draft.id })).body.publishJob;
+    const res = await autoShare(team.owner.token, job.id);
+    expect(res.status).toBe(201);
+    expect(res.body.share.topics).toEqual(['vegan', 'newyork', 'markets']);
+    await queue.deliver();
+
+    // "#Vegan" in the caption, "NewYork" in the hashtag list ("New York" tag), the draft's
+    // keyword "Markets", and Local because it has no tags. Cars matches nothing.
+    expect(await groupsWithTasks(res.body.share.id)).toEqual(['Local', 'Markets', 'Nyc', 'Vegan']);
+    const detail = await as(team.viewer.token).get(url(`/group-shares/${res.body.share.id}`));
+    expect(detail.body.share.skipped).toEqual([
+      expect.objectContaining({ name: 'Cars', reason: 'NOT_RELEVANT', nextShareAllowedAt: null }),
+    ]);
+  });
+
+  it('gives a post without hashtags or keywords to untagged groups only', async () => {
+    await taggedDirectory();
+    const draft = await createDraft(team.owner.token, ws, {
+      accounts: [pages[0]],
+      caption: 'Opening hours change next week',
+    });
+    const job = (await publish({ contentPackageId: draft.id })).body.publishJob;
+    await queue.deliver();
+    const res = await autoShare(team.owner.token, job.id);
+    expect(res.body).toMatchObject({ created: true, tasksCreated: 1 });
+    expect(res.body.share.topics).toEqual([]);
+    expect(await groupsWithTasks(res.body.share.id)).toEqual(['Local']);
+    const detail = await as(team.viewer.token).get(url(`/group-shares/${res.body.share.id}`));
+    expect(detail.body.share.skipped.map((s) => [s.name, s.reason]).sort()).toEqual([
+      ['Cars', 'NOT_RELEVANT'],
+      ['Markets', 'NOT_RELEVANT'],
+      ['Nyc', 'NOT_RELEVANT'],
+      ['Vegan', 'NOT_RELEVANT'],
+    ]);
+  });
+
+  it('keeps reaching every member group for shares made before relevance existed', async () => {
+    await taggedDirectory();
+    const draft = await createDraft(team.owner.token, ws, { accounts: [pages[0]] });
+    const job = (await publish({ contentPackageId: draft.id })).body.publishJob;
+    const res = await autoShare(team.owner.token, job.id);
+    // Test-only: an older share has no topics stored.
+    await GroupShare.updateOne({ _id: res.body.share.id }, { $unset: { topics: 1 } });
+    await queue.deliver();
+    expect(await groupsWithTasks(res.body.share.id)).toEqual([
+      'Cars',
+      'Local',
+      'Markets',
+      'Nyc',
+      'Vegan',
+    ]);
+    const detail = await as(team.viewer.token).get(url(`/group-shares/${res.body.share.id}`));
+    expect(detail.body.share.topics).toBeNull();
+  });
+});

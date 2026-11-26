@@ -1,5 +1,5 @@
 import { ACTIVE_JOB_STATUSES } from '@socialhub/shared';
-import { CalendarClock, Film, Image as ImageIcon } from 'lucide-react';
+import { CalendarClock, ChevronRight, Film, Image as ImageIcon } from 'lucide-react';
 import { Button } from '../../components/ui/Button.jsx';
 import { cn, timeAgo } from '../../lib/utils.js';
 import {
@@ -27,20 +27,25 @@ const CHIP_TONES = {
   violet: 'border-violet-200 text-violet-800 dark:border-violet-400/20 dark:text-violet-200',
 };
 
+// Only the states that need you (or mark a simulation) colour a chip; the rest stay quiet, so
+// the one failed account of a partly published post is the one that stands out.
+const LOUD_TONES = ['danger', 'warning', 'violet'];
+
 /** One account of a job: platform, name and what happened there, in words. */
 function DestinationChip({ destination, simulated }) {
   const isSimulated = simulated || destination.simulated;
   const tone = destinationStateTone(destination.state, isSimulated);
+  const loud = LOUD_TONES.includes(tone);
   return (
     <li
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-white px-2 py-1 text-xs dark:bg-white/[0.03]',
-        CHIP_TONES[tone] ?? CHIP_TONES.neutral,
+        loud ? CHIP_TONES[tone] : CHIP_TONES.neutral,
       )}
     >
       <PlatformIcon platform={destination.platform} className="h-3.5 w-3.5" />
       <span className="min-w-0 truncate font-medium">{destination.accountName}</span>
-      <span className="shrink-0 opacity-80">
+      <span className={cn('shrink-0', loud ? 'opacity-80' : 'text-muted')}>
         · {destinationStateLabel(destination.state, isSimulated)}
       </span>
     </li>
@@ -76,64 +81,82 @@ function JobRow({ job, onOpen, onReschedule, timeZone }) {
   const MediaIcon = job.content?.hasVideo ? Film : ImageIcon;
   const destinations = job.destinations ?? [];
   const caption = job.content?.captionPreview ?? '';
+  const canReschedule = Boolean(onReschedule && job.canReschedule);
   return (
-    <li className="px-5 py-4 sm:px-6" data-testid={`publish-job-${job.id}`}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <CaptionPreview text={caption} className="line-clamp-2" />
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-            <span className="inline-flex items-center gap-1">
-              <MediaIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              {mediaCountText(job.content?.mediaCount, job.content?.hasVideo)}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {job.createdBy?.name ? `Created by ${job.createdBy.name}` : 'Created'}{' '}
-              <time dateTime={job.createdAt} title={formatDateTime(job.createdAt)}>
-                {timeAgo(job.createdAt)}
-              </time>
-            </span>
-          </p>
-          {/* Its own line: beside the other facts it wrapped awkwardly on narrow rows. */}
-          {job.scheduledAt && (
-            <p className="mt-1 flex items-start gap-1 text-xs text-muted">
-              <CalendarClock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="min-w-0">
-                {job.status === 'SCHEDULED' ? 'Goes out' : 'Scheduled for'}{' '}
-                <ScheduledTime value={job.scheduledAt} timeZone={timeZone} />
-              </span>
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+    <li
+      className="grid gap-x-4 px-5 py-4 transition-colors hover:bg-slate-50/60 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-6 dark:hover:bg-white/[0.02]"
+      data-testid={`publish-job-${job.id}`}
+    >
+      <div className="min-w-0">
+        <CaptionPreview text={caption} className="line-clamp-2 text-[15px] leading-snug" />
+        {/* The status leads the line, so every row's status starts at the same place. */}
+        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted">
           <JobStatusBadge status={job.status} simulated={job.simulated} />
           {job.simulated && <SimulatedBadge />}
-          {onReschedule && job.canReschedule && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onReschedule(job)}
-              aria-label={`Change time${caption ? `: ${caption}` : ''}`}
-            >
-              Change time
-            </Button>
-          )}
+          <span className="inline-flex items-center gap-1">
+            <MediaIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            {mediaCountText(job.content?.mediaCount, job.content?.hasVideo)}
+          </span>
+          {/* No separator on phones, where it would dangle at the end of a wrapped line. */}
+          <span aria-hidden="true" className="hidden sm:inline">
+            ·
+          </span>
+          <span>
+            {job.createdBy?.name ? `Created by ${job.createdBy.name}` : 'Created'}{' '}
+            <time dateTime={job.createdAt} title={formatDateTime(job.createdAt)}>
+              {timeAgo(job.createdAt)}
+            </time>
+          </span>
+        </p>
+        {/* Its own line: beside the other facts it wrapped awkwardly on narrow rows. */}
+        {job.scheduledAt && (
+          <p className="mt-1.5 flex items-start gap-1 text-xs text-muted">
+            <CalendarClock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0">
+              {job.status === 'SCHEDULED' ? 'Goes out' : 'Scheduled for'}{' '}
+              <ScheduledTime
+                value={job.scheduledAt}
+                timeZone={timeZone}
+                className="[&>time]:font-medium [&>time]:text-slate-700 dark:[&>time]:text-slate-200"
+              />
+            </span>
+          </p>
+        )}
+      </div>
+
+      {/* Beside the post from `sm`; on a phone they close the row, after the accounts. */}
+      <div className="order-last mt-3 flex flex-wrap items-center gap-2 sm:order-none sm:col-start-2 sm:row-start-1 sm:mt-0 sm:self-start">
+        {canReschedule && (
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => onOpen(job)}
-            aria-label={`View details${caption ? `: ${caption}` : ''}`}
+            onClick={() => onReschedule(job)}
+            aria-label={`Change time${caption ? `: ${caption}` : ''}`}
           >
-            View details
+            Change time
           </Button>
-        </div>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          // Alone on a phone, its text lines up with the row's text.
+          className={cn(!canReschedule && 'max-sm:-ml-3')}
+          onClick={() => onOpen(job)}
+          aria-label={`View details${caption ? `: ${caption}` : ''}`}
+        >
+          View details
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
       </div>
 
       {job.simulated && (
-        <SimulatedNote className="mt-2" pending={ACTIVE_JOB_STATUSES.includes(job.status)} />
+        <SimulatedNote
+          className="mt-2 sm:col-span-2"
+          pending={ACTIVE_JOB_STATUSES.includes(job.status)}
+        />
       )}
 
-      <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Accounts">
+      <ul className="mt-3 flex flex-wrap gap-1.5 sm:col-span-2" aria-label="Accounts">
         {destinations.map((destination) => (
           <DestinationChip
             key={destination.id}

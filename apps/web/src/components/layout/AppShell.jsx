@@ -1,5 +1,6 @@
-import { PERMISSIONS, ROLE_LABELS } from '@socialhub/shared';
+import { PERMISSIONS, ROLE_LABELS, hasPermission } from '@socialhub/shared';
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
   ChevronRight,
@@ -7,15 +8,13 @@ import {
   Command,
   LogOut,
   Menu as MenuIcon,
-  Moon,
   Plus,
   Search,
   SquarePen,
-  Sun,
   UserRound,
   X,
 } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useOptionalWorkspace } from '../../context/WorkspaceContext.jsx';
@@ -26,16 +25,16 @@ import { useThemeTransition } from '../../hooks/useThemeTransition.js';
 import { useWorkspaces } from '../../lib/queries.js';
 import { cn } from '../../lib/utils.js';
 import { Avatar } from '../ui/Avatar.jsx';
+import { BackLink } from '../ui/BackLink.jsx';
 import { Logo } from '../ui/Brand.jsx';
 import { Button, ButtonLink } from '../ui/Button.jsx';
 import { Menu, MenuItem, MenuSeparator } from '../ui/Menu.jsx';
+import { SectionToneContext, useSectionTone } from '../ui/sectionTone.js';
+import { ThemeToggle } from '../ui/ThemeToggle.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
-import { currentNavItem, navItems, navSections } from './navigation.js';
+import { currentNavItem, shellSections } from './navigation.js';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '');
-
-/** The sidebar page the current route belongs to, so PageHeader can show its icon and colour. */
-const CurrentPageContext = createContext(null);
 
 function WorkspaceSwitcher({ current }) {
   const { data: workspaces = [] } = useWorkspaces();
@@ -128,12 +127,13 @@ function useNavBadges(workspace, can) {
   return { groupTasks: enabled ? (tasks.data?.total ?? 0) : 0 };
 }
 
-function SidebarContent({ workspace, can, onNavigate }) {
+function SidebarContent({ workspace, can, sections, area, onNavigate }) {
   const { pathname } = useLocation();
   const navRef = useRef(null);
   const pillRef = useRef(null);
   useActiveIndicator(navRef, pillRef, pathname);
   const badges = useNavBadges(workspace, can);
+  const AreaIcon = area?.icon;
 
   return (
     <div className="flex h-full flex-col">
@@ -143,72 +143,101 @@ function SidebarContent({ workspace, can, onNavigate }) {
         </Link>
       </div>
       <div className="px-3">
-        <WorkspaceSwitcher current={workspace} />
+        {area ? (
+          <>
+            <div className="flex items-center gap-3 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 py-2">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white',
+                  area.tone,
+                )}
+              >
+                <AreaIcon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-white">
+                  {area.label}
+                </span>
+                <span className="block truncate text-xs text-white/55">{area.description}</span>
+              </span>
+            </div>
+            <Link
+              to={area.back.to}
+              onClick={onNavigate}
+              className="mt-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-white/65 transition-colors duration-150 hover:bg-white/[0.05] hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{area.back.label}</span>
+            </Link>
+          </>
+        ) : (
+          <WorkspaceSwitcher current={workspace} />
+        )}
       </div>
 
       <nav
         ref={navRef}
         className="relative mt-5 flex-1 overflow-y-auto px-3 pb-4"
-        aria-label="Workspace"
+        aria-label={area ? area.label : 'Workspace'}
       >
         <div
           ref={pillRef}
           aria-hidden="true"
           className="pointer-events-none absolute top-0 right-3 left-3 rounded-lg bg-gradient-to-r from-brand-400/30 via-violet-400/15 to-transparent opacity-0 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.07)] before:absolute before:top-1/2 before:left-0 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-gradient-to-b before:from-brand-300 before:to-pink-400 data-[ready]:transition-[transform,height,opacity] data-[ready]:duration-300 data-[ready]:ease-out-expo"
         />
-        {workspace &&
-          navSections(workspace.slug, can).map((section) => (
-            <div key={section.id} className={cn(section.label && 'mt-6')}>
-              {section.label && (
-                <p className="mb-1.5 px-3 text-[11px] font-medium tracking-wide text-white/40 uppercase">
-                  {section.label}
-                </p>
-              )}
-              <ul className="space-y-0.5">
-                {section.items.map(({ to, label, icon: Icon, end, badge }) => {
-                  const count = badge ? badges[badge] : 0;
-                  return (
-                    <li key={to}>
-                      <NavLink
-                        to={to}
-                        end={end}
-                        onClick={onNavigate}
-                        className={({ isActive }) =>
-                          cn(
-                            'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150',
-                            isActive
-                              ? 'text-white'
-                              : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
-                          )
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
-                            <Icon
-                              className={cn(
-                                'h-[18px] w-[18px] transition-colors duration-150',
-                                isActive
-                                  ? 'text-brand-300'
-                                  : 'text-white/45 group-hover:text-white/80',
-                              )}
-                              aria-hidden="true"
-                            />
-                            <span className="flex-1">{label}</span>
-                            {count > 0 && (
-                              <span className="rounded-full bg-pink-600 px-1.5 py-px text-[11px] font-semibold text-white tabular-nums">
-                                {count > 99 ? '99+' : count}
-                                <span className="sr-only"> to share</span>
-                              </span>
+        {sections.map((section) => (
+          <div key={section.id} className={cn(section.label && 'mt-6')}>
+            {section.label && (
+              <p className="mb-1.5 px-3 text-[11px] font-medium tracking-wide text-white/55 uppercase">
+                {section.label}
+              </p>
+            )}
+            <ul className="space-y-0.5">
+              {section.items.map(({ to, label, icon: Icon, end, badge }) => {
+                const count = badge ? badges[badge] : 0;
+                return (
+                  <li key={to}>
+                    <NavLink
+                      to={to}
+                      end={end}
+                      onClick={onNavigate}
+                      className={({ isActive }) =>
+                        cn(
+                          'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150',
+                          isActive
+                            ? 'text-white'
+                            : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
+                        )
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <Icon
+                            className={cn(
+                              'h-[18px] w-[18px] transition-colors duration-150',
+                              isActive
+                                ? 'text-brand-300'
+                                : 'text-white/45 group-hover:text-white/80',
                             )}
-                          </>
-                        )}
-                      </NavLink>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                            aria-hidden="true"
+                          />
+                          <span className="flex-1">{label}</span>
+                          {count > 0 && (
+                            <span className="rounded-full bg-pink-600 px-1.5 py-px text-[11px] font-semibold text-white tabular-nums">
+                              {count > 99 ? '99+' : count}
+                              <span className="sr-only"> to share</span>
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </NavLink>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
     </div>
   );
@@ -279,23 +308,6 @@ function UserMenu() {
   );
 }
 
-function ThemeToggle({ isDark, onToggle }) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={onToggle}
-      aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
-    >
-      {isDark ? (
-        <Sun key="sun" className="h-[18px] w-[18px] animate-icon-in text-amber-300" />
-      ) : (
-        <Moon key="moon" className="h-[18px] w-[18px] animate-icon-in" />
-      )}
-    </Button>
-  );
-}
-
 /** Whether the page has scrolled past the top (the header then gets its edge and shadow). */
 function useScrolled(threshold = 8) {
   const [scrolled, setScrolled] = useState(false);
@@ -308,10 +320,15 @@ function useScrolled(threshold = 8) {
   return scrolled;
 }
 
-export function AppShell({ children, workspace: workspaceOverride }) {
+export function AppShell({ children, workspace: workspaceOverride, area = null }) {
   const ctx = useOptionalWorkspace();
-  const workspace = workspaceOverride ?? ctx?.workspace ?? null;
-  const can = ctx?.can ?? (() => false);
+  const { user } = useAuth();
+  // An area (the admin console) brings its own pages and has no workspace.
+  const workspace = area ? null : (workspaceOverride ?? ctx?.workspace ?? null);
+  // A page that shows a workspace without being inside it (Account settings) still lists
+  // that workspace's pages for the person's role. UI gating only; the API enforces access.
+  const role = workspace?.membership?.role;
+  const can = ctx?.can ?? ((permission) => Boolean(role) && hasPermission(role, permission));
   const { isDark, toggle } = useThemeTransition();
   const location = useLocation();
   const scrolled = useScrolled();
@@ -336,9 +353,11 @@ export function AppShell({ children, workspace: workspaceOverride }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const current = workspace
-    ? currentNavItem(navItems(workspace.slug, can), location.pathname)
-    : null;
+  const sections = area ? area.sections : shellSections(workspace, can, user);
+  const current = currentNavItem(
+    sections.flatMap((section) => section.items),
+    location.pathname,
+  );
   const canCompose = workspace && can(PERMISSIONS.CONTENT_CREATE);
   // Compose and the Overview have their own "Create post" button.
   const onCompose =
@@ -347,7 +366,7 @@ export function AppShell({ children, workspace: workspaceOverride }) {
   return (
     <div className="min-h-screen">
       <aside className="sidebar-ink fixed inset-y-0 left-0 z-30 hidden w-60 lg:block dark:border-r dark:border-white/[0.06]">
-        <SidebarContent workspace={workspace} can={can} />
+        <SidebarContent workspace={workspace} can={can} sections={sections} area={area} />
       </aside>
 
       {mobileOpen && (
@@ -369,6 +388,8 @@ export function AppShell({ children, workspace: workspaceOverride }) {
             <SidebarContent
               workspace={workspace}
               can={can}
+              sections={sections}
+              area={area}
               onNavigate={() => setMobileOpen(false)}
             />
           </aside>
@@ -396,17 +417,29 @@ export function AppShell({ children, workspace: workspaceOverride }) {
             <MenuIcon className="h-5 w-5" />
           </Button>
 
-          {workspace && current && (
-            <nav aria-label="Breadcrumb" className="hidden min-w-0 md:block">
+          {area && (
+            <span className="shrink-0 rounded-full bg-fuchsia-50 px-2.5 py-0.5 text-xs font-semibold text-fuchsia-700 ring-1 ring-fuchsia-200 ring-inset md:hidden dark:bg-fuchsia-500/10 dark:text-fuchsia-300 dark:ring-fuchsia-400/20">
+              {area.label}
+            </span>
+          )}
+
+          {current && (area || workspace) && (
+            <nav aria-label="Breadcrumb" className="min-w-0">
               <ol className="flex min-w-0 items-center gap-1.5 text-sm">
-                <li className="min-w-0 truncate text-muted">{workspace.name}</li>
-                <li aria-hidden="true">
+                <li className="hidden min-w-0 truncate text-slate-600 md:block dark:text-slate-400">
+                  {area ? area.label : workspace.name}
+                </li>
+                <li aria-hidden="true" className="hidden md:block">
                   <ChevronRight className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600" />
                 </li>
+                {/* On a phone the page name appears once the title has scrolled away. */}
                 <li
                   key={current.to}
                   aria-current="page"
-                  className="flex animate-fade-in items-center gap-1.5 font-medium text-slate-900 dark:text-white"
+                  className={cn(
+                    'min-w-0 animate-fade-in truncate font-medium text-slate-900 transition-opacity duration-200 dark:text-white',
+                    !scrolled && 'max-md:opacity-0',
+                  )}
                 >
                   {current.label}
                 </li>
@@ -424,7 +457,7 @@ export function AppShell({ children, workspace: workspaceOverride }) {
           >
             <Search className="h-4 w-4" aria-hidden="true" />
             <span className="w-28 text-left lg:w-36">Jump to…</span>
-            <span className="kbd" aria-hidden="true">
+            <span className="kbd whitespace-nowrap" aria-hidden="true">
               {isMac ? <Command className="h-3 w-3" /> : 'Ctrl'} K
             </span>
           </button>
@@ -439,8 +472,10 @@ export function AppShell({ children, workspace: workspaceOverride }) {
           </Button>
 
           {canCompose && !onCompose && (
+            // Quieter than a page's own main button, so each view keeps one primary action.
             <ButtonLink
               to={`/w/${workspace.slug}/compose`}
+              variant="tonal"
               size="sm"
               className="hidden h-9 px-3.5 md:inline-flex"
             >
@@ -452,16 +487,16 @@ export function AppShell({ children, workspace: workspaceOverride }) {
           <UserMenu />
         </header>
         <main className="relative mx-auto w-full max-w-6xl px-4 pt-6 pb-10 sm:px-6 lg:px-8">
-          <CurrentPageContext.Provider value={current}>
+          <SectionToneContext.Provider value={current}>
             <div className="page-enter">{children}</div>
-          </CurrentPageContext.Provider>
+          </SectionToneContext.Provider>
         </main>
       </div>
 
       {paletteOpen && (
         <CommandPalette
+          sections={sections}
           workspace={workspace}
-          can={can}
           isDark={isDark}
           onToggleTheme={toggle}
           onClose={closePalette}
@@ -471,38 +506,56 @@ export function AppShell({ children, workspace: workspaceOverride }) {
   );
 }
 
-export function PageHeader({ title, description, actions, eyebrow }) {
-  const page = useContext(CurrentPageContext);
+/**
+ * The title block of a page. The tile next to the title is the colour of the page's sidebar
+ * section; a page outside the sidebar (Account settings, a detail page) passes `icon` and
+ * `tone` (gradient classes), or `media` (any node, e.g. an account picture) instead. `back`
+ * ({ to, label }) puts a back link above it. Actions sit on the title row.
+ */
+export function PageHeader({ title, description, actions, eyebrow, icon, tone, media, back }) {
+  const page = useSectionTone();
   // Every section has its own colour: an icon tile next to the title. The Overview greets the
   // person instead, so it has none.
-  const Icon = page?.tone && !page.end ? page.icon : null;
+  const Icon = icon ?? (page?.tone && !page.end ? page.icon : null);
+  const tileTone = tone ?? page?.tone;
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex min-w-0 items-start gap-4">
-        {Icon && (
-          <span
-            aria-hidden="true"
-            className={cn(
-              'mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg shadow-slate-900/10 ring-1 ring-white/20 ring-inset dark:shadow-black/30',
-              page.tone,
+    <div className="mb-6">
+      {back && <BackLink to={back.to}>{back.label}</BackLink>}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
+          {media ? (
+            <div className="mt-0.5 shrink-0">{media}</div>
+          ) : (
+            Icon && (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg shadow-slate-900/10 ring-1 ring-white/20 ring-inset dark:shadow-black/30',
+                  tileTone,
+                )}
+              >
+                <Icon className="h-5 w-5" />
+              </span>
+            )
+          )}
+          <div className="min-w-0">
+            {eyebrow && (
+              <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">
+                {eyebrow}
+              </p>
             )}
-          >
-            <Icon className="h-5 w-5" />
-          </span>
-        )}
-        <div className="min-w-0">
-          {eyebrow && (
-            <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">{eyebrow}</p>
-          )}
-          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900 dark:text-white">
-            {title}
-          </h1>
-          {description && (
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">{description}</p>
-          )}
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] break-words text-slate-900 dark:text-white">
+              {title}
+            </h1>
+            {description && (
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                {description}
+              </p>
+            )}
+          </div>
         </div>
+        {actions && <div className="flex shrink-0 flex-wrap gap-2 sm:pt-1.5">{actions}</div>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
     </div>
   );
 }

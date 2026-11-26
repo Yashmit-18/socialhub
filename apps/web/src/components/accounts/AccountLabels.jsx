@@ -112,7 +112,7 @@ export function StarButton({ account, size = 'sm', className }) {
         size === 'sm' ? 'h-7 w-7' : 'h-9 w-9',
         starred
           ? 'text-amber-500 hover:text-amber-600'
-          : 'text-slate-300 hover:text-amber-500 dark:text-slate-600 dark:hover:text-amber-400',
+          : 'text-slate-400 hover:text-amber-500 dark:text-slate-500 dark:hover:text-amber-400',
         className,
       )}
     >

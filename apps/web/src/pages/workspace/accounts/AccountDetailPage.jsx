@@ -12,7 +12,6 @@ import {
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
   CircleCheck,
   CircleX,
   Copy,
@@ -51,8 +50,10 @@ import { MetaSetupNotice } from '../../../components/accounts/MetaSetupNotice.js
 import { SyncRunList } from '../../../components/accounts/SyncRunList.jsx';
 import { PageHeader } from '../../../components/layout/AppShell.jsx';
 import { Avatar } from '../../../components/ui/Avatar.jsx';
+import { BackLink } from '../../../components/ui/BackLink.jsx';
 import { Badge, RoleBadge } from '../../../components/ui/Badge.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
+import { buttonClass } from '../../../components/ui/buttonClass.js';
 import { Card, CardBody, CardFooter, CardHeader } from '../../../components/ui/Card.jsx';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../components/ui/Feedback.jsx';
@@ -119,20 +120,12 @@ function pendingLabel(member, wanted) {
 
 /* ------------------------------------------------------------------ small pieces */
 
-function BackLink({ to, children }) {
-  return (
-    <Link
-      to={to}
-      className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-slate-900 dark:hover:text-white"
-    >
-      <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {children}
-    </Link>
-  );
-}
-
 function SectionTitle({ id, children }) {
   return (
-    <h3 id={id} className="text-xs font-semibold uppercase tracking-wider text-muted">
+    <h3
+      id={id}
+      className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400"
+    >
       {children}
     </h3>
   );
@@ -197,51 +190,49 @@ function Note({ id, children, className }) {
 
 /* --------------------------------------------------------------------- header */
 
-function AccountHeader({ account, actions, onEditLabels }) {
+function AccountHeader({ account, back, actions, onEditLabels }) {
   const health = account.health ?? {};
   const secondary = [account.username && `@${account.username}`, account.category]
     .filter(Boolean)
     .join(' · ');
+  const hasLabels = account.labels?.length > 0 || Boolean(onEditLabels);
   return (
-    <div className="flex items-start gap-4">
-      <div className="pt-1">
-        <AccountPicture account={account} size="lg" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <PageHeader
-          eyebrow={PLATFORM_LABELS[account.platform] ?? 'Social account'}
-          title={<span className="break-words">{account.name}</span>}
-          description={
-            <span className="flex flex-col gap-2">
-              {secondary && <span className="break-words">{secondary}</span>}
-              <span className="flex flex-wrap items-center gap-2">
-                <ConnectionStatusBadge
-                  status={health.connectionStatus}
-                  reason={health.connectionStatusReason}
-                />
-                <ReadinessBadge readiness={health.readiness} reasons={health.readinessReasons} />
-              </span>
-              {(account.labels?.length > 0 || onEditLabels) && (
-                <span className="flex flex-wrap items-center gap-2">
-                  <LabelChips labels={account.labels} max={20} size="sm" />
-                  {onEditLabels && (
-                    <button
-                      type="button"
-                      onClick={onEditLabels}
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-brand-600 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 dark:text-brand-300 dark:ring-brand-400/30 dark:hover:bg-brand-500/10"
-                    >
-                      <Tag className="h-3 w-3" aria-hidden="true" />
-                      {account.labels?.length ? 'Edit labels' : 'Add labels'}
-                    </button>
-                  )}
-                </span>
-              )}
-            </span>
-          }
-          actions={actions}
-        />
-      </div>
-    </div>
+    <PageHeader
+      back={back}
+      media={<AccountPicture account={account} size="lg" />}
+      eyebrow={PLATFORM_LABELS[account.platform] ?? 'Social account'}
+      title={<span className="break-words">{account.name}</span>}
+      description={
+        <span className="flex flex-col gap-2">
+          {secondary && <span className="break-words">{secondary}</span>}
+          <span className="flex flex-wrap items-center gap-2">
+            <ConnectionStatusBadge
+              status={health.connectionStatus}
+              reason={health.connectionStatusReason}
+            />
+            <ReadinessBadge readiness={health.readiness} reasons={health.readinessReasons} />
+            {hasLabels && (
+              <span
+                aria-hidden="true"
+                className="mx-1 hidden h-4 w-px bg-slate-200 sm:block dark:bg-white/10"
+              />
+            )}
+            <LabelChips labels={account.labels} max={20} size="sm" />
+            {onEditLabels && (
+              <button
+                type="button"
+                onClick={onEditLabels}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-brand-600 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 dark:text-brand-300 dark:ring-brand-400/30 dark:hover:bg-brand-500/10"
+              >
+                <Tag className="h-3 w-3" aria-hidden="true" />
+                {account.labels?.length ? 'Edit labels' : 'Add labels'}
+              </button>
+            )}
+          </span>
+        </span>
+      }
+      actions={actions}
+    />
   );
 }
 
@@ -253,14 +244,14 @@ function QuickActions({ account }) {
       <StarButton
         account={account}
         size="md"
-        className="rounded-xl border border-slate-200 dark:border-white/10"
+        className="rounded-lg border border-slate-200 bg-white shadow-[0_1px_2px_rgb(16_24_40/0.05)] dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none"
       />
       {url && (
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800"
+          className={buttonClass({ variant: 'secondary' })}
         >
           <ExternalLink className="h-4 w-4" aria-hidden="true" /> Open on{' '}
           {platformSiteName(account)}
@@ -270,7 +261,6 @@ function QuickActions({ account }) {
       <Button
         variant="secondary"
         size="icon"
-        className="h-10 w-10"
         aria-label="Copy Meta ID"
         title={`Copy Meta ID ${account.externalId}`}
         onClick={async () => {
@@ -316,7 +306,8 @@ function HeaderActions({ account, connection, sync, blocked, blockedId, loginUrl
           <LogIn className="h-4 w-4" aria-hidden="true" /> Reconnect login
         </Button>
       )}
-      <div className="flex items-center">
+      {/* Pushed right when the actions wrap on a phone, so the menu never opens off-screen. */}
+      <div className="ml-auto flex items-center">
         <Menu
           trigger={({ toggle, props }) => (
             <Button
@@ -401,7 +392,7 @@ function HealthCard({ account, provider }) {
       <CardHeader
         icon={HeartPulse}
         title="Health and publishing readiness"
-        description="Computed by SocialHub from the login's current permissions and Page role. It describes permissions only: nothing is published yet."
+        description="Computed by SocialHub from the login's current permissions and Page role. It describes permissions only: nothing is posted by this check."
       />
       <CardBody className="space-y-5">
         <div className="space-y-2.5">
@@ -726,9 +717,9 @@ function LinkedAccountsCard({ detail, provider, accountUrl, seesAll }) {
   );
 }
 
-function PermissionsCard({ detail, provider }) {
+function PermissionsCard({ detail }) {
   const checklistId = useId();
-  const { permissions, account, connection } = detail;
+  const { permissions, connection } = detail;
 
   if (!permissions) {
     return (
@@ -747,7 +738,6 @@ function PermissionsCard({ detail, provider }) {
   const required = permissions.requiredForPublishing ?? [];
   const missing = new Set(permissions.missing ?? []);
   const otherGranted = (permissions.granted ?? []).filter((scope) => !required.includes(scope));
-  const tasks = permissions.tasks ?? [];
   const loginName = connection?.displayName ?? 'this login';
 
   return (
@@ -811,22 +801,6 @@ function PermissionsCard({ detail, provider }) {
             />
           </div>
         )}
-
-        <div className="space-y-2">
-          <SectionTitle>Page role</SectionTitle>
-          <div>
-            <CreateContentBadge account={account} />
-          </div>
-          {isInstagramDirectProvider(provider) ? (
-            <p className="text-xs text-muted">
-              {loginFlowName(provider)} accounts are not managed through a Facebook Page role.
-            </p>
-          ) : tasks.length > 0 ? (
-            <TaskBadges tasks={tasks} />
-          ) : (
-            <p className="text-xs text-muted">Meta has not reported this login's Page tasks.</p>
-          )}
-        </div>
       </CardBody>
     </Card>
   );
@@ -962,7 +936,7 @@ function TeamAccessCard({ account, members }) {
                 >
                   <input
                     type="checkbox"
-                    className="h-4 w-4 shrink-0 rounded border-slate-300 accent-brand-600 disabled:cursor-not-allowed dark:border-white/20"
+                    className="h-4 w-4 shrink-0 disabled:cursor-not-allowed checkbox"
                     checked={checked}
                     disabled={!editable}
                     onChange={() => toggle(member)}
@@ -1046,7 +1020,7 @@ function DetailSkeleton() {
       <p role="status" className="sr-only">
         Loading account…
       </p>
-      <div className="mb-8 flex items-start gap-4">
+      <div className="mb-6 flex items-start gap-4">
         <Skeleton className="h-14 w-14 shrink-0 rounded-xl" />
         <div className="min-w-0 flex-1 space-y-3 pt-1">
           <Skeleton className="h-3 w-28" />
@@ -1057,22 +1031,29 @@ function DetailSkeleton() {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        {[4, 6, 3, 2].map((rows, card) => (
-          <Card key={card} className="p-5 sm:p-6">
-            <div className="flex items-start gap-3">
-              <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <Skeleton className="h-4 w-40 max-w-full" />
-                <Skeleton className="h-3 w-56 max-w-full" />
-              </div>
-            </div>
-            <div className="mt-5 space-y-3">
-              {Array.from({ length: rows }, (_, row) => (
-                <Skeleton key={row} className="h-4 w-full" />
-              ))}
-            </div>
-          </Card>
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+        {[
+          ['lg:col-span-3', [4, 6]],
+          ['lg:col-span-2', [3, 2]],
+        ].map(([span, cards]) => (
+          <div key={span} className={cn('min-w-0 space-y-6', span)}>
+            {cards.map((rows, card) => (
+              <Card key={card} className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <Skeleton className="h-8 w-8 shrink-0 rounded-lg" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <Skeleton className="h-4 w-40 max-w-full" />
+                    <Skeleton className="h-3 w-56 max-w-full" />
+                  </div>
+                </div>
+                <div className="mt-5 space-y-3">
+                  {Array.from({ length: rows }, (_, row) => (
+                    <Skeleton key={row} className="h-4 w-full" />
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </div>
         ))}
       </div>
     </div>
@@ -1126,9 +1107,9 @@ function AccountView({ detail }) {
 
   return (
     <>
-      <BackLink to={tab.to}>{tab.label}</BackLink>
       <AccountHeader
         account={account}
+        back={{ to: tab.to, label: tab.label }}
         onEditLabels={manage ? () => setLabelsOpen(true) : undefined}
         actions={
           <>
@@ -1157,32 +1138,44 @@ function AccountView({ detail }) {
           </Note>
         ))}
 
-      {/* grid-cols-1 (minmax(0, 1fr)) keeps long unbreakable content from widening the column. */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        <HealthCard account={account} provider={provider} />
-        <AccountNotesCard accountId={account.id} notes={detail.notes} canEdit={manage} />
-        <InfoCard account={account} provider={provider} />
-        <LoginCard
-          detail={detail}
-          loginUrl={loginUrl}
-          loginsUrl={manage ? `${base}/logins` : null}
-        />
-        <LinkedAccountsCard
-          detail={detail}
-          provider={provider}
-          accountUrl={accountUrl}
-          seesAll={seesEveryAccount(membership)}
-        />
-        <PermissionsCard detail={detail} provider={provider} />
-        {Array.isArray(detail.syncHistory) && (
-          <SyncHistoryCard runs={detail.syncHistory} connection={connection} loginUrl={loginUrl} />
-        )}
-        {Array.isArray(detail.activity) && (
-          <ActivityCard items={detail.activity} activityUrl={`/w/${workspace.slug}/activity`} />
-        )}
-        {Array.isArray(detail.access) && (
-          <TeamAccessCard account={account} members={detail.access} />
-        )}
+      {/*
+        Two independent stacks, so no card waits for its neighbour's height. Main (3/5): what
+        this account is and who may use it. Side (2/5): its context. On a phone the main stack
+        comes first. min-w-0 keeps long unbreakable content from widening a column.
+      */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+        <div className="min-w-0 space-y-6 lg:col-span-3">
+          <HealthCard account={account} provider={provider} />
+          <InfoCard account={account} provider={provider} />
+          <PermissionsCard detail={detail} />
+          {Array.isArray(detail.access) && (
+            <TeamAccessCard account={account} members={detail.access} />
+          )}
+        </div>
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <LoginCard
+            detail={detail}
+            loginUrl={loginUrl}
+            loginsUrl={manage ? `${base}/logins` : null}
+          />
+          <LinkedAccountsCard
+            detail={detail}
+            provider={provider}
+            accountUrl={accountUrl}
+            seesAll={seesEveryAccount(membership)}
+          />
+          <AccountNotesCard accountId={account.id} notes={detail.notes} canEdit={manage} />
+          {Array.isArray(detail.syncHistory) && (
+            <SyncHistoryCard
+              runs={detail.syncHistory}
+              connection={connection}
+              loginUrl={loginUrl}
+            />
+          )}
+          {Array.isArray(detail.activity) && (
+            <ActivityCard items={detail.activity} activityUrl={`/w/${workspace.slug}/activity`} />
+          )}
+        </div>
       </div>
 
       <ConfirmDialog

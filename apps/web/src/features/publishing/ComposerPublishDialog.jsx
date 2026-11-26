@@ -1,5 +1,5 @@
 import { PUBLISHING_LIMITS, PUBLISHING_MODES, SOCIAL_PLATFORMS } from '@socialhub/shared';
-import { CircleX, FlaskConical, TriangleAlert, UsersRound } from 'lucide-react';
+import { CircleX, Film, FlaskConical, TriangleAlert, UsersRound } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button.jsx';
@@ -13,10 +13,20 @@ import { PlatformIcon } from './PublishingBadges.jsx';
 import { RealPostConfirmation } from './RealPostConfirmation.jsx';
 import { WhenPicker } from './ScheduleFields.jsx';
 import { Notice, StatusBanner } from './StatusBanner.jsx';
-import { createdMessage, errorMessages, platformLabel, statusNotices } from './labels.js';
+import {
+  createdMessage,
+  errorMessages,
+  platformLabel,
+  postsCreatedMessage,
+  statusNotices,
+} from './labels.js';
 import { defaultTimeZone, resolveSchedule, suggestedSchedule } from './schedule.js';
 import { useIdempotencyKeys } from './useIdempotencyKeys.js';
 import { useCreatePublishJob, usePublishingStatus } from './usePublishing.js';
+import { separateVideoPosts } from './videoPosts.js';
+
+/** Answers to creating one of several posts that mean that very post is already on its way. */
+const ALREADY_ON_ITS_WAY = new Set(['IN_PROGRESS', 'ALREADY_PUBLISHED']);
 
 function ProblemList({ title, items, tone }) {
   if (!items.length) return null;
@@ -55,7 +65,7 @@ function GroupSharingOption({ pageCount, groupCount, checked, disabled, onChange
     <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-sm has-[:disabled]:cursor-not-allowed dark:border-white/10">
       <input
         type="checkbox"
-        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-brand-600"
+        className="mt-0.5 h-4 w-4 shrink-0 checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
@@ -67,9 +77,10 @@ function GroupSharingOption({ pageCount, groupCount, checked, disabled, onChange
         </span>
         <span className="mt-0.5 block text-xs text-muted">
           {pageCount === 1 ? 'This Page is' : 'These Pages are'} in {groupCount}{' '}
-          {groupCount === 1 ? 'group' : 'groups'}. Once the post is live, each group gets a
-          ready-to-share task under Group sharing. Facebook doesn’t let apps post in groups, so you
-          post each one yourself.
+          {groupCount === 1 ? 'group' : 'groups'}. Once the post is live, each matching group gets a
+          ready-to-share task under Group sharing: a group matches when one of its tags is in the
+          post’s hashtags or keywords, or when it has no tags. Facebook doesn’t let apps post in
+          groups, so you post each one yourself.
         </span>
       </span>
     </label>
@@ -87,6 +98,10 @@ function GroupSharingOption({ pageCount, groupCount, checked, disabled, onChange
  *    HTTPS, which local storage cannot offer, so they block; the server refuses them too.
  *  - `prepare()`: saves the draft so the server publishes exactly what is on screen, and
  *    resolves to its id.
+ *  - `videoPosts`: the composer's one-post-per-video helper (composer/hooks/useVideoPosts.js).
+ *    With several videos for a Facebook Page (videoPosts.js), each video is published as its
+ *    own post: one job per video, created one after the other. A stop part-way through says
+ *    how many were created, and publishing again carries on with the rest.
  *
  * Mounted only while open. Nothing is shown as sent before the server has answered, and a
  * simulated job is never described as published.
@@ -104,6 +119,7 @@ export function ComposerPublishDialog({
   media = [],
   captions = [],
   prepare,
+  videoPosts = null,
   onClose,
   onCreated,
 }) {
@@ -119,6 +135,13 @@ export function ComposerPublishDialog({
   const [step, setStep] = useState('idle'); // idle | saving | sending
   const [prepareError, setPrepareError] = useState(null);
   const busy = useRef(false);
+  // One post per video (several videos for a Facebook Page): how many, and how many are left.
+  const postCount = videoPosts ? separateVideoPosts(accounts, media) : 0;
+  const splitting = postCount > 1;
+  const postsLeft = splitting && videoPosts.pending > 0 ? videoPosts.pending : postCount;
+  const [progress, setProgress] = useState(null); // { done, total } while creating them
+  const [stopped, setStopped] = useState(null); // { created, total, label } after a refusal
+  const [allSent, setAllSent] = useState(false); // every one was already sent from here
 
   const mode = status.data?.mode;
   const simulated = mode === PUBLISHING_MODES.SIMULATED;
@@ -183,7 +206,7 @@ export function ComposerPublishDialog({
       : []),
   ];
   const conflict = create.error?.status === 409 ? create.error : null;
-  const alreadyPublished = conflict?.details?.reason === 'ALREADY_PUBLISHED';
+  const alreadyPublished = conflict?.details?.reason === 'ALREADY_PUBLISHED' || allSent;
   const conflictAccounts = conflict?.details?.accounts ?? [];
   const canSubmit =
     !status.isPending &&
@@ -191,6 +214,135 @@ export function ComposerPublishDialog({
     blocking.length === 0 &&
     step === 'idle' &&
     (!live || confirmedLive);
+
+  /**
+   * Sharing tasks for the real Facebook posts just created, when asked for. Not awaited: the
+   * posts are on their way whatever happens here. The promise (unlike mutate callbacks) still
+   * settles after this dialog has closed.
+   */
+  const setUpGroupSharing = (jobs) => {
+    const real = jobs.filter((job) => job?.id && job.simulated === false);
+    if (!offerGroups || !shareInGroups || real.length === 0) return;
+    Promise.all(real.map((job) => autoShare.mutateAsync(job.id)))
+      .then((results) => {
+        const groups = autoShareMessage({
+          tasksCreated: results.reduce((sum, result) => sum + (result?.tasksCreated ?? 0), 0),
+          pagesWaiting: results.reduce((sum, result) => sum + (result?.pagesWaiting ?? 0), 0),
+        });
+        toast.success(groups.title, { description: groups.description });
+      })
+      .catch((err) =>
+        toast.error('Group sharing could not be set up', {
+          description: `${err?.message ?? 'Please try again.'} You can set it up later from the post’s details.`,
+        }),
+      );
+  };
+
+  /** The post as it is: one job for the draft. */
+  const sendPost = async (republish) => {
+    setStep('saving');
+    let contentPackageId;
+    try {
+      contentPackageId = await prepare();
+    } catch (err) {
+      setPrepareError(err);
+      return;
+    }
+    setStep('sending');
+    const scheduledAt = resolved?.instant.toISOString();
+    const request = {
+      contentPackageId,
+      socialAccountIds: accounts.map((account) => account.id),
+      scheduledAt,
+      republish,
+    };
+    try {
+      const { publishJob, created } = await create.mutateAsync({
+        ...request,
+        // Outside `request`: the key stays the same whether or not the post is confirmed.
+        idempotencyKey: keyFor(request),
+        // Only when the person ticked "This creates a REAL public post". The server refuses
+        // a real post without it, also when this screen still believed it was simulated.
+        confirmRealPost: confirmedLive,
+      });
+      const message = createdMessage({
+        simulated: publishJob?.simulated ?? simulated,
+        scheduledAt,
+        timeZone: schedule.timeZone,
+        created,
+      });
+      if (created === false) toast.info(message.title);
+      else toast.success(message.title, { description: message.description });
+      setUpGroupSharing([publishJob]);
+      onCreated?.(publishJob);
+    } catch {
+      // Shown in the dialog from create.error.
+    }
+  };
+
+  /**
+   * One post per video: one job for each video's draft copy, one after the other. Posts already
+   * sent from this composer are skipped (unless `republish`), so after a refusal, publishing
+   * again carries on with the rest.
+   */
+  const sendVideoPosts = async (republish) => {
+    setStep('saving');
+    let posts;
+    try {
+      // The team draft keeps every video, as on screen; each post gets a one-video copy.
+      await prepare();
+      posts = await videoPosts.prepare({ again: republish });
+    } catch (err) {
+      setPrepareError(err);
+      return;
+    }
+    if (posts.length === 0) {
+      setAllSent(true);
+      return;
+    }
+    setStep('sending');
+    const scheduledAt = resolved?.instant.toISOString();
+    const socialAccountIds = accounts.map((account) => account.id);
+    const jobs = [];
+    for (const [index, post] of posts.entries()) {
+      setProgress({ done: index, total: posts.length });
+      const request = {
+        contentPackageId: post.contentPackageId,
+        socialAccountIds,
+        scheduledAt,
+        republish,
+      };
+      try {
+        const { publishJob } = await create.mutateAsync({
+          ...request,
+          idempotencyKey: keyFor(request),
+          confirmRealPost: confirmedLive,
+        });
+        if (publishJob) jobs.push(publishJob);
+        videoPosts.markSent(post.key);
+      } catch (err) {
+        // This very post is already on its way (an earlier answer did not arrive).
+        if (err?.status === 409 && ALREADY_ON_ITS_WAY.has(err?.details?.reason)) {
+          videoPosts.markSent(post.key);
+          create.reset();
+          continue;
+        }
+        // The rest are not sent: the person sees why first (shown from create.error).
+        setStopped({ created: index, total: posts.length, label: post.label });
+        return;
+      }
+    }
+    const message = postsCreatedMessage({
+      simulated: jobs[0]?.simulated ?? simulated,
+      scheduledAt,
+      timeZone: schedule.timeZone,
+      count: posts.length,
+    });
+    toast.success(message.title, { description: message.description });
+    setUpGroupSharing(jobs);
+    // Several jobs: the Publishing page lists them; there is no single post to show.
+    onCreated?.(null);
+  };
 
   const submit = async (republish = false) => {
     if (busy.current || !canSubmit) return;
@@ -200,74 +352,35 @@ export function ComposerPublishDialog({
     }
     busy.current = true;
     setPrepareError(null);
+    setStopped(null);
+    setAllSent(false);
     create.reset();
     try {
-      setStep('saving');
-      let contentPackageId;
-      try {
-        contentPackageId = await prepare();
-      } catch (err) {
-        setPrepareError(err);
-        return;
-      }
-      setStep('sending');
-      const scheduledAt = resolved?.instant.toISOString();
-      const request = {
-        contentPackageId,
-        socialAccountIds: accounts.map((account) => account.id),
-        scheduledAt,
-        republish,
-      };
-      try {
-        const { publishJob, created } = await create.mutateAsync({
-          ...request,
-          // Outside `request`: the key stays the same whether or not the post is confirmed.
-          idempotencyKey: keyFor(request),
-          // Only when the person ticked "This creates a REAL public post". The server refuses
-          // a real post without it, also when this screen still believed it was simulated.
-          confirmRealPost: confirmedLive,
-        });
-        const message = createdMessage({
-          simulated: publishJob?.simulated ?? simulated,
-          scheduledAt,
-          timeZone: schedule.timeZone,
-          created,
-        });
-        if (created === false) toast.info(message.title);
-        else toast.success(message.title, { description: message.description });
-        // Not awaited: the post is on its way whatever happens here. The promise (unlike
-        // mutate callbacks) still settles after this dialog has closed.
-        if (offerGroups && shareInGroups && publishJob?.id && publishJob.simulated === false) {
-          autoShare
-            .mutateAsync(publishJob.id)
-            .then((result) => {
-              const groups = autoShareMessage(result);
-              toast.success(groups.title, { description: groups.description });
-            })
-            .catch((err) =>
-              toast.error('Group sharing could not be set up', {
-                description: `${err?.message ?? 'Please try again.'} You can set it up later from the post’s details.`,
-              }),
-            );
-        }
-        onCreated?.(publishJob);
-      } catch {
-        // Shown in the dialog from create.error.
-      }
+      await (splitting ? sendVideoPosts(republish) : sendPost(republish));
     } finally {
       busy.current = false;
       setStep('idle');
+      setProgress(null);
     }
   };
 
-  const confirmLabel =
-    when === 'schedule'
+  const postsLabel = `${postsLeft} ${postsLeft === 1 ? 'post' : 'posts'}`;
+  const confirmLabel = splitting
+    ? when === 'schedule'
+      ? simulated
+        ? `Schedule ${postsLeft === 1 ? '1 simulation' : `${postsLeft} simulations`}`
+        : `Schedule ${postsLabel}`
+      : simulated
+        ? `Simulate ${postsLabel}`
+        : `Publish ${postsLabel}`
+    : when === 'schedule'
       ? simulated
         ? 'Schedule simulation'
         : 'Schedule post'
       : simulated
         ? 'Start simulation'
         : 'Publish now';
+  const sendingLabel = progress ? `Sending ${progress.done + 1} of ${progress.total}…` : 'Sending…';
 
   return (
     <Modal
@@ -276,7 +389,9 @@ export function ComposerPublishDialog({
       dismissible={step === 'idle'}
       size="lg"
       title={simulated ? 'Publish (simulation)' : 'Publish post'}
-      description={`${accounts.length} ${accounts.length === 1 ? 'account' : 'accounts'} selected`}
+      description={`${accounts.length} ${accounts.length === 1 ? 'account' : 'accounts'} selected${
+        splitting ? ` · ${postCount} posts, one per video` : ''
+      }`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={step !== 'idle'}>
@@ -297,7 +412,11 @@ export function ComposerPublishDialog({
               disabled={!canSubmit || Boolean(scheduleTouched && resolved?.error)}
               onClick={() => submit(false)}
             >
-              {step === 'saving' ? 'Saving draft…' : step === 'sending' ? 'Sending…' : confirmLabel}
+              {step === 'saving'
+                ? 'Saving draft…'
+                : step === 'sending'
+                  ? sendingLabel
+                  : confirmLabel}
             </Button>
           )}
         </>
@@ -328,6 +447,15 @@ export function ComposerPublishDialog({
               notices={statusNotices(status.data).filter((notice) => notice.key !== 'simulated')}
             />
           </>
+        )}
+
+        {splitting && (
+          <Notice
+            tone="info"
+            icon={Film}
+            title={`${postCount} videos, so ${postCount} posts.`}
+            text="Facebook takes one video per post, so each video is published as its own post, with the same text, on every account below."
+          />
         )}
 
         <PostPreview media={media} captions={captions} />
@@ -372,11 +500,13 @@ export function ComposerPublishDialog({
           onModeChange={(next) => {
             setWhen(next);
             create.reset();
+            setAllSent(false);
           }}
           schedule={schedule}
           onScheduleChange={(next) => {
             setSchedule(next);
             create.reset();
+            setAllSent(false);
           }}
           scheduleError={scheduleTouched ? resolved?.error : null}
           now={new Date(now)}
@@ -399,6 +529,7 @@ export function ComposerPublishDialog({
           <RealPostConfirmation
             accountNames={accounts.map((account) => account.name)}
             scheduled={when === 'schedule'}
+            postCount={splitting ? postsLeft : 1}
             checked={confirmedLive}
             disabled={step !== 'idle'}
             onChange={(confirmed) => setConfirmation({ confirmed, workspaceId, mode, subject })}
@@ -432,11 +563,28 @@ export function ComposerPublishDialog({
             <p className="mt-0.5 break-words">{prepareError.message}</p>
           </div>
         )}
+        {allSent && (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+          >
+            <p>These videos were already sent from here, one post each.</p>
+            <p className="mt-1">
+              If you publish again, these accounts will get the same posts a second time.
+            </p>
+          </div>
+        )}
         {create.error && (
           <div
             role="alert"
             className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
           >
+            {stopped && (
+              <p className="mb-1 font-semibold">
+                {stopped.created} of {stopped.total} posts {stopped.created === 1 ? 'was' : 'were'}{' '}
+                created. The post for “{stopped.label}” was not, and the rest were not sent:
+              </p>
+            )}
             {errorMessages(create.error).map((message) => (
               <p key={message} className="break-words">
                 {message}

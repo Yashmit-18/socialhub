@@ -11,13 +11,11 @@ import { FacebookIcon } from '../../../components/ui/Brand.jsx';
 /* ------------------------------------------------------------------ Pages tab */
 
 const PAGE_COLUMNS = [
-  'account',
-  'pageId',
+  { id: 'account', secondary: 'pageId' },
   'identity',
   'followers',
-  'createContent',
   'readiness',
-  'status',
+  { id: 'status', pageRole: true },
   'lastSync',
 ];
 const PAGE_PROVIDERS = [SOCIAL_PROVIDERS.FACEBOOK_LOGIN];

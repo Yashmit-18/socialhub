@@ -1,15 +1,22 @@
 import { DISCOVERY_STATES, PERMISSIONS, SOCIAL_PLATFORMS } from '@socialhub/shared';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft, Check, Lock, RefreshCw } from 'lucide-react';
+import { Check, Loader2, Lock, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { AccountPicture } from '../../components/accounts/AccountBadges.jsx';
 import { PageHeader } from '../../components/layout/AppShell.jsx';
+import { BackLink } from '../../components/ui/BackLink.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
-import { FacebookIcon, InstagramIcon } from '../../components/ui/Brand.jsx';
 import { Button } from '../../components/ui/Button.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { Card, CardFooter, CardHeader } from '../../components/ui/Card.jsx';
-import { EmptyState, ErrorState, PageLoader } from '../../components/ui/Feedback.jsx';
+import {
+  EmptyState,
+  ErrorState,
+  RestrictedState,
+  Skeleton,
+} from '../../components/ui/Feedback.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { useInvalidateAccounts } from '../../hooks/useAccountActions.js';
 import { useStartAuthorization } from '../../hooks/useStartAuthorization.js';
@@ -54,33 +61,13 @@ function CandidateRow({ candidate, checked, onToggle }) {
       >
         <input
           type="checkbox"
-          className="h-4 w-4 shrink-0 rounded border-slate-300 accent-brand-600"
+          className="h-4 w-4 shrink-0 checkbox"
           checked={checked}
           disabled={locked}
           onChange={onToggle}
           aria-label={`Add ${candidate.name}`}
         />
-        {candidate.pictureUrl ? (
-          <img
-            src={candidate.pictureUrl}
-            alt=""
-            className="h-9 w-9 shrink-0 rounded-lg object-cover"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <span
-            className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white',
-              isFacebook ? 'bg-[#1877F2]' : 'bg-gradient-to-br from-fuchsia-500 to-amber-400',
-            )}
-          >
-            {isFacebook ? (
-              <FacebookIcon className="h-4 w-4" />
-            ) : (
-              <InstagramIcon className="h-4 w-4" />
-            )}
-          </span>
-        )}
+        <AccountPicture account={candidate} size="sm" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{candidate.name}</span>
           <span className="block truncate text-xs text-muted">
@@ -143,22 +130,42 @@ export default function SelectAccountsPage() {
 
   if (!can(PERMISSIONS.SOCIAL_CONNECTIONS_MANAGE)) {
     return (
-      <Card>
-        <EmptyState
-          icon={Lock}
-          title="Restricted"
-          description="Only workspace owners and admins can add social accounts."
-        />
-      </Card>
+      <RestrictedState
+        title="Restricted"
+        description="Only workspace owners and admins can add social accounts."
+      />
     );
   }
-  if (isPending) return <PageLoader label="Asking Meta which accounts this login manages…" />;
+  // The page frame stays while Meta is asked: the way back, the status and the list's shape.
+  if (isPending) {
+    return (
+      <>
+        <BackLink to={accountsUrl}>Logins</BackLink>
+        <p role="status" className="mb-4 flex items-center gap-2 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Asking Meta which accounts this login manages…
+        </p>
+        <Card aria-hidden="true" className="divide-y divide-slate-100 dark:divide-white/5">
+          {[0, 1, 2, 3].map((row) => (
+            <div key={row} className="flex items-center gap-4 px-5 py-3.5 sm:px-6">
+              <Skeleton className="h-4 w-4" />
+              <Skeleton className="h-8 w-8 rounded-xl" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-40 max-w-full" />
+                <Skeleton className="h-3 w-56 max-w-full" />
+              </div>
+            </div>
+          ))}
+        </Card>
+      </>
+    );
+  }
 
   if (error) {
     const reconnect = error.code === 'META_RECONNECT_REQUIRED';
     return (
       <>
-        <BackLink to={accountsUrl} />
+        <BackLink to={accountsUrl}>Logins</BackLink>
         <Card>
           <ErrorState
             title={
@@ -197,8 +204,8 @@ export default function SelectAccountsPage() {
 
   return (
     <>
-      <BackLink to={accountsUrl} />
       <PageHeader
+        back={{ to: accountsUrl, label: 'Logins' }}
         title="Choose accounts to add"
         description={`Accounts that ${connection.displayName ?? 'this login'} can manage. Only the ones you select are added to ${workspace.name}.`}
         actions={
@@ -211,12 +218,9 @@ export default function SelectAccountsPage() {
       {warnings.length > 0 && (
         <div className="mb-6 space-y-2" role="status">
           {warnings.map((w) => (
-            <p
-              key={w}
-              className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {w}
-            </p>
+            <Callout key={w} tone="warning">
+              {w}
+            </Callout>
           ))}
         </div>
       )}
@@ -237,7 +241,6 @@ export default function SelectAccountsPage() {
         <Card>
           <CardHeader
             title={`${candidates.length} account${candidates.length === 1 ? '' : 's'} found`}
-            description={`${selected.size} selected`}
             action={
               selectable.length > 0 && (
                 <Button
@@ -254,7 +257,7 @@ export default function SelectAccountsPage() {
           />
           {groups.map(([title, list]) => (
             <div key={title} className="mt-4">
-              <p className="border-t border-slate-100 px-5 pb-1 pt-3 text-xs font-semibold uppercase tracking-wider text-slate-400 sm:px-6 dark:border-white/5">
+              <p className="border-t border-slate-100 px-5 pt-3 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase sm:px-6 dark:border-white/5 dark:text-slate-400">
                 {title}
               </p>
               <ul className="divide-y divide-slate-100 dark:divide-white/5">
@@ -269,7 +272,11 @@ export default function SelectAccountsPage() {
               </ul>
             </div>
           ))}
-          <CardFooter>
+          {/* Sticks to the window's bottom while the list is long, with the count beside it. */}
+          <CardFooter className="sticky bottom-0 z-10 bg-[color-mix(in_oklab,var(--color-slate-50)_60%,white)] dark:bg-[color-mix(in_oklab,white_2%,var(--color-slate-900))]">
+            <p className="mr-auto text-xs text-muted" aria-live="polite">
+              {selected.size} selected
+            </p>
             <Button variant="secondary" onClick={() => navigate(accountsUrl)}>
               Cancel
             </Button>
@@ -291,17 +298,6 @@ export default function SelectAccountsPage() {
         </Card>
       )}
     </>
-  );
-}
-
-function BackLink({ to }) {
-  return (
-    <Link
-      to={to}
-      className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-slate-900 dark:hover:text-white"
-    >
-      <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Logins
-    </Link>
   );
 }
 

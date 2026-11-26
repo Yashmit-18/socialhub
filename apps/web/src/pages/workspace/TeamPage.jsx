@@ -35,7 +35,8 @@ import { Badge, RoleBadge } from '../../components/ui/Badge.jsx';
 import { Button, ButtonLink } from '../../components/ui/Button.jsx';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { Card, CardHeader } from '../../components/ui/Card.jsx';
-import { ErrorState, PageLoader } from '../../components/ui/Feedback.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
+import { ErrorState, RowsSkeleton } from '../../components/ui/Feedback.jsx';
 import { FormError, Input, Select } from '../../components/ui/Field.jsx';
 import { Menu, MenuItem, MenuSeparator } from '../../components/ui/Menu.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
@@ -44,7 +45,7 @@ import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { useApiForm } from '../../hooks/useApiForm.js';
 import { api } from '../../lib/api.js';
 import { keys, useInvitations, useMembers, useSocialAccounts } from '../../lib/queries.js';
-import { cn, formatDate, timeAgo } from '../../lib/utils.js';
+import { formatDate, timeAgo } from '../../lib/utils.js';
 import { AccessSummary, MemberAccessDialog } from '../../components/accounts/MemberAccess.jsx';
 
 const ROLE_ORDER = { OWNER: 0, ADMIN: 1, EDITOR: 2, VIEWER: 3 };
@@ -119,19 +120,11 @@ function InviteLinkModal({ result, onClose }) {
       {result && (
         <div className="space-y-4">
           <CopyField value={result.inviteUrl} />
-          <p
-            className={cn(
-              'flex items-start gap-2 rounded-xl px-3.5 py-3 text-sm',
-              result.emailDelivered
-                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-                : 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300',
-            )}
-          >
-            <Mail className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <Callout tone={result.emailDelivered ? 'success' : 'warning'} icon={Mail}>
             {result.emailDelivered
               ? 'We also emailed this invitation.'
               : 'Email delivery is not configured on this server, so no email was sent. Share the link above directly.'}
-          </p>
+          </Callout>
           <p className="text-xs text-muted">
             The link works once, only for {result.invitation.email}, and expires{' '}
             {formatDate(result.invitation.expiresAt)}. For security it is shown only now — resending
@@ -226,9 +219,9 @@ function InviteDialog({ onClose, onInvited }) {
             ))}
           </Select>
           {selectedRole && (
-            <p className="rounded-xl bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-muted dark:bg-white/[0.03]">
+            <Callout tone="neutral" size="sm" icon={null}>
               {ROLE_DESCRIPTIONS[selectedRole]}
-            </p>
+            </Callout>
           )}
         </form>
         {/* Outside the <form>: pressing Enter in the account search must not send the invitation. */}
@@ -263,10 +256,9 @@ function InviteDialog({ onClose, onInvited }) {
                 subject="they"
               />
             ) : (
-              <p className="flex items-start gap-2 rounded-xl bg-brand-50 px-3.5 py-3 text-sm text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <Callout tone="info" icon={ShieldCheck}>
                 Admins can use every social account in the workspace.
-              </p>
+              </Callout>
             )}
           </section>
         )}
@@ -293,41 +285,17 @@ function MemberRow({ member, isSelf, onEditAccess, onRemove }) {
   });
 
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4 sm:px-6">
+    // A phone gets two aligned lines (who, then access and role); from md one row of columns.
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5 px-5 py-4 sm:px-6 md:flex md:gap-4">
       <Avatar name={member.user.name} seed={member.user.id} size="md" />
-      <div className="min-w-0 flex-1 basis-48">
+      <div className="min-w-0 md:flex-1">
         <p className="truncate text-sm font-semibold">
           {member.user.name}
           {isSelf && <span className="ml-2 text-xs font-normal text-muted">(you)</span>}
         </p>
         <p className="truncate text-xs text-muted">{member.user.email}</p>
       </div>
-      <div className="hidden w-32 text-xs text-muted md:block">
-        <AccessSummary role={member.role} accountAccess={member.accountAccess} />
-      </div>
-      <div className="hidden w-28 text-xs text-muted sm:block" title={formatDate(member.joinedAt)}>
-        Joined {timeAgo(member.joinedAt)}
-      </div>
-      <div className="w-32">
-        {manageable && assignable.length > 1 ? (
-          <select
-            aria-label={`Role for ${member.user.name}`}
-            value={member.role}
-            disabled={changeRole.isPending}
-            onChange={(e) => changeRole.mutate(e.target.value)}
-            className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium dark:border-white/10 dark:bg-slate-900"
-          >
-            {[...new Set([member.role, ...assignable])].map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <RoleBadge role={member.role} />
-        )}
-      </div>
-      <div className="w-9">
+      <div className="md:order-last md:w-9">
         {manageable && (
           <Menu
             trigger={({ toggle, props }) => (
@@ -373,6 +341,42 @@ function MemberRow({ member, isSelf, onEditAccess, onRemove }) {
           </Menu>
         )}
       </div>
+      {/* md:contents dissolves this wrapper into the row. It has no role, label or handler, so
+          nothing is lost from the accessibility tree; keep it that way. */}
+      <div className="col-span-2 col-start-2 flex flex-wrap items-center gap-x-4 gap-y-2 md:contents">
+        <div className="w-28 text-xs text-muted md:w-32">
+          <AccessSummary role={member.role} accountAccess={member.accountAccess} />
+        </div>
+        <div
+          className="hidden text-xs text-muted sm:block md:w-28"
+          title={formatDate(member.joinedAt)}
+        >
+          Joined {timeAgo(member.joinedAt)}
+        </div>
+        <div className="w-32">
+          {manageable && assignable.length > 1 ? (
+            <select
+              aria-label={`Role for ${member.user.name}`}
+              title={ROLE_DESCRIPTIONS[member.role]}
+              value={member.role}
+              disabled={changeRole.isPending}
+              aria-busy={changeRole.isPending || undefined}
+              onChange={(e) => changeRole.mutate(e.target.value)}
+              className="select-chevron h-9 w-full rounded-xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-medium text-slate-700 shadow-xs transition focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 focus:outline-none disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200"
+            >
+              {[...new Set([member.role, ...assignable])].map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span title={ROLE_DESCRIPTIONS[member.role]}>
+              <RoleBadge role={member.role} />
+            </span>
+          )}
+        </div>
+      </div>
     </li>
   );
 }
@@ -404,7 +408,7 @@ function PendingInvitations({ onLink }) {
   if (isPending || data.length === 0) return null;
 
   return (
-    <Card className="mt-6">
+    <Card>
       <CardHeader
         icon={Mail}
         title="Pending invitations"
@@ -417,12 +421,12 @@ function PendingInvitations({ onLink }) {
           return (
             <li
               key={inv.id}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5 sm:px-6"
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-5 py-3.5 sm:px-6 md:flex"
             >
               <span className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-dashed border-slate-200 text-slate-400 dark:border-white/10">
                 <Mail className="h-4 w-4" aria-hidden="true" />
               </span>
-              <div className="min-w-0 flex-1 basis-48">
+              <div className="min-w-0 md:flex-1">
                 <p className="truncate text-sm font-medium">{inv.email}</p>
                 <p className="text-xs text-muted">
                   Invited by {inv.invitedBy?.name ?? 'a former member'} ·{' '}
@@ -431,29 +435,32 @@ function PendingInvitations({ onLink }) {
                 {/* What they will be able to use once they accept. */}
                 <AccessSummary role={inv.role} accountAccess={inv.accountAccess} className="mt-1" />
               </div>
-              {expired ? <Badge tone="warning">Expired</Badge> : <RoleBadge role={inv.role} />}
-              {manageable && (
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    loading={resend.isPending && resend.variables === inv.id}
-                    onClick={() => resend.mutate(inv.id)}
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />{' '}
-                    {expired ? 'Renew' : 'Resend'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"
-                    loading={revoke.isPending && revoke.variables === inv.id}
-                    onClick={() => revoke.mutate(inv.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Revoke
-                  </Button>
-                </div>
-              )}
+              {/* Dissolves into the row from md (no role, label or handler on it). */}
+              <div className="col-start-2 flex flex-wrap items-center gap-x-3 gap-y-2 md:contents">
+                {expired ? <Badge tone="warning">Expired</Badge> : <RoleBadge role={inv.role} />}
+                {manageable && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={resend.isPending && resend.variables === inv.id}
+                      onClick={() => resend.mutate(inv.id)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />{' '}
+                      {expired ? 'Renew' : 'Resend'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"
+                      loading={revoke.isPending && revoke.variables === inv.id}
+                      onClick={() => revoke.mutate(inv.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Revoke
+                    </Button>
+                  </div>
+                )}
+              </div>
             </li>
           );
         })}
@@ -507,8 +514,6 @@ export default function TeamPage() {
     },
   });
 
-  if (isPending) return <PageLoader />;
-
   const sorted = [...(members ?? [])].sort(
     (a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.user.name.localeCompare(b.user.name),
   );
@@ -534,43 +539,55 @@ export default function TeamPage() {
         }
       />
 
-      {error ? (
-        <Card>
-          <ErrorState error={error} onRetry={refetch} />
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader
-            icon={Users}
-            title="Members"
-            description={`${sorted.length} ${sorted.length === 1 ? 'person' : 'people'} in ${workspace.name}`}
-            action={
-              can(PERMISSIONS.MEMBERS_MANAGE) && (
-                <ButtonLink
-                  to={`/w/${workspace.slug}/accounts/access`}
-                  variant="secondary"
-                  size="sm"
-                >
-                  <KeyRound className="h-3.5 w-3.5" aria-hidden="true" /> Account access
-                </ButtonLink>
-              )
-            }
-          />
-          <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-100 dark:divide-white/5 dark:border-white/5">
-            {sorted.map((m) => (
-              <MemberRow
-                key={m.id}
-                member={m}
-                isSelf={m.user.id === user.id}
-                onEditAccess={setAccessMember}
-                onRemove={setRemoveMember}
-              />
-            ))}
-          </ul>
-        </Card>
-      )}
+      <div className="space-y-6">
+        {error ? (
+          <Card>
+            <ErrorState error={error} onRetry={refetch} />
+          </Card>
+        ) : isPending ? (
+          // The header stays while the list loads; rows shaped like members stand in for it.
+          <Card>
+            <CardHeader icon={Users} title="Members" />
+            <RowsSkeleton
+              rows={4}
+              label="Loading…"
+              className="mt-4 border-t border-slate-100 dark:border-white/5"
+            />
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader
+              icon={Users}
+              title="Members"
+              description={`${sorted.length} ${sorted.length === 1 ? 'person' : 'people'} in ${workspace.name}`}
+              action={
+                can(PERMISSIONS.MEMBERS_MANAGE) && (
+                  <ButtonLink
+                    to={`/w/${workspace.slug}/accounts/access`}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" aria-hidden="true" /> Account access
+                  </ButtonLink>
+                )
+              }
+            />
+            <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-100 dark:divide-white/5 dark:border-white/5">
+              {sorted.map((m) => (
+                <MemberRow
+                  key={m.id}
+                  member={m}
+                  isSelf={m.user.id === user.id}
+                  onEditAccess={setAccessMember}
+                  onRemove={setRemoveMember}
+                />
+              ))}
+            </ul>
+          </Card>
+        )}
 
-      {can(PERMISSIONS.MEMBERS_INVITE) && <PendingInvitations onLink={setLinkResult} />}
+        {can(PERMISSIONS.MEMBERS_INVITE) && <PendingInvitations onLink={setLinkResult} />}
+      </div>
 
       <InviteModal
         open={inviteOpen}

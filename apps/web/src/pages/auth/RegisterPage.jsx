@@ -1,24 +1,20 @@
 import { registerSchema } from '@socialhub/shared';
-import { Check } from 'lucide-react';
+import { useId } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AuthLayout } from '../../components/auth/AuthLayout.jsx';
+import { PasswordChecklist } from '../../components/auth/PasswordChecklist.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { FormError, Input, PasswordInput } from '../../components/ui/Field.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useApiForm } from '../../hooks/useApiForm.js';
-import { cn, safeRedirect } from '../../lib/utils.js';
-
-const RULES = [
-  { label: '8+ characters', test: (v) => v.length >= 8 },
-  { label: 'A letter', test: (v) => /[A-Za-z]/.test(v) },
-  { label: 'A number', test: (v) => /\d/.test(v) },
-];
+import { safeRedirect } from '../../lib/utils.js';
 
 export default function RegisterPage() {
   const { signUp } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const redirect = safeRedirect(params.get('redirect'));
+  const checklistId = useId();
   const { register, submit, errors, isSubmitting, formError, watch } = useApiForm(registerSchema, {
     defaultValues: { name: '', email: params.get('email') ?? '', password: '' },
   });
@@ -45,12 +41,14 @@ export default function RegisterPage() {
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-5" noValidate>
+      <form onSubmit={onSubmit} className="space-y-4" noValidate>
         <FormError message={formError} />
         <Input
           label="Full name"
           autoComplete="name"
           placeholder="Ada Lovelace"
+          required
+          inputClassName="h-11"
           error={errors.name?.message}
           {...register('name')}
         />
@@ -59,6 +57,8 @@ export default function RegisterPage() {
           type="email"
           autoComplete="email"
           placeholder="you@company.com"
+          required
+          inputClassName="h-11"
           error={errors.email?.message}
           {...register('email')}
         />
@@ -66,31 +66,15 @@ export default function RegisterPage() {
           <PasswordInput
             label="Password"
             autoComplete="new-password"
+            required
+            inputClassName="h-11"
+            aria-describedby={checklistId}
             error={errors.password?.message}
             {...register('password')}
           />
-          <ul className="flex flex-wrap gap-x-4 gap-y-1" aria-label="Password requirements">
-            {RULES.map((rule) => {
-              const ok = rule.test(password);
-              return (
-                <li
-                  key={rule.label}
-                  className={cn(
-                    'inline-flex items-center gap-1 text-xs',
-                    ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted',
-                  )}
-                >
-                  <Check
-                    className={cn('h-3.5 w-3.5', ok ? 'opacity-100' : 'opacity-30')}
-                    aria-hidden="true"
-                  />
-                  {rule.label}
-                </li>
-              );
-            })}
-          </ul>
+          <PasswordChecklist id={checklistId} value={password} />
         </div>
-        <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+        <Button type="submit" size="lg" className="h-11 w-full" loading={isSubmitting}>
           Create account
         </Button>
       </form>

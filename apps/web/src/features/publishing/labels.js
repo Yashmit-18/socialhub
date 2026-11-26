@@ -304,3 +304,20 @@ export function createdMessage({ simulated, scheduledAt, timeZone, created }) {
   }
   return { title: when ? `Scheduled for ${when}` : 'Sent to the publishing queue' };
 }
+
+/** After several posts were created at once (one per video, see videoPosts.js). */
+export function postsCreatedMessage({ simulated, scheduledAt, timeZone, count }) {
+  const when = scheduledAt ? formatInZone(scheduledAt, timeZone) : null;
+  if (simulated) {
+    return {
+      title: when ? `${count} simulations scheduled for ${when}` : `${count} simulations started`,
+      description: 'One per video. Nothing will be posted to Facebook or Instagram.',
+    };
+  }
+  return {
+    title: when
+      ? `${count} posts scheduled for ${when}`
+      : `${count} posts sent to the publishing queue`,
+    description: 'One post per video. Follow them on the Publishing page.',
+  };
+}

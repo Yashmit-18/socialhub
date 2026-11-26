@@ -96,7 +96,10 @@ export function authRouter({ authLimiter }) {
   return router;
 }
 
-export function usersRouter() {
+const passThrough = (_req, _res, next) => next();
+
+/** `sensitiveLimiter` counts failed password-confirmed actions per person (see app.js). */
+export function usersRouter({ sensitiveLimiter = passThrough } = {}) {
   const router = Router();
   router.use(authenticate);
 
@@ -104,10 +107,15 @@ export function usersRouter() {
     res.json({ user: await auth.updateProfile(req.user, req.valid.body) });
   });
 
-  router.post('/me/password', validate({ body: changePasswordSchema }), async (req, res) => {
-    await auth.changePassword(req.user._id, req.auth.sessionId, req.valid.body);
-    res.status(204).end();
-  });
+  router.post(
+    '/me/password',
+    sensitiveLimiter,
+    validate({ body: changePasswordSchema }),
+    async (req, res) => {
+      await auth.changePassword(req.user._id, req.auth.sessionId, req.valid.body);
+      res.status(204).end();
+    },
+  );
 
   return router;
 }

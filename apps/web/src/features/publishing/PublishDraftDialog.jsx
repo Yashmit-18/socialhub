@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { EmptyState, ErrorState, Spinner } from '../../components/ui/Feedback.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { useSocialAccounts } from '../../lib/queries.js';
@@ -362,10 +363,7 @@ export function PublishDraftDialog({ workspaceId, onClose, simulatedMode, worksp
             </p>
           )}
           {error && (
-            <div
-              role="alert"
-              className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
-            >
+            <Callout tone="danger" role="alert">
               {errorMessages(error).map((message) => (
                 <p key={message}>{message}</p>
               ))}
@@ -377,7 +375,7 @@ export function PublishDraftDialog({ workspaceId, onClose, simulatedMode, worksp
                   If you publish again, these accounts will get the same post a second time.
                 </p>
               )}
-            </div>
+            </Callout>
           )}
         </div>
       )}

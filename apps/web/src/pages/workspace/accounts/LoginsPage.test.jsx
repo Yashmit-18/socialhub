@@ -265,7 +265,7 @@ describe('Logins tab', () => {
     const aliceCard = await findCard('Alice');
     expect(
       within(aliceCard).getByText(
-        'Not granted (needed for publishing in a later phase): pages_manage_posts, instagram_content_publish',
+        'Not granted (needed for publishing): pages_manage_posts, instagram_content_publish',
       ),
     ).toBeInTheDocument();
     expect(within(aliceCard).queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();

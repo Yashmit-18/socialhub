@@ -343,9 +343,7 @@ describe('Login detail page', () => {
       name: 'Missing: for publishing',
     });
     expect(within(forPublishing).getByText('instagram_content_publish')).toBeInTheDocument();
-    expect(
-      within(permissions).getByText(/needed for publishing in a later phase/),
-    ).toBeInTheDocument();
+    expect(within(permissions).getByText(/needed for publishing/)).toBeInTheDocument();
     const granted = within(permissions).getByRole('list', { name: 'Granted' });
     expect(within(granted).getAllByRole('listitem')).toHaveLength(GRANTED.length);
     expect(within(granted).queryByText('instagram_content_publish')).not.toBeInTheDocument();

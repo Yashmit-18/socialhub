@@ -23,7 +23,7 @@ export const LEGAL_CONTACT = {
   email: 'workwithyashmit@gmail.com',
 };
 
-export const LAST_UPDATED = '25 November 2026';
+export const LAST_UPDATED = '26 November 2026';
 
 const privacy = legalLink('privacy');
 const terms = legalLink('terms');
@@ -150,6 +150,7 @@ export const PRIVACY_POLICY = {
             'Meta’s deauthorize and data deletion notifications are accepted only when their signature, made with SocialHub’s app secret, is valid.',
             'SocialHub is served over HTTPS, and its sign-in cookies are marked Secure and HttpOnly.',
             'Within a workspace, access is based on roles: only owners and admins can connect, disconnect or remove Facebook and Instagram logins.',
+            'Suspending or reactivating an account takes the password of the person doing it, and every suspension is recorded with who made it, when and why.',
           ],
         },
         'No system is completely secure, and we cannot guarantee that data will never be accessed without permission.',
@@ -164,6 +165,7 @@ export const PRIVACY_POLICY = {
           list: [
             '**Meta Platforms:** sign-in, token and account requests go to Facebook and Instagram when you connect or check an account, and a post’s text and media files go to them when a member publishes it for real.',
             '**Members of your workspace:** the people in a workspace see its connected accounts, drafts and activity according to their role.',
+            '**The operator of SocialHub:** {{operator}}, and anyone they give operator access to, can see each account’s name, email address and status (active or suspended) and when it signed up, last signed in, was last active and last changed its password, and each workspace’s name, its members and counts such as how many connected accounts and posts it has. This view never shows workspace content (drafts, captions, media files, notes or the Facebook Group directory), the details of connected Facebook Pages and Instagram accounts, tokens, IP addresses or browsers.',
             '**Service providers that run SocialHub for us:** MongoDB Atlas, which hosts SocialHub’s database; Cloudflare, which carries traffic between your browser and SocialHub; and, when email delivery is turned on, an email delivery provider. They process data only to provide their service.',
             '**When the law requires it:** we may disclose information if we are legally required to.',
           ],
@@ -181,6 +183,7 @@ export const PRIVACY_POLICY = {
             '**Facebook and Instagram data and tokens:** until a workspace owner or admin removes the connection, the workspace is deleted, or Meta tells SocialHub that you asked for your data to be deleted. Disconnecting, or removing SocialHub in your Facebook settings, erases the tokens straight away but keeps account names and pictures so the team can reconnect; removing the connection deletes them.',
             '**Sign-in sessions:** deleted automatically when they expire. Security codes used while connecting to Meta: deleted about an hour after they expire. Connection check history: 90 days.',
             '**Workspace content** (drafts, media files, activity log, publishing history, Facebook Group directory): until it is deleted in the app or the workspace is deleted.',
+            '**Records of operator actions:** when an account was suspended or reactivated (by whom and why) or given or removed operator access, with the account’s name and email address. They are kept when a workspace is deleted, until we remove them.',
             '**Records of Meta data deletion requests:** the confirmation code, the date, how many items were deleted and a one-way hash of the Meta user ID, kept so that the status of the request can be checked. They do not contain your name or other details.',
           ],
         },
@@ -310,7 +313,7 @@ export const TERMS_OF_SERVICE = {
       id: 'ending-your-use',
       heading: 'Suspension and ending your use',
       blocks: [
-        `You can stop using SocialHub at any time. [${deletion.title}](${deletion.path}) explains how to delete your connections, workspaces and account. We may suspend or close accounts that break these terms or put other people, their data or SocialHub at risk.`,
+        `You can stop using SocialHub at any time. [${deletion.title}](${deletion.path}) explains how to delete your connections, workspaces and account. We may suspend or close accounts that break these terms or put other people, their data or SocialHub at risk. A suspended account cannot sign in, and posts it scheduled are not sent while it is suspended. Each suspension is recorded with who made it, when and why. If you think your account was suspended by mistake, email {{email}}.`,
       ],
     },
     {

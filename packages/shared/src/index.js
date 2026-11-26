@@ -6,3 +6,4 @@ export * from './publishing.js';
 export * from './accountLabels.js';
 export * from './groups.js';
 export * from './analytics.js';
+export * from './platform.js';

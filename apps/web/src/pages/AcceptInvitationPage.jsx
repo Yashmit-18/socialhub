@@ -3,31 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, MailOpen } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router';
 import { RoleBadge } from '../components/ui/Badge.jsx';
-import { Logo } from '../components/ui/Brand.jsx';
 import { Button, ButtonLink } from '../components/ui/Button.jsx';
+import { Callout } from '../components/ui/Callout.jsx';
+import { CenteredShell } from '../components/ui/CenteredShell.jsx';
 import { FormError } from '../components/ui/Field.jsx';
 import { PageLoader } from '../components/ui/Feedback.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { request } from '../lib/api.js';
 import { keys } from '../lib/queries.js';
 import { formatDate } from '../lib/utils.js';
-
-function Shell({ children }) {
-  return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-12">
-      <div
-        className="absolute -top-40 left-1/2 h-[30rem] w-[30rem] -translate-x-1/2 rounded-full bg-brand-500/15 blur-3xl"
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-md">
-        <div className="mb-8 flex justify-center">
-          <Logo />
-        </div>
-        <div className="surface p-7 sm:p-8">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 export default function AcceptInvitationPage() {
   const { token } = useParams();
@@ -54,17 +38,19 @@ export default function AcceptInvitationPage() {
     },
   });
 
-  if (preview.isPending || status === 'loading') return <PageLoader />;
+  if (preview.isPending || status === 'loading') return <PageLoader fullScreen />;
 
   if (preview.error) {
     return (
-      <Shell>
+      <CenteredShell>
         <div className="text-center">
-          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+          <div className="mx-auto flex h-12 w-12 animate-pop-in items-center justify-center rounded-2xl bg-amber-50 text-amber-600 ring-1 ring-amber-500/15 ring-inset dark:bg-amber-500/10 dark:text-amber-400">
             <AlertTriangle className="h-5 w-5" aria-hidden="true" />
           </div>
-          <h1 className="mt-4 text-lg font-semibold">This invitation link is not valid</h1>
-          <p className="mt-1.5 text-sm text-muted">
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight">
+            This invitation link is not valid
+          </h1>
+          <p className="mt-2 text-sm text-muted">
             It may have been revoked or replaced by a newer invitation. Ask the person who invited
             you for a new link.
           </p>
@@ -72,7 +58,7 @@ export default function AcceptInvitationPage() {
             Go to SocialHub
           </ButtonLink>
         </div>
-      </Shell>
+      </CenteredShell>
     );
   }
 
@@ -82,17 +68,19 @@ export default function AcceptInvitationPage() {
   const qs = `redirect=${encodeURIComponent(here)}&email=${encodeURIComponent(invitation.email)}`;
 
   return (
-    <Shell>
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/25">
+    <CenteredShell>
+      <div className="flex h-12 w-12 animate-pop-in items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/30 ring-1 ring-white/25 ring-inset">
         <MailOpen className="h-6 w-6" aria-hidden="true" />
       </div>
-      <h1 className="mt-5 text-xl font-semibold tracking-tight">
+      <h1 className="mt-5 text-2xl font-semibold tracking-tight break-words">
         Join {invitation.workspace.name}
       </h1>
       <p className="mt-2 text-sm text-muted">
         {invitation.invitedBy?.name ?? 'A teammate'} invited{' '}
-        <strong className="text-slate-700 dark:text-slate-200">{invitation.email}</strong> to
-        collaborate on SocialHub.
+        <strong className="break-words text-slate-700 dark:text-slate-200">
+          {invitation.email}
+        </strong>{' '}
+        to collaborate on SocialHub.
       </p>
 
       <div className="mt-6 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
@@ -107,9 +95,10 @@ export default function AcceptInvitationPage() {
 
       <div className="mt-6 space-y-3">
         {!usable ? (
-          <FormError
-            message={`This invitation is ${invitation.status.toLowerCase()}. Ask for a new one.`}
-          />
+          // Not an error the person made: a calm note with what to do next.
+          <Callout tone="warning" role="status">
+            {`This invitation is ${invitation.status.toLowerCase()}. Ask for a new one.`}
+          </Callout>
         ) : status === 'guest' ? (
           <>
             <ButtonLink to={`/register?${qs}`} size="lg" className="w-full">
@@ -133,9 +122,9 @@ export default function AcceptInvitationPage() {
           </>
         ) : (
           <>
-            <FormError
-              message={`You're signed in as ${user.email}, but this invitation is for ${invitation.email}.`}
-            />
+            <Callout tone="neutral" role="status">
+              {`You're signed in as ${user.email}, but this invitation is for ${invitation.email}.`}
+            </Callout>
             <Button
               variant="secondary"
               size="lg"
@@ -155,6 +144,6 @@ export default function AcceptInvitationPage() {
           </p>
         )}
       </div>
-    </Shell>
+    </CenteredShell>
   );
 }

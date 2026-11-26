@@ -1,22 +1,34 @@
 import { forgotPasswordSchema, passwordSchema } from '@socialhub/shared';
 import { MailCheck, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { z } from 'zod';
 import { AuthLayout } from '../../components/auth/AuthLayout.jsx';
-import { Button } from '../../components/ui/Button.jsx';
+import { PasswordChecklist } from '../../components/auth/PasswordChecklist.jsx';
+import { Button, ButtonLink } from '../../components/ui/Button.jsx';
 import { FormError, Input, PasswordInput } from '../../components/ui/Field.jsx';
 import { useApiForm } from '../../hooks/useApiForm.js';
 import { request } from '../../lib/api.js';
 
+const linkClass = 'font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400';
+
+const backToSignIn = (
+  <Link to="/login" className={linkClass}>
+    Back to sign in
+  </Link>
+);
+
+/** The result that replaces a form once it has been sent: open, inside the card. */
 function Notice({ icon: Icon, title, children }) {
   return (
-    <div className="surface p-6 text-center">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+    <div className="py-2 text-center">
+      <div className="mx-auto flex h-12 w-12 animate-pop-in items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100 ring-inset dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-400/20">
         <Icon className="h-5 w-5" aria-hidden="true" />
       </div>
-      <h2 className="mt-4 font-semibold">{title}</h2>
-      <div className="mt-1.5 text-sm text-muted">{children}</div>
+      <h2 className="mt-4 font-semibold text-slate-900 dark:text-white">{title}</h2>
+      <div className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+        {children}
+      </div>
     </div>
   );
 }
@@ -36,20 +48,13 @@ export function ForgotPasswordPage() {
     <AuthLayout
       title="Reset your password"
       subtitle="We'll email you a secure link to choose a new password."
-      footer={
-        <Link
-          to="/login"
-          className="font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
-        >
-          Back to sign in
-        </Link>
-      }
+      footer={backToSignIn}
     >
       {sentTo ? (
         <Notice icon={MailCheck} title="Check your inbox">
           If an account exists for{' '}
-          <strong className="text-slate-700 dark:text-slate-200">{sentTo}</strong>, a reset link is
-          on its way. It can be used once and expires shortly.
+          <strong className="font-medium text-slate-800 dark:text-slate-200">{sentTo}</strong>, a
+          reset link is on its way. It can be used once and expires shortly.
         </Notice>
       ) : (
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
@@ -59,10 +64,12 @@ export function ForgotPasswordPage() {
             type="email"
             autoComplete="email"
             placeholder="you@company.com"
+            required
+            inputClassName="h-11"
             error={errors.email?.message}
             {...register('email')}
           />
-          <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+          <Button type="submit" size="lg" className="h-11 w-full" loading={isSubmitting}>
             Send reset link
           </Button>
         </form>
@@ -79,15 +86,17 @@ export function ResetPasswordPage() {
   const [params] = useSearchParams();
   const token = params.get('token');
   const [done, setDone] = useState(false);
-  const { register, submit, errors, isSubmitting, formError } = useApiForm(resetFormSchema, {
+  const checklistId = useId();
+  const { register, submit, errors, isSubmitting, formError, watch } = useApiForm(resetFormSchema, {
     defaultValues: { password: '', confirm: '' },
   });
+  const password = watch('password') ?? '';
 
-  const onSubmit = submit(async ({ password }) => {
+  const onSubmit = submit(async ({ password: newPassword }) => {
     await request('/auth/reset-password', {
       auth: false,
       method: 'POST',
-      body: { token, password },
+      body: { token, password: newPassword },
     });
     setDone(true);
   });
@@ -96,36 +105,46 @@ export function ResetPasswordPage() {
     <AuthLayout
       title="Choose a new password"
       subtitle="For your security, this signs you out on every device."
+      footer={done ? undefined : backToSignIn}
     >
       {!token ? (
-        <FormError message="This reset link is incomplete. Request a new one from the sign-in page." />
+        <div className="space-y-5">
+          <FormError message="This reset link is incomplete. Request a new one from the sign-in page." />
+          <ButtonLink to="/forgot-password" variant="secondary" size="lg" className="h-11 w-full">
+            Request a new link
+          </ButtonLink>
+        </div>
       ) : done ? (
         <Notice icon={ShieldCheck} title="Password updated">
           <p>You can now sign in with your new password.</p>
-          <Link
-            to="/login"
-            className="mt-4 inline-block font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
-          >
+          <ButtonLink to="/login" size="lg" className="mt-5 h-11 w-full">
             Go to sign in
-          </Link>
+          </ButtonLink>
         </Notice>
       ) : (
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
           <FormError message={formError} />
-          <PasswordInput
-            label="New password"
-            autoComplete="new-password"
-            hint="At least 8 characters with a letter and a number."
-            error={errors.password?.message}
-            {...register('password')}
-          />
+          <div className="space-y-2">
+            <PasswordInput
+              label="New password"
+              autoComplete="new-password"
+              required
+              inputClassName="h-11"
+              aria-describedby={checklistId}
+              error={errors.password?.message}
+              {...register('password')}
+            />
+            <PasswordChecklist id={checklistId} value={password} />
+          </div>
           <PasswordInput
             label="Confirm password"
             autoComplete="new-password"
+            required
+            inputClassName="h-11"
             error={errors.confirm?.message}
             {...register('confirm')}
           />
-          <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+          <Button type="submit" size="lg" className="h-11 w-full" loading={isSubmitting}>
             Update password
           </Button>
         </form>

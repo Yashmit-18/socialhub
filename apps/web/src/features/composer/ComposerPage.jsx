@@ -10,7 +10,6 @@ import {
   Eye,
   FlaskConical,
   Hash,
-  Lock,
   MessageCircle,
   PenLine,
   Search,
@@ -22,7 +21,8 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { toast } from 'sonner';
 import { PageHeader } from '../../components/layout/AppShell.jsx';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
-import { EmptyState } from '../../components/ui/Feedback.jsx';
+import { RestrictedState } from '../../components/ui/Feedback.jsx';
+import { segmentItem, segmentTrack } from '../../components/ui/segmented.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { useSocialAccounts } from '../../lib/queries.js';
@@ -51,6 +51,7 @@ import { useLocalAutosave } from './hooks/useLocalAutosave.js';
 import { useMediaManager } from './hooks/useMediaManager.js';
 import { useServerDraft } from './hooks/useServerDraft.js';
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard.js';
+import { useVideoPosts } from './hooks/useVideoPosts.js';
 import { normalizeAccounts } from './model/accounts.js';
 import {
   MEDIA_MAX_ITEMS,
@@ -92,13 +93,10 @@ function NoPermission({ role }) {
   return (
     <>
       <PageHeader title="Create post" />
-      <Card>
-        <EmptyState
-          icon={Lock}
-          title="You can't create posts in this workspace"
-          description={`Your role (${ROLE_LABELS[role] ?? role}) can view the workspace, its accounts and content, but not create posts. Ask a workspace owner or admin if you need editor access.`}
-        />
-      </Card>
+      <RestrictedState
+        title="You can't create posts in this workspace"
+        description={`Your role (${ROLE_LABELS[role] ?? role}) can view the workspace, its accounts and content, but not create posts. Ask a workspace owner or admin if you need editor access.`}
+      />
     </>
   );
 }
@@ -135,7 +133,7 @@ function ViewSwitch({ view, onChange, issueCount }) {
     <div
       role="tablist"
       aria-label="Composer view"
-      className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-slate-200/80 bg-white p-1 shadow-xs xl:hidden dark:border-white/10 dark:bg-slate-900/60"
+      className={cn(segmentTrack, 'mb-5 grid w-full grid-cols-2 xl:hidden')}
       onKeyDown={(event) => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();
@@ -156,12 +154,7 @@ function ViewSwitch({ view, onChange, issueCount }) {
             aria-controls={`composer-panel-${id}`}
             tabIndex={active ? 0 : -1}
             onClick={(event) => select(event, id)}
-            className={cn(
-              'flex h-9 items-center justify-center gap-2 rounded-lg text-sm font-medium transition',
-              active
-                ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white',
-            )}
+            className={cn(segmentItem(active, 'lg'), 'gap-2 text-sm')}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
             {label}
@@ -298,6 +291,8 @@ function Composer() {
     dispatch,
     availableAccountIds,
   });
+  // Several videos for a Facebook Page: one post per video (publishing/videoPosts.js).
+  const videoPosts = useVideoPosts({ workspaceId: workspace.id, state, availableAccountIds });
   const presets = useAccountPresets({ workspaceId: workspace.id, userId: user.id });
   const canPublishRole = can(PERMISSIONS.CONTENT_PUBLISH);
   const publishingStatus = usePublishingStatus(workspace.id, {
@@ -572,7 +567,7 @@ function Composer() {
         publishingHref={`/w/${workspace.slug}/publishing`}
       />
 
-      <ViewSwitch view={view} onChange={changeView} issueCount={issueCount} />
+      <ViewSwitch view={view} onChange={changeView} issueCount={contentPresent ? issueCount : 0} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
         <div
@@ -677,7 +672,7 @@ function Composer() {
           role="tabpanel"
           aria-labelledby="composer-tab-preview"
           className={cn(
-            'min-w-0 space-y-6 xl:sticky xl:top-24 xl:-m-1 xl:max-h-[calc(100vh-12.5rem)] xl:overflow-y-auto xl:overscroll-contain xl:p-1',
+            'min-w-0 space-y-6 xl:sticky xl:top-24 xl:-m-1 xl:max-h-[calc(100vh-12.5rem)] xl:overflow-y-auto xl:p-1 xl:pb-6 xl:no-scrollbar xl:[mask-image:linear-gradient(to_bottom,#000_calc(100%-1.5rem),transparent)]',
             view !== 'preview' && 'hidden xl:block',
           )}
         >
@@ -690,6 +685,7 @@ function Composer() {
               error={accountsQuery.error}
               onRetry={accountsQuery.refetch}
               onIssueSelect={(issue) => showSection(issue.field)}
+              quiet={!contentPresent}
             />
           </div>
         </div>
@@ -698,7 +694,7 @@ function Composer() {
       <ComposerActionBar
         status={<DraftStatus local={autosave} server={server} />}
         issueSummary={
-          accountsReady
+          accountsReady && contentPresent
             ? { errors: validation.errors.length, warnings: validation.warnings.length }
             : undefined
         }
@@ -754,6 +750,7 @@ function Composer() {
             }),
           )}
           prepare={preparePublish}
+          videoPosts={videoPosts}
           onClose={() => setPublishOpen(false)}
           onCreated={(job) => {
             setPublishOpen(false);

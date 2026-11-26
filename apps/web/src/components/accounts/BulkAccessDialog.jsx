@@ -53,7 +53,7 @@ function MemberOption({ member, isSelf, describedById, checked, disabled, onTogg
       >
         <input
           type="checkbox"
-          className="h-4 w-4 shrink-0 rounded border-slate-300 accent-brand-600"
+          className="h-4 w-4 shrink-0 checkbox"
           checked={checked}
           disabled={disabled}
           onChange={onToggle}

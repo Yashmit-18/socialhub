@@ -42,6 +42,8 @@ const BLOCK_REASONS = {
     'the person who scheduled it may no longer publish',
   [PUBLISH_BLOCK_REASONS.NO_ACCOUNT_ACCESS]:
     'the person who scheduled it may no longer use this account',
+  [PUBLISH_BLOCK_REASONS.AUTHOR_SUSPENDED]:
+    'the account of the person who scheduled it is suspended',
 };
 
 /** Publishing entries. Simulated jobs always say so: nothing was posted for them. */

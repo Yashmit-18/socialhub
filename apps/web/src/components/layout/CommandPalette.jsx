@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router';
 import { useWorkspaces } from '../../lib/queries.js';
 import { cn } from '../../lib/utils.js';
 import { Avatar } from '../ui/Avatar.jsx';
-import { navItems } from './navigation.js';
 
 function matches(command, words) {
   const haystack = `${command.label} ${command.hint ?? ''} ${command.group}`.toLowerCase();
@@ -13,11 +12,11 @@ function matches(command, words) {
 }
 
 /**
- * "Jump to" palette (Ctrl/⌘ K): the workspace's pages, the user's other workspaces and a few
- * account actions. Type to filter, arrows to move, Enter to open, Escape to close. Mounted
- * only while open, so every opening starts fresh.
+ * "Jump to" palette (Ctrl/⌘ K): the pages the sidebar lists (`sections`, the same data), the
+ * user's other workspaces and a few account actions. Type to filter, arrows to move, Enter to
+ * open, Escape to close. Mounted only while open, so every opening starts fresh.
  */
-export function CommandPalette({ workspace, can, isDark, onToggleTheme, onClose }) {
+export function CommandPalette({ sections, workspace, isDark, onToggleTheme, onClose }) {
   const navigate = useNavigate();
   const { data: workspaces = [] } = useWorkspaces();
   const [query, setQuery] = useState('');
@@ -28,16 +27,16 @@ export function CommandPalette({ workspace, can, isDark, onToggleTheme, onClose 
   const titleId = useId();
 
   const commands = useMemo(() => {
-    const pages = workspace
-      ? navItems(workspace.slug, can).map((item) => ({
-          id: `page:${item.to}`,
-          group: 'Pages',
-          label: item.label,
-          hint: item.hint,
-          icon: item.icon,
-          run: () => navigate(item.to),
-        }))
-      : [];
+    const pages = sections
+      .flatMap((section) => section.items)
+      .map((item) => ({
+        id: `page:${item.to}`,
+        group: 'Pages',
+        label: item.label,
+        hint: item.hint,
+        icon: item.icon,
+        run: () => navigate(item.to),
+      }));
     const switchTo = workspaces
       .filter((ws) => ws.id !== workspace?.id)
       .map((ws) => ({
@@ -75,7 +74,7 @@ export function CommandPalette({ workspace, can, isDark, onToggleTheme, onClose 
       },
     ];
     return [...pages, ...switchTo, ...actions];
-  }, [workspace, can, workspaces, isDark, navigate, onToggleTheme]);
+  }, [sections, workspace, workspaces, isDark, navigate, onToggleTheme]);
 
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const results = words.length ? commands.filter((c) => matches(c, words)) : commands;
@@ -254,7 +253,8 @@ export function CommandPalette({ workspace, can, isDark, onToggleTheme, onClose 
           })}
         </ul>
 
-        <div className="flex items-center gap-4 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 text-[11px] text-muted dark:border-white/[0.06] dark:bg-white/[0.02]">
+        {/* Keyboard hints: phones have no keyboard. */}
+        <div className="hidden items-center gap-4 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 text-[11px] text-muted sm:flex dark:border-white/[0.06] dark:bg-white/[0.02]">
           <span className="flex items-center gap-1.5">
             <kbd className="kbd">↑</kbd>
             <kbd className="kbd">↓</kbd> to move

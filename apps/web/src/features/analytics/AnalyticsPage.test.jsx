@@ -14,8 +14,10 @@ import AnalyticsPage from './AnalyticsPage.jsx';
 import {
   BASE,
   accounts,
+  insightsMetrics,
   overview,
   post,
+  publishingMode,
   status,
   syncStatus,
   topPosts,
@@ -357,5 +359,80 @@ describe('sync', () => {
     setup({ role: 'VIEWER' });
     await screen.findByRole('region', { name: 'Publishing performance' });
     expect(screen.queryByRole('button', { name: /Sync insights|Make demo insights/ })).toBeNull();
+  });
+});
+
+describe('layout of the figures', () => {
+  it('shows one publishing mode at a time, live first, and never adds them up', async () => {
+    const live = publishingMode({ mode: 'LIVE', simulated: false, successRate: 90 });
+    setup({
+      routes: {
+        [OVERVIEW]: () => jsonResponse(200, overview({ publishing: [live, publishingMode()] })),
+      },
+    });
+    const section = await screen.findByRole('region', { name: 'Publishing performance' });
+    expect(await within(section).findByText('Live publishing')).toBeInTheDocument();
+    expect(within(section).getByText('90%')).toBeInTheDocument();
+    expect(within(section).queryByText('Simulated publishing')).toBeNull();
+    const modes = within(section).getByRole('group', { name: 'Publishing mode' });
+    await userEvent.click(within(modes).getByRole('button', { name: 'Simulated' }));
+    expect(within(section).getByText('Simulated publishing')).toBeInTheDocument();
+    expect(within(section).getByText('75%')).toBeInTheDocument();
+    expect(within(section).queryByText('90%')).toBeNull();
+  });
+
+  it('says Unavailable once for the accounts table when no account has any figure', async () => {
+    const none = accounts();
+    for (const item of none.items) {
+      item.insights.metrics = insightsMetrics({
+        reach: { value: null, accountsReporting: 0, accountsInScope: 1 },
+        views: { value: null, accountsReporting: 0, accountsInScope: 1 },
+        followers: { value: null, accountsReporting: 0, accountsInScope: 1 },
+      });
+    }
+    setup({ routes: { [`GET ${BASE}/accounts`]: () => jsonResponse(200, none) } });
+    const section = await screen.findByRole('region', { name: 'Accounts' });
+    const rows = await within(section).findAllByRole('row');
+    expect(rows).toHaveLength(3);
+    expect(within(section).getAllByText('Unavailable')).toHaveLength(1);
+  });
+
+  it('keeps the page when only top posts fail, with a retry of their own', async () => {
+    let fail = true;
+    setup({
+      routes: {
+        [`GET ${BASE}/top-posts`]: () =>
+          fail
+            ? apiError(500, 'INTERNAL_ERROR', 'Top posts are temporarily unavailable')
+            : jsonResponse(200, topPosts([post()])),
+      },
+    });
+    const section = await screen.findByRole('region', { name: 'Top posts' });
+    expect(
+      await within(section).findByText('Top posts are temporarily unavailable'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Publishing performance' })).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(within(section).getByRole('button', { name: /try again/i }));
+    expect(await within(section).findAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('ranks top posts by the chosen metric, without changing the address', async () => {
+    const { mock, router } = setup();
+    const section = await screen.findByRole('region', { name: 'Top posts' });
+    const rankBy = await within(section).findByRole('group', { name: 'Rank by' });
+    expect(lastQuery(mock, `GET ${BASE}/top-posts`).get('metric')).toBe('engagement');
+    await userEvent.click(within(rankBy).getByRole('button', { name: 'Reach' }));
+    await waitFor(() =>
+      expect(lastQuery(mock, `GET ${BASE}/top-posts`).get('metric')).toBe('reach'),
+    );
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('shows no figures while the custom range is invalid', async () => {
+    setup({ path: '/w/acme/analytics?range=custom&from=2026-11-10&to=2026-11-01' });
+    expect(await screen.findByText('Choose a valid date range')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Publishing performance' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Export CSV/ })).toBeDisabled();
   });
 });

@@ -5,14 +5,13 @@ import {
   SOCIAL_PLATFORMS,
   SOCIAL_PROVIDERS,
 } from '@socialhub/shared';
-import { Info } from 'lucide-react';
 import { InstagramIcon } from '../../../components/ui/Brand.jsx';
+import { Callout } from '../../../components/ui/Callout.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
 import { DestinationTab, PermissionList } from '../../../components/accounts/DestinationTab.jsx';
 
 const COLUMNS = [
-  'account',
-  'instagramType',
+  { id: 'account', secondary: 'instagramType' },
   'linkedPage',
   'identity',
   'followers',
@@ -48,14 +47,11 @@ const COPY = {
 
 function ProfessionalAccountsNote() {
   return (
-    <p className="flex items-start gap-2.5 rounded-2xl border border-sky-200/80 bg-sky-50/70 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/[0.07] dark:text-sky-200">
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300" aria-hidden="true" />
-      <span>
-        Only Instagram professional accounts (Business or Creator) can be connected — through a
-        Facebook Page (Facebook Login) or directly (Instagram Login). Personal accounts are not
-        supported.
-      </span>
-    </p>
+    <Callout tone="info">
+      Only Instagram professional accounts (Business or Creator) can be connected — through a
+      Facebook Page (Facebook Login) or directly (Instagram Login). Personal accounts are not
+      supported.
+    </Callout>
   );
 }
 

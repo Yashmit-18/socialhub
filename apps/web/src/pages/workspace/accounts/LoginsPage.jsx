@@ -34,11 +34,13 @@ import {
   IdentityPicture,
   SyncOutcomeBadge,
 } from '../../../components/accounts/AccountBadges.jsx';
+import { FilterSelect } from '../../../components/accounts/AccountFilters.jsx';
 import { ConnectButtons } from '../../../components/accounts/ConnectButtons.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
 import { Card } from '../../../components/ui/Card.jsx';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../components/ui/Feedback.jsx';
+import { ConnectArt } from '../../../components/ui/illustrations.jsx';
 import { Menu, MenuItem, MenuSeparator } from '../../../components/ui/Menu.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
 import { useDisconnectConnection, useRemoveConnection } from '../../../hooks/useAccountActions.js';
@@ -115,14 +117,13 @@ function When({ value }) {
   );
 }
 
-/* One colour set per state: a later border colour class does not override an earlier one. */
-const controlBase =
-  'h-9 rounded-xl border px-3 text-xs font-medium shadow-xs transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15';
-const NEUTRAL =
-  'border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200';
-const SELECTED =
-  'border-brand-300 bg-white text-slate-700 dark:border-brand-400/40 dark:bg-slate-900/60 dark:text-slate-200';
-const controlClass = cn(controlBase, NEUTRAL);
+/** The toolbar's search look (as the account tables'), filtering at once: the list is local. */
+const SEARCH_CLASS =
+  'h-9 w-full rounded-xl border border-slate-200 bg-white pr-8 pl-9 text-sm text-slate-700 shadow-xs transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 focus:outline-none dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 dark:placeholder:text-slate-500 [&::-webkit-search-cancel-button]:hidden';
+
+/** Inline links under the line that states which accounts a login brings. */
+const INLINE_LINK =
+  'rounded text-xs font-medium text-brand-600 hover:text-brand-500 hover:underline dark:text-brand-400 dark:hover:text-brand-300';
 
 function SearchBox({ value, onChange }) {
   const id = useId();
@@ -145,10 +146,7 @@ function SearchBox({ value, onChange }) {
         placeholder="Search by name"
         maxLength={100}
         autoComplete="off"
-        className={cn(
-          controlClass,
-          'w-full pl-9 pr-8 text-sm font-normal placeholder:text-slate-400 dark:placeholder:text-slate-500 [&::-webkit-search-cancel-button]:hidden',
-        )}
+        className={SEARCH_CLASS}
       />
       {value && (
         <button
@@ -164,23 +162,6 @@ function SearchBox({ value, onChange }) {
         </button>
       )}
     </div>
-  );
-}
-
-function FilterSelect({ label, value, onChange, options }) {
-  return (
-    <select
-      aria-label={label}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(controlBase, value ? SELECTED : NEUTRAL, 'pr-8')}
-    >
-      {options.map(([optionValue, optionLabel]) => (
-        <option key={optionValue} value={optionValue}>
-          {optionLabel}
-        </option>
-      ))}
-    </select>
   );
 }
 
@@ -280,6 +261,8 @@ function LoginCard({
   );
   const total = loginAccountTotal(connection);
   const needAttention = connection.accountCounts?.needsAttention ?? 0;
+  const pages = connection.accountCounts?.facebookPages ?? 0;
+  const instagram = connection.accountCounts?.instagramAccounts ?? 0;
   // A missing required permission is already an attention item (with Reconnect as the fix).
   const missingForPublishing =
     active && !connection.missingScopes?.required?.length
@@ -336,7 +319,7 @@ function LoginCard({
         <ul className="mt-4 space-y-1.5 text-xs text-muted">
           <li className="flex items-start gap-2">
             <Layers className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>
+            <span className="min-w-0">
               <span className="font-medium text-slate-700 dark:text-slate-200">
                 {total > 0 ? loginDestinationsText(connection) : 'No accounts added yet'}
               </span>
@@ -344,6 +327,29 @@ function LoginCard({
                 <span className="text-amber-700 dark:text-amber-400">
                   {' · '}
                   {needAttention} {needAttention === 1 ? 'needs' : 'need'} attention
+                </span>
+              )}
+              {/* The tabs filtered to this login: one login can manage many Pages. */}
+              {(pages > 0 || instagram > 0) && (
+                <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {pages > 0 && (
+                    <Link
+                      to={`/w/${slug}/accounts/pages?connectionId=${connection.id}`}
+                      aria-describedby={nameId}
+                      className={INLINE_LINK}
+                    >
+                      View Pages
+                    </Link>
+                  )}
+                  {instagram > 0 && (
+                    <Link
+                      to={`/w/${slug}/accounts/instagram?connectionId=${connection.id}`}
+                      aria-describedby={nameId}
+                      className={INLINE_LINK}
+                    >
+                      View Instagram accounts
+                    </Link>
+                  )}
                 </span>
               )}
             </span>
@@ -393,8 +399,7 @@ function LoginCard({
             <li className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 break-words">
-                Not granted (needed for publishing in a later phase):{' '}
-                {missingForPublishing.join(', ')}
+                Not granted (needed for publishing): {missingForPublishing.join(', ')}
               </span>
             </li>
           )}
@@ -457,31 +462,17 @@ function LoginCard({
             <ListChecks className="h-3.5 w-3.5" aria-hidden="true" /> Choose accounts
           </ButtonLink>
         )}
-        <ButtonLink size="sm" variant="ghost" to={detailsHref} aria-describedby={nameId}>
-          View details <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </ButtonLink>
-        {/* The tabs filtered to this login: one login can manage many Pages. */}
-        {(connection.accountCounts?.facebookPages ?? 0) > 0 && (
+        <div className="ml-auto flex items-center gap-1">
+          {/* Below xl the card title is the same link. */}
           <ButtonLink
             size="sm"
             variant="ghost"
-            to={`/w/${slug}/accounts/pages?connectionId=${connection.id}`}
+            to={detailsHref}
             aria-describedby={nameId}
+            className="hidden xl:inline-flex"
           >
-            View Pages
+            View details <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </ButtonLink>
-        )}
-        {(connection.accountCounts?.instagramAccounts ?? 0) > 0 && (
-          <ButtonLink
-            size="sm"
-            variant="ghost"
-            to={`/w/${slug}/accounts/instagram?connectionId=${connection.id}`}
-            aria-describedby={nameId}
-          >
-            View Instagram accounts
-          </ButtonLink>
-        )}
-        <div className="ml-auto">
           <Menu
             trigger={({ toggle, props }) => (
               <Button
@@ -547,7 +538,7 @@ function LoginsSkeleton() {
         <Skeleton className="h-9 w-full sm:w-72" />
         <Skeleton className="h-9 w-36" />
       </div>
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {[0, 1, 2].map((key) => (
           <div key={key} className="surface space-y-4 p-5">
             <div className="flex items-center gap-3">
@@ -603,7 +594,7 @@ function NoLogins({ integration, start }) {
   return (
     <Card>
       <EmptyState
-        icon={KeyRound}
+        art={ConnectArt}
         title="No logins connected yet"
         description="A login is a Facebook or Instagram identity that SocialHub uses, with your permission, to reach the accounts it manages."
         action={action}
@@ -758,7 +749,7 @@ function LoginsManager({ workspace }) {
         ) : (
           <>
             <h2 className="sr-only">Logins</h2>
-            <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            <ul className="grid gap-4 md:grid-cols-2">
               {visible.map((connection) => (
                 <li key={connection.id} className="min-w-0">
                   <LoginCard
@@ -821,6 +812,7 @@ export default function LoginsPage() {
       <Card>
         <EmptyState
           icon={Lock}
+          tone="neutral"
           title="Logins are restricted"
           description="Only workspace owners and admins can see and manage the Facebook and Instagram logins connected to this workspace."
           action={

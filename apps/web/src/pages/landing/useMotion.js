@@ -84,9 +84,54 @@ export function useScrollProgress(ref, onProgress) {
 }
 
 /**
+ * Whether the element is on screen right now. Unlike useInView it turns false again, so a
+ * timer can stop while nobody is looking. True without IntersectionObserver.
+ */
+export function useOnScreen(ref) {
+  const [onScreen, setOnScreen] = useState(true);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !hasObserver()) return undefined;
+    const observer = new IntersectionObserver(([entry]) => setOnScreen(entry.isIntersecting));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return onScreen;
+}
+
+/**
+ * Marks each child of `rootRef` with `data-offscreen` while it is outside the viewport (plus a
+ * small margin). landing.css pauses the animations of a marked section, so loops do not run
+ * where nobody can see them. Written to the DOM: no re-render.
+ */
+export function usePauseOffscreen(rootRef) {
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !hasObserver()) return undefined;
+    const sections = [...root.children];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          entry.target.toggleAttribute('data-offscreen', !entry.isIntersecting);
+        }
+      },
+      { rootMargin: '12% 0px 12% 0px' },
+    );
+    for (const section of sections) observer.observe(section);
+    return () => {
+      observer.disconnect();
+      for (const section of sections) section.removeAttribute('data-offscreen');
+    };
+  }, [rootRef]);
+}
+
+/**
  * Pointer parallax: while the pointer moves over `areaRef`, writes its position (-1…1 from
- * the centre of the area) to `--px`/`--py` on `stageRef`. Mouse and pen only, never under
- * reduced motion. CSS turns the values into tilt and depth (see `.lp-parallax`, `.lp-depth`).
+ * the centre of the area) to `--px`/`--py` on `stageRef` and on the area itself. Mouse and pen
+ * only, never under reduced motion. CSS turns the values into tilt and depth (see
+ * `.lp-parallax`, `.lp-depth` and `.lp-social-depth`).
  */
 export function usePointerParallax(areaRef, stageRef) {
   const reduced = useReducedMotion();
@@ -98,17 +143,13 @@ export function usePointerParallax(areaRef, stageRef) {
     let frame = 0;
     let x = 0;
     let y = 0;
-    let hx = 0;
-    let hy = 0;
-    let inside = false;
     const write = () => {
       frame = 0;
-      stage.style.setProperty('--px', x.toFixed(3));
-      stage.style.setProperty('--py', y.toFixed(3));
-      // The pointer in the area's own pixels, for the hero's cursor spotlight.
-      area.style.setProperty('--hx', `${hx.toFixed(0)}px`);
-      area.style.setProperty('--hy', `${hy.toFixed(0)}px`);
-      area.classList.toggle('is-pointer-in', inside);
+      // The stage declares its own defaults, so the hero section needs the values as well.
+      for (const node of [stage, area]) {
+        node.style.setProperty('--px', x.toFixed(3));
+        node.style.setProperty('--py', y.toFixed(3));
+      }
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(write);
@@ -117,15 +158,11 @@ export function usePointerParallax(areaRef, stageRef) {
       const rect = area.getBoundingClientRect();
       x = clamp((event.clientX - rect.left - rect.width / 2) / (rect.width / 2 || 1));
       y = clamp((event.clientY - rect.top - rect.height / 2) / (rect.height / 2 || 1));
-      hx = event.clientX - rect.left;
-      hy = event.clientY - rect.top;
-      inside = true;
       schedule();
     };
     const onLeave = () => {
       x = 0;
       y = 0;
-      inside = false;
       schedule();
     };
     area.addEventListener('pointermove', onMove, { passive: true });

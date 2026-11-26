@@ -344,6 +344,32 @@ describe('Shares', () => {
     expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add groups/ })).toBeInTheDocument();
   });
+
+  it('shows an auto share’s topics and the groups left out as not relevant', async () => {
+    setup('OWNER', {
+      [`GET /workspaces/w1/group-shares/${S1}`]: () =>
+        jsonResponse(200, {
+          share: {
+            ...share,
+            auto: true,
+            publishJobId: 'j1',
+            topics: ['vegan', 'newyork'],
+            skipped: [{ groupId: G2, name: 'Car Lovers', reason: 'NOT_RELEVANT' }],
+            createdBy: { id: 'u1', name: 'Olivia Owner' },
+            createdAt: '2026-11-21T07:00:00.000Z',
+            counts: { open: 1, done: 0, skipped: 0, total: 1 },
+          },
+          tasks: [task()],
+        }),
+    });
+    renderApp(`/w/acme/groups/shares/${S1}`);
+    expect(
+      await screen.findByText('Matched to groups by: #vegan #newyork, plus groups without tags.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Car Lovers: none of its tags is in this post’s hashtags or keywords/),
+    ).toBeInTheDocument();
+  });
 });
 
 describe('Group directory', () => {
@@ -416,6 +442,32 @@ describe('Group directory', () => {
     await waitFor(() =>
       expect(lastQuery(mock, 'GET /workspaces/w1/facebook-groups').get('tag')).toBe('bread'),
     );
+  });
+
+  it('offers a way out when the filters match no group', async () => {
+    const mock = setup('OWNER', {
+      'GET /workspaces/w1/facebook-groups': ({ url }) =>
+        jsonResponse(200, {
+          ...page(url.searchParams.get('category') ? [] : [group()], { limit: 25 }),
+          facets: { categories: { cat1: 1, none: 0 }, tags: [], status: { ACTIVE: 1 } },
+        }),
+    });
+    const ue = userEvent.setup();
+    renderApp('/w/acme/groups/directory');
+    await screen.findByRole('link', { name: /London Bakers/ });
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+
+    await ue.selectOptions(screen.getByRole('combobox', { name: 'Filter by category' }), 'none');
+    expect(await screen.findByText('No groups match these filters')).toBeInTheDocument();
+    // Only the toolbar's "Add group": the empty state offers to clear the filters instead.
+    expect(screen.getByRole('button', { name: /Add group/ })).toBeInTheDocument();
+    const clear = screen.getAllByRole('button', { name: 'Clear filters' });
+    expect(clear).toHaveLength(2);
+
+    await ue.click(clear[1]);
+    await screen.findByRole('link', { name: /London Bakers/ });
+    expect(lastQuery(mock, 'GET /workspaces/w1/facebook-groups').get('category') ?? '').toBe('');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
   });
 });
 

@@ -19,7 +19,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Logo } from '../../components/ui/Brand.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -40,6 +40,8 @@ import {
   StatsBand,
   TourSection,
 } from './LandingSections.jsx';
+import { SampleNote } from './LandingKit.jsx';
+import { HeroPostPair, HeroSocial, PostChipRow } from './LandingSocial.jsx';
 import { HeroDashboard } from './LandingVisuals.jsx';
 import { Reveal, Words } from './motion.jsx';
 import { useLandingTheme } from './useLandingTheme.js';
@@ -47,6 +49,7 @@ import {
   prefersReducedMotion,
   useActiveSection,
   useMagnetic,
+  usePauseOffscreen,
   usePointerParallax,
 } from './useMotion.js';
 
@@ -310,15 +313,8 @@ function Hero({ signedIn }) {
       aria-labelledby="hero-title"
       className="relative pt-32 pb-16 sm:pt-44 sm:pb-24"
     >
-      <div className="lp-aurora" aria-hidden="true">
-        <div className="lp-rays" />
-        <div className="lp-blob lp-blob-a" />
-        <div className="lp-blob lp-blob-b" />
-        <div className="lp-blob lp-blob-c" />
-      </div>
-      <div className="lp-grid" aria-hidden="true" />
-      <div className="lp-grid-spot" aria-hidden="true" />
       <div className="lp-hero-ink" aria-hidden="true" />
+      <HeroSocial />
 
       <div className={cn(CONTAINER, 'relative text-center')}>
         <div className="lp-hero-copy lp-on-ink">
@@ -385,6 +381,8 @@ function Hero({ signedIn }) {
           </ul>
         </div>
 
+        <HeroPostPair className="mt-12 sm:mt-14" />
+
         <div className="lp-scroll-tilt mt-16 sm:mt-20">
           <div ref={stageRef} className="lp-stage">
             <HeroDashboard />
@@ -395,9 +393,9 @@ function Hero({ signedIn }) {
   );
 }
 
-function MarqueeRow({ items, reverse = false }) {
+function MarqueeRow({ items }) {
   return (
-    <div className={cn('lp-marquee-track', reverse && 'is-reverse')}>
+    <div className="lp-marquee-track">
       {[0, 1].map((copy) => (
         <div key={copy} className="flex shrink-0 gap-3 pr-3">
           {items.map((item) => (
@@ -439,7 +437,8 @@ function AudienceAndMarquee() {
       </div>
       <div className="lp-marquee mt-10 space-y-3 overflow-hidden" aria-hidden="true">
         <MarqueeRow items={MARQUEE_ITEMS} />
-        <MarqueeRow items={[...MARQUEE_ITEMS].reverse()} reverse />
+        <PostChipRow />
+        <SampleNote className="text-center">Sample posts</SampleNote>
       </div>
       <p className="sr-only">Highlights: {MARQUEE_ITEMS.join(', ')}.</p>
     </section>
@@ -585,8 +584,11 @@ export default function LandingPage() {
   const signedIn = status === 'authenticated';
   const { isDark, switchTheme } = useLandingTheme();
   const { scrolled, showTop, barRef, ringRef } = useScrollChrome();
+  const mainRef = useRef(null);
+  usePauseOffscreen(mainRef);
 
-  useEffect(() => {
+  // A layout effect, so the title is in place in the same commit as the page itself.
+  useLayoutEffect(() => {
     const previous = document.title;
     document.title = PAGE_TITLE;
     return () => {
@@ -611,7 +613,7 @@ export default function LandingPage() {
         isDark={isDark}
         onToggleTheme={switchTheme}
       />
-      <main id="main" tabIndex={-1} className="outline-none">
+      <main ref={mainRef} id="main" tabIndex={-1} className="outline-none">
         <Hero signedIn={signedIn} />
         <AudienceAndMarquee />
         <FeaturesSection />

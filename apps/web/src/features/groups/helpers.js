@@ -2,8 +2,15 @@
 import { PERMISSIONS, hasPermission } from '@socialhub/shared';
 import { useMembers } from '../../lib/queries.js';
 
+/*
+ * The look of the kit's fields (components/ui/Field.jsx) for the group dialogs' own markup:
+ * 40 px tall, 16 px text on phones (no zoom on focus), the same hover and focus ring.
+ */
 export const inputClass =
-  'block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100';
+  'block min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-base text-slate-900 shadow-[0_1px_2px_rgb(24_20_51/0.05)] transition-[border-color,box-shadow,background-color] duration-200 placeholder:text-slate-400 hover:border-slate-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/20 focus:outline-none sm:text-sm dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 dark:placeholder:text-slate-500 dark:hover:border-white/20 dark:focus:border-brand-400 dark:focus:ring-brand-400/20';
+
+/** A native select with the app's one chevron. */
+export const selectClass = `${inputClass} select-chevron pr-9`;
 
 /** Members who can complete sharing tasks (assignee options). */
 export function useAssignableMembers(workspaceId) {
@@ -41,12 +48,12 @@ export function autoShareMessage({ tasksCreated = 0, pagesWaiting = 0 } = {}) {
     return {
       title: 'Group sharing is set up',
       description:
-        'Each group your Pages are in gets a sharing task as soon as the post is live on Facebook.',
+        'Each matching group your Pages are in gets a sharing task as soon as the post is live on Facebook. A group matches when one of its tags is in the post’s hashtags or keywords, or when it has no tags.',
     };
   }
   return {
     title: 'No groups to share in',
     description:
-      'None of these Pages is listed in a group yet, or the groups were shared in too recently.',
+      'No group matched: none of these Pages is listed in a group yet, no group’s tags are in the post’s hashtags or keywords, or the groups were shared in too recently.',
   };
 }

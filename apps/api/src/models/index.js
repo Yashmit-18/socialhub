@@ -23,3 +23,4 @@ export { SharingTask } from './SharingTask.js';
 export { AccountInsight } from './AccountInsight.js';
 export { PostInsight } from './PostInsight.js';
 export { AnalyticsSyncRun } from './AnalyticsSyncRun.js';
+export { PlatformAuditLog } from './PlatformAuditLog.js';

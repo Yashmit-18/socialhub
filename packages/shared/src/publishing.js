@@ -163,7 +163,8 @@ export const PUBLISH_ERROR_CODES = Object.freeze({
   INTERRUPTED: 'INTERRUPTED',
   /**
    * Checked again just before sending: the person who asked for this post left the workspace,
-   * lost the publish permission or lost access to the account. Nothing was sent.
+   * lost the publish permission, lost access to the account, or had their SocialHub account
+   * suspended. Nothing was sent.
    */
   AUTHOR_NOT_AUTHORIZED: 'AUTHOR_NOT_AUTHORIZED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -175,6 +176,8 @@ export const PUBLISH_BLOCK_REASONS = Object.freeze({
   NOT_A_MEMBER: 'NOT_A_MEMBER',
   NO_PUBLISH_PERMISSION: 'NO_PUBLISH_PERMISSION',
   NO_ACCOUNT_ACCESS: 'NO_ACCOUNT_ACCESS',
+  /** The author's SocialHub account is suspended (a platform admin action). */
+  AUTHOR_SUSPENDED: 'AUTHOR_SUSPENDED',
 });
 
 /** After these, the post may already exist: retrying can create a duplicate. */

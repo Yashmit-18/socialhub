@@ -3,6 +3,7 @@
  * is computed from made-up data, and a metric the API returns as null stays "unavailable".
  */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { api } from '../../lib/api.js';
 
 const base = (workspaceId) => `/workspaces/${workspaceId}/analytics`;
@@ -58,6 +59,21 @@ export function useRequestSync(workspaceId) {
       api.post(`${base(workspaceId)}/sync`, accountIds?.length ? { accountIds } : {}),
     onSettled: () => queryClient.invalidateQueries({ queryKey: analyticsKeys.all(workspaceId) }),
   });
+}
+
+/**
+ * Reads every figure again once a running sync has finished (`syncing` goes from true to
+ * false), so new insights show without a reload.
+ */
+export function useRefreshWhenSyncEnds(workspaceId, syncing) {
+  const queryClient = useQueryClient();
+  const wasSyncing = useRef(false);
+  useEffect(() => {
+    if (wasSyncing.current && !syncing) {
+      queryClient.invalidateQueries({ queryKey: analyticsKeys.all(workspaceId) });
+    }
+    wasSyncing.current = syncing;
+  }, [queryClient, workspaceId, syncing]);
 }
 
 export const exportPath = (workspaceId) => `${base(workspaceId)}/export`;

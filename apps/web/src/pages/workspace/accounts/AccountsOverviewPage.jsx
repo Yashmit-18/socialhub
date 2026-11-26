@@ -11,9 +11,9 @@ import {
   ArrowRight,
   Ban,
   Building2,
-  CheckCircle2,
   Clock,
   KeyRound,
+  Layers,
   Link2,
   ListChecks,
   Plug,
@@ -41,13 +41,16 @@ import {
   LabelsCard,
   StarredAccountsCard,
 } from '../../../components/accounts/OrganizationCards.jsx';
-import { Badge } from '../../../components/ui/Badge.jsx';
 import { FacebookIcon, InstagramIcon } from '../../../components/ui/Brand.jsx';
 import { Button, ButtonLink } from '../../../components/ui/Button.jsx';
+import { Callout } from '../../../components/ui/Callout.jsx';
 import { Card, CardBody, CardHeader } from '../../../components/ui/Card.jsx';
-import { AnimatedNumber } from '../../../components/ui/AnimatedNumber.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../components/ui/Feedback.jsx';
+import { ConnectArt } from '../../../components/ui/illustrations.jsx';
 import { Pagination } from '../../../components/ui/Pagination.jsx';
+import { SegmentedControl } from '../../../components/ui/SegmentedControl.jsx';
+import { SplitBar } from '../../../components/ui/SplitBar.jsx';
+import { StatTile } from '../../../components/ui/StatTile.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
 import { ACCOUNT_FILTER_KEYS, useAccountQueryState } from '../../../hooks/useAccountQueryState.js';
 import { useStartAuthorization } from '../../../hooks/useStartAuthorization.js';
@@ -159,33 +162,13 @@ const totalOf = (data) => (data ? (data.total ?? data.items?.length ?? 0) : 0);
 
 function ScopeToggle({ value, onChange }) {
   return (
-    <div
-      role="group"
-      aria-label="Accounts to show"
-      className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-xs dark:border-white/10 dark:bg-slate-900/60"
-    >
-      {SCOPES.map(([key, label]) => {
-        const pressed = value === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={pressed}
-            onClick={() => {
-              if (!pressed) onChange(key);
-            }}
-            className={cn(
-              'rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors',
-              pressed
-                ? 'bg-brand-600 text-white shadow-sm dark:bg-brand-500 dark:text-white'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white',
-            )}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedControl
+      label="Accounts to show"
+      size="sm"
+      options={SCOPES}
+      value={value}
+      onChange={onChange}
+    />
   );
 }
 
@@ -217,32 +200,16 @@ function SyncAllControl({ integration, sync }) {
 
 /* --------------------------------------------------------------------------- stats */
 
-/** A figure with a quiet icon. (`accent` from the stats list is no longer drawn.) */
-function StatCard({ label, value, icon: Icon, accent, hint, loading }) {
-  return (
-    <Card className="h-full p-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-muted">{label}</p>
-        <span
-          className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md shadow-slate-900/10 ring-1 ring-white/20 ring-inset',
-            accent ?? 'bg-slate-500',
-          )}
-        >
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-      </div>
-      {loading ? (
-        <Skeleton className="mt-3 h-8 w-16" />
-      ) : (
-        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-white">
-          <AnimatedNumber value={value} format={formatCount} />
-        </p>
-      )}
-      {hint && !loading && <p className="mt-1 text-xs text-muted">{hint}</p>}
-    </Card>
-  );
-}
+/** Columns of the quieter second row (login figures), so it always fills the band's width. */
+const SECONDARY_SPAN = {
+  1: 'lg:col-span-12',
+  2: 'lg:col-span-6',
+  3: 'lg:col-span-4',
+  4: 'lg:col-span-3',
+};
+
+/** A status colour only when there is something to report; otherwise neutral. */
+const toneWhenAny = (value, tone) => (typeof value === 'number' && value > 0 ? tone : 'neutral');
 
 function TruncatedNote({ children, className }) {
   return (
@@ -281,43 +248,52 @@ function StatsSection({ summary, expectLoginStats, partialLoginStats, allScope }
       .filter(Boolean)
       .join(' · ');
 
-  const stats = [
-    showLogins && {
-      key: 'facebook-logins',
-      label: 'Facebook logins',
-      value: logins?.facebook,
-      icon: KeyRound,
-      accent: 'bg-gradient-to-br from-brand-500 to-violet-500',
-      hint: logins?.instagram > 0 ? `Plus ${plural(logins.instagram, 'Instagram login')}` : null,
-    },
+  // The account figures lead; login figures (managers) and the workspace count form a quieter
+  // second row under them.
+  const primary = [
     {
       key: 'facebook-pages',
       label: 'Facebook Pages',
       value: accounts?.facebookPages,
       icon: FacebookIcon,
-      accent: 'bg-gradient-to-br from-blue-600 to-indigo-500',
+      tone: 'facebook',
     },
     {
       key: 'instagram-accounts',
       label: 'Instagram accounts',
       value: accounts?.instagramAccounts,
       icon: InstagramIcon,
-      accent: 'bg-gradient-to-br from-fuchsia-500 to-pink-500',
+      tone: 'instagram',
     },
     {
       key: 'connected',
       label: 'Connected accounts',
       value: accounts?.connected,
       icon: Link2,
-      accent: 'bg-gradient-to-br from-emerald-500 to-teal-500',
       hint: accounts ? `of ${plural(accounts.total, 'account')}` : null,
+    },
+    {
+      key: 'needs-attention',
+      label: 'Accounts needing attention',
+      value: accounts?.needsAttention,
+      icon: AlertTriangle,
+      tone: toneWhenAny(accounts?.needsAttention, 'warning'),
+    },
+  ];
+  const secondary = [
+    showLogins && {
+      key: 'facebook-logins',
+      label: 'Facebook logins',
+      value: logins?.facebook,
+      icon: KeyRound,
+      hint: logins?.instagram > 0 ? `Plus ${plural(logins.instagram, 'Instagram login')}` : null,
     },
     showLogins && {
       key: 'expired-logins',
       label: 'Expired logins',
       value: logins?.expired,
       icon: Clock,
-      accent: 'bg-gradient-to-br from-amber-400 to-amber-600',
+      tone: toneWhenAny(logins?.expired, 'warning'),
       hint: logins?.expiringSoon > 0 ? `${NUMBER.format(logins.expiringSoon)} expiring soon` : null,
     },
     showLogins && {
@@ -325,34 +301,53 @@ function StatsSection({ summary, expectLoginStats, partialLoginStats, allScope }
       label: 'Revoked logins',
       value: logins?.revoked,
       icon: Ban,
-      accent: 'bg-gradient-to-br from-rose-500 to-pink-500',
+      tone: toneWhenAny(logins?.revoked, 'danger'),
       hint: loginProblemsHint || null,
-    },
-    {
-      key: 'needs-attention',
-      label: 'Accounts needing attention',
-      value: accounts?.needsAttention,
-      icon: AlertTriangle,
-      accent: 'bg-gradient-to-br from-amber-500 to-rose-500',
     },
     allScope && {
       key: 'workspaces',
       label: 'Workspaces',
       value: data?.workspaces,
       icon: Building2,
-      accent: 'bg-gradient-to-br from-sky-500 to-cyan-500',
     },
   ].filter(Boolean);
 
   return (
     <div>
-      <ul aria-label="Account totals" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map(({ key, ...stat }) => (
-          <li key={key} className="min-w-0">
-            <StatCard {...stat} loading={isPending} />
-          </li>
-        ))}
-      </ul>
+      <Card className="overflow-hidden">
+        {/* One surface; the 1px gaps over the list's tint draw the hairlines at any width. */}
+        <ul
+          aria-label="Account totals"
+          className="grid grid-cols-2 gap-px bg-slate-100 lg:grid-cols-12 dark:bg-white/[0.06]"
+        >
+          {primary.map(({ key, ...stat }) => (
+            <li key={key} className="min-w-0 lg:col-span-3">
+              <StatTile
+                variant="cell"
+                {...stat}
+                format={formatCount}
+                loading={isPending}
+                className="h-full"
+              />
+            </li>
+          ))}
+          {secondary.map(({ key, ...stat }) => (
+            <li
+              key={key}
+              className={cn('min-w-0 max-lg:last:odd:col-span-2', SECONDARY_SPAN[secondary.length])}
+            >
+              <StatTile
+                variant="cell"
+                size="sm"
+                {...stat}
+                format={formatCount}
+                loading={isPending}
+                className="h-full bg-slate-50 py-3.5 dark:bg-[color-mix(in_oklab,white_2.5%,var(--color-slate-900))]"
+              />
+            </li>
+          ))}
+        </ul>
+      </Card>
       {partialLoginStats && showLogins && data && (
         <p className="mt-3 text-xs text-muted">
           Login figures cover only the workspaces where you manage logins.
@@ -371,21 +366,19 @@ function StatsSection({ summary, expectLoginStats, partialLoginStats, allScope }
 
 function ReadinessCard({ accounts, loading, onShow }) {
   return (
-    <Card aria-label="Publishing readiness">
+    <Card aria-label="Publishing readiness" className="h-full">
       <CardHeader
         icon={ShieldCheck}
         title="Publishing readiness"
-        description="Checks permissions only. Publishing itself is not available in SocialHub yet, so nothing is posted."
+        description="Checks permissions only. Nothing is posted by this check."
       />
       <CardBody>
         {loading ? (
-          <div className="space-y-4" aria-hidden="true">
+          <div className="space-y-3" aria-hidden="true">
             <Skeleton className="h-2 w-full rounded-full" />
-            <div className="grid gap-3 md:grid-cols-3">
-              {READINESS_ROWS.map((row) => (
-                <Skeleton key={row.status} className="h-28 rounded-xl" />
-              ))}
-            </div>
+            {READINESS_ROWS.map((row) => (
+              <Skeleton key={row.status} className="h-9" />
+            ))}
           </div>
         ) : (
           <ReadinessBreakdown accounts={accounts} onShow={onShow} />
@@ -400,7 +393,6 @@ function ReadinessBreakdown({ accounts, onShow }) {
     ...row,
     count: accounts?.[row.field] ?? 0,
     label: PUBLISHING_TONE[row.status][1],
-    tone: PUBLISHING_TONE[row.status][0],
   }));
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const share = (count) => (total ? Math.round((count / total) * 100) : 0);
@@ -408,57 +400,52 @@ function ReadinessBreakdown({ accounts, onShow }) {
 
   return (
     <>
-      {/* Thin part-to-whole bar: 2px surface gaps between parts, a part at zero draws nothing. */}
-      <div
-        role="img"
-        aria-label={
-          total
-            ? `Publishing readiness of ${plural(total, 'account')}. ${rows.map(describe).join(', ')}.`
-            : 'No accounts to assess yet.'
-        }
-        className={cn(
-          'flex h-2 w-full gap-0.5 overflow-hidden rounded-full',
-          total === 0 && 'bg-slate-100 dark:bg-white/10',
-        )}
-      >
-        {rows
-          .filter((row) => row.count > 0)
-          .map((row) => (
-            <span
-              key={row.status}
-              title={describe(row)}
-              className={cn('h-full min-w-1 basis-0', row.bar)}
-              style={{ flexGrow: row.count }}
-            />
-          ))}
-      </div>
+      <SplitBar
+        label={`Publishing readiness of ${plural(total, 'account')}. ${rows.map(describe).join(', ')}.`}
+        parts={rows.map((row) => ({
+          key: row.status,
+          label: describe(row),
+          value: row.count,
+          className: row.bar,
+        }))}
+      />
 
-      <ul className="mt-5 grid gap-3 md:grid-cols-3">
+      {/* The bar's legend: each key is the colour of its part. Explanations only where a
+          problem state has accounts in it; every label keeps the full hint as its tooltip. */}
+      <ul className="mt-5 divide-y divide-slate-100 dark:divide-white/5">
         {rows.map((row) => (
-          <li
-            key={row.status}
-            className="flex flex-col rounded-xl border border-slate-100 p-4 dark:border-white/5"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Badge tone={row.tone} dot>
+          <li key={row.status} className="py-3 first:pt-0 last:pb-0">
+            <div className="flex items-center gap-3">
+              <span
+                aria-hidden="true"
+                className={cn('h-2.5 w-2.5 shrink-0 rounded-[3px]', row.bar)}
+              />
+              <span
+                title={READINESS_HINTS[row.status]}
+                className="min-w-0 flex-1 text-sm font-medium text-slate-800 dark:text-slate-100"
+              >
                 {row.label}
-              </Badge>
-              <span className="text-2xl font-semibold leading-none tracking-tight text-slate-900 dark:text-white">
+              </span>
+              <span className="text-base font-semibold tabular-nums text-slate-900 dark:text-white">
                 {formatCount(row.count)}
               </span>
             </div>
-            <p className="mt-2.5 flex-1 text-xs leading-relaxed text-muted">
-              {READINESS_HINTS[row.status]}
-            </p>
             {row.count > 0 && (
-              <button
-                type="button"
-                onClick={() => onShow(row.status)}
-                aria-label={`Show accounts: ${row.label}`}
-                className="mt-3 inline-flex items-center gap-1 self-start rounded-md text-xs font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400 dark:hover:text-brand-300"
-              >
-                Show accounts <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+              <div className="mt-1 space-y-1.5 pl-[1.375rem]">
+                {row.status !== PUBLISHING_STATUS.READY && (
+                  <p className="text-xs leading-relaxed text-muted">
+                    {READINESS_HINTS[row.status]}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onShow(row.status)}
+                  aria-label={`Show accounts: ${row.label}`}
+                  className="inline-flex items-center gap-1 rounded-md text-xs font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400 dark:hover:text-brand-300"
+                >
+                  Show accounts <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
             )}
           </li>
         ))}
@@ -483,13 +470,9 @@ function AttentionSkeleton() {
 
 function HealthyLine() {
   return (
-    <p
-      role="status"
-      className="flex items-center gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/[0.07] dark:text-emerald-300"
-    >
-      <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+    <Callout tone="success" role="status" className="font-medium">
       All accounts healthy — nothing needs attention right now.
-    </p>
+    </Callout>
   );
 }
 
@@ -677,7 +660,12 @@ function AttentionSection({
 
   return (
     <Card aria-label="Needs attention">
-      <CardHeader icon={AlertTriangle} title="Needs attention" description={description} />
+      <CardHeader
+        icon={AlertTriangle}
+        iconTone="warning"
+        title="Needs attention"
+        description={description}
+      />
       <div className="mt-4">
         {loginsError ? (
           <InlineError title="Could not load the logins" query={connections} />
@@ -803,7 +791,7 @@ function NoAccounts({ allScope, canManage, accessMode, connections, integration,
   }
   return (
     <EmptyState
-      icon={Share2}
+      art={ConnectArt}
       title="Connect your first account"
       description="Connect a Facebook login to add the Pages it manages and their linked Instagram accounts, or connect an Instagram professional account directly."
       action={
@@ -870,7 +858,7 @@ function AccountsCard({
 
   return (
     <Card ref={cardRef} tabIndex={-1} aria-label={title} className="scroll-mt-6 overflow-hidden">
-      <CardHeader title={title} description={description} />
+      <CardHeader icon={Layers} title={title} description={description} />
       {list.error ? (
         <ErrorState
           title="Could not load the accounts"
@@ -1076,10 +1064,7 @@ export default function AccountsOverviewPage() {
         allScope={allScope}
       />
 
-      {!summary.error && (summary.isPending || accountsTotal > 0) && (
-        <FollowersCard followers={summary.data?.followers} loading={summary.isPending} />
-      )}
-
+      {/* Problems first, then the two part-to-whole cards as a matched pair. */}
       <AttentionSection
         allScope={allScope}
         manageLogins={manageLogins}
@@ -1095,11 +1080,19 @@ export default function AccountsOverviewPage() {
       />
 
       {!summary.error && (summary.isPending || accountsTotal > 0) && (
-        <ReadinessCard
-          accounts={summary.data?.accounts}
-          loading={summary.isPending}
-          onShow={(readiness) => showOnly({ readiness })}
-        />
+        <div className="grid items-stretch gap-6 xl:grid-cols-2">
+          <ReadinessCard
+            accounts={summary.data?.accounts}
+            loading={summary.isPending}
+            onShow={(readiness) => showOnly({ readiness })}
+          />
+          <FollowersCard
+            followers={summary.data?.followers}
+            accounts={summary.data?.accounts}
+            loading={summary.isPending}
+            className="h-full"
+          />
+        </div>
       )}
 
       {!allScope && !summary.error && (summary.isPending || accountsTotal > 0) && (
@@ -1138,8 +1131,7 @@ export default function AccountsOverviewPage() {
         columns={
           allScope
             ? [
-                'account',
-                'platform',
+                { id: 'account', secondary: 'platform' },
                 'workspace',
                 'identity',
                 'followers',
@@ -1147,7 +1139,14 @@ export default function AccountsOverviewPage() {
                 'status',
                 'lastSync',
               ]
-            : ['account', 'platform', 'identity', 'followers', 'readiness', 'status', 'lastSync']
+            : [
+                { id: 'account', secondary: 'platform' },
+                'identity',
+                'followers',
+                'readiness',
+                'status',
+                'lastSync',
+              ]
         }
         hrefFor={hrefFor}
         identityHrefFor={identityHrefFor}

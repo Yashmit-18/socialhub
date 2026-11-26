@@ -1,8 +1,9 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { CloudOff, FileText, FolderOpen, TriangleAlert } from 'lucide-react';
+import { CloudOff, FileText, FolderOpen } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '../../../../components/ui/Badge.jsx';
 import { Button } from '../../../../components/ui/Button.jsx';
+import { Callout } from '../../../../components/ui/Callout.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../../components/ui/Feedback.jsx';
 import { FormError } from '../../../../components/ui/Field.jsx';
 import { Modal } from '../../../../components/ui/Modal.jsx';
@@ -188,11 +189,10 @@ function DraftsList({ workspaceId, onOpen, currentDraftId, hasUnsavedChanges }) 
   return (
     <div className="space-y-3">
       {hasUnsavedChanges && (
-        <p className="flex items-start gap-2 rounded-xl border border-amber-200/80 bg-amber-50/70 px-3.5 py-2.5 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <Callout tone="warning">
           Opening a draft replaces what&apos;s in the composer. Save your changes first if you want
           to keep them.
-        </p>
+        </Callout>
       )}
       <FormError message={openError?.message} />
       <ul

@@ -1,17 +1,8 @@
 import { SOCIAL_PLATFORMS } from '@socialhub/shared';
-import {
-  ListChecks,
-  ListX,
-  Plug,
-  Search,
-  SearchX,
-  Share2,
-  TriangleAlert,
-  UserRoundX,
-  X,
-} from 'lucide-react';
+import { ListChecks, ListX, Plug, Search, SearchX, Share2, UserRoundX, X } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { Button, ButtonLink } from '../../../../components/ui/Button.jsx';
+import { Callout } from '../../../../components/ui/Callout.jsx';
 import { Card } from '../../../../components/ui/Card.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../../../components/ui/Feedback.jsx';
 import { cn } from '../../../../lib/utils.js';
@@ -369,13 +360,13 @@ export function AccountSelector({
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pt-5 sm:px-6">
         <div className="flex min-w-0 items-start gap-3">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md ring-1 shadow-slate-900/10 ring-white/20 ring-inset">
-            <Share2 className="h-4.5 w-4.5" aria-hidden="true" />
+            <Share2 className="h-4 w-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-brand-600 dark:text-brand-300">Step 1</p>
             <h2
               id={titleId}
-              className="text-base font-semibold tracking-tight text-slate-900 dark:text-white"
+              className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white"
             >
               Post to
             </h2>
@@ -395,21 +386,24 @@ export function AccountSelector({
       </div>
 
       {missingIds.length > 0 && (
-        <div className="mx-5 mt-4 flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 sm:mx-6 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-          <TriangleAlert className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 flex-1 leading-relaxed">
-            {missingIds.length === 1
-              ? '1 selected account is no longer available to you and will be left out.'
-              : `${missingIds.length} selected accounts are no longer available to you and will be left out.`}
-          </p>
-          <button
-            type="button"
-            onClick={() => onDeselect?.(missingIds)}
-            className="shrink-0 rounded-md font-semibold underline-offset-2 hover:underline"
-          >
-            Remove from selection
-          </button>
-        </div>
+        <Callout
+          tone="warning"
+          size="sm"
+          className="mx-5 mt-4 sm:mx-6"
+          action={
+            <button
+              type="button"
+              onClick={() => onDeselect?.(missingIds)}
+              className="rounded-md font-semibold underline-offset-2 hover:underline"
+            >
+              Remove from selection
+            </button>
+          }
+        >
+          {missingIds.length === 1
+            ? '1 selected account is no longer available to you and will be left out.'
+            : `${missingIds.length} selected accounts are no longer available to you and will be left out.`}
+        </Callout>
       )}
 
       {body}

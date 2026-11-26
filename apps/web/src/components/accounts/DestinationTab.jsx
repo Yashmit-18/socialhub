@@ -6,7 +6,6 @@
  */
 import { LIMITS, PERMISSIONS, PUBLISHING_STATUS, SOCIAL_PROVIDERS } from '@socialhub/shared';
 import {
-  AlertTriangle,
   ChevronDown,
   Copy,
   ExternalLink,
@@ -35,9 +34,11 @@ import { BulkAccessDialog } from './BulkAccessDialog.jsx';
 import { BulkActionBar } from './BulkActionBar.jsx';
 import { ConnectButtons } from './ConnectButtons.jsx';
 import { Button, ButtonLink } from '../ui/Button.jsx';
+import { Callout } from '../ui/Callout.jsx';
 import { Card } from '../ui/Card.jsx';
 import { ConfirmDialog } from '../ui/ConfirmDialog.jsx';
 import { EmptyState, ErrorState, Spinner } from '../ui/Feedback.jsx';
+import { ConnectArt } from '../ui/illustrations.jsx';
 import { Menu, MenuItem, MenuSeparator } from '../ui/Menu.jsx';
 import { Pagination } from '../ui/Pagination.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
@@ -78,10 +79,13 @@ export function PermissionList({ names }) {
   ));
 }
 
-/** Collapsible explanation of the readiness labels; `entries` holds the platform's rules. */
+/**
+ * Collapsible explanation of the readiness labels; `entries` holds the platform's rules. It
+ * closes the card: reference text comes after the data it explains.
+ */
 function ReadinessLegend({ entries }) {
   return (
-    <details className="group px-5 pb-4 sm:px-6">
+    <details className="group border-t border-slate-100 px-5 py-3 sm:px-6 dark:border-white/5">
       <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white [&::-webkit-details-marker]:hidden">
         <Info className="h-3.5 w-3.5" aria-hidden="true" />
         How publishing readiness is decided
@@ -105,8 +109,7 @@ function ReadinessLegend({ entries }) {
         </dl>
         <p className="mt-3 border-t border-slate-200/70 pt-3 text-muted dark:border-white/10">
           Each label is the server’s latest check of the login’s permissions and Page role. It
-          describes permissions only: publishing itself arrives in a later phase, and nothing is
-          posted from SocialHub yet.
+          describes permissions only: nothing is posted by this check.
         </p>
       </div>
     </details>
@@ -533,6 +536,7 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
         {noneAtAll ? (
           <EmptyState
             icon={copy.icon}
+            art={canManage && !logins?.length ? ConnectArt : undefined}
             title={copy.emptyTitle}
             description={
               !canManage
@@ -568,8 +572,6 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
               searchPlaceholder={copy.searchPlaceholder}
               actions={filterActions}
             />
-            <ReadinessLegend entries={legend} />
-
             {list.isError && !data ? (
               <ErrorState
                 title={`${copy.caption} could not be loaded`}
@@ -579,18 +581,19 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
             ) : (
               <>
                 {list.isError && (
-                  <div
+                  <Callout
+                    tone="danger"
+                    size="sm"
                     role="alert"
-                    className="mx-5 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs text-rose-700 sm:mx-6 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+                    className="mx-5 mb-4 sm:mx-6"
+                    action={
+                      <Button variant="ghost" size="sm" onClick={() => list.refetch()}>
+                        Try again
+                      </Button>
+                    }
                   >
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 flex-1">
-                      The list could not be refreshed: {list.error?.message ?? 'Please try again.'}
-                    </span>
-                    <Button variant="ghost" size="sm" onClick={() => list.refetch()}>
-                      Try again
-                    </Button>
-                  </div>
+                    The list could not be refreshed: {list.error?.message ?? 'Please try again.'}
+                  </Callout>
                 )}
                 <AccountsTable
                   caption={copy.caption}
@@ -623,6 +626,7 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
                 )}
               </>
             )}
+            <ReadinessLegend entries={legend} />
           </>
         )}
       </Card>
@@ -635,16 +639,20 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
             loading={sync.pending.refreshAccounts}
             disabled={!refreshable || overBulkLimit}
             onClick={() => sync.refreshAccounts(ids, { onSuccess: clearSelection })}
+            title="Refresh selected"
           >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh selected
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="max-sm:sr-only">Refresh selected</span>
           </Button>
           <Button
             variant="secondary"
             size="sm"
             disabled={overBulkLimit}
             onClick={() => setLabelling(selectedAccounts)}
+            title="Labels"
           >
-            <Tag className="h-3.5 w-3.5" aria-hidden="true" /> Labels
+            <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="max-sm:sr-only">Labels</span>
           </Button>
           {canManageAccess && (
             <Button
@@ -652,8 +660,10 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
               size="sm"
               disabled={overAccessLimit}
               onClick={() => setAccessOpen(true)}
+              title="Manage access"
             >
-              <Users className="h-3.5 w-3.5" aria-hidden="true" /> Manage access
+              <Users className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="max-sm:sr-only">Manage access</span>
             </Button>
           )}
           <Button
@@ -661,8 +671,10 @@ export function DestinationTab({ platform, providers, columns, copy, legend, not
             size="sm"
             disabled={overBulkLimit}
             onClick={openBulkRemove}
+            title="Remove from workspace"
           >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Remove from workspace
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="max-sm:sr-only">Remove from workspace</span>
           </Button>
           {notes.length > 0 && (
             <div className="order-last basis-full space-y-1 text-xs leading-relaxed">{notes}</div>

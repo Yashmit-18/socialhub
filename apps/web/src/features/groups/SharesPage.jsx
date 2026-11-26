@@ -1,14 +1,17 @@
 import { GROUP_LIMITS, PERMISSIONS } from '@socialhub/shared';
-import { Megaphone, Plus, Search } from 'lucide-react';
+import { ChevronRight, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { Card } from '../../components/ui/Card.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
 import { FormError } from '../../components/ui/Field.jsx';
+import { SharesArt } from '../../components/ui/illustrations.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { Pagination } from '../../components/ui/Pagination.jsx';
+import { SplitBar } from '../../components/ui/SplitBar.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { cn, formatDate, timeAgo } from '../../lib/utils.js';
 import {
@@ -18,7 +21,7 @@ import {
   useGroupCategories,
   useGroupShares,
 } from './api.js';
-import { dueFromDate, inputClass, useAssignableMembers } from './helpers.js';
+import { dueFromDate, inputClass, selectClass, useAssignableMembers } from './helpers.js';
 
 const PAGE_SIZE = 20;
 
@@ -73,7 +76,7 @@ export function GroupPicker({ selected, onChange, exclude }) {
         </div>
         <select
           aria-label="Category"
-          className={cn(inputClass, 'w-auto')}
+          className={cn(selectClass, 'w-auto')}
           value={category}
           onChange={(e) => setCategory(e.target.value)}
         >
@@ -95,7 +98,7 @@ export function GroupPicker({ selected, onChange, exclude }) {
         ) : items.length === 0 ? (
           <p className="p-3 text-sm text-muted">
             {groups.data?.total === 0 && !q && !category
-              ? 'The directory has no active groups yet. Add them on the Group directory tab.'
+              ? 'The directory has no active groups yet. Add them on the Groups tab.'
               : 'No groups match.'}
           </p>
         ) : (
@@ -115,7 +118,7 @@ export function GroupPicker({ selected, onChange, exclude }) {
                 <label className="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/[0.03]">
                   <input
                     type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-brand-600"
+                    className="mt-0.5 h-4 w-4 checkbox"
                     checked={selected.has(group.id)}
                     onChange={() => toggle(group)}
                   />
@@ -147,7 +150,7 @@ export function GroupPicker({ selected, onChange, exclude }) {
 export function SkippedList({ skipped }) {
   if (!skipped?.length) return null;
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+    <Callout tone="warning" size="sm">
       <p className="font-semibold">
         {skipped.length === 1
           ? '1 group did not get a task:'
@@ -160,7 +163,7 @@ export function SkippedList({ skipped }) {
           </li>
         ))}
       </ul>
-    </div>
+    </Callout>
   );
 }
 
@@ -317,7 +320,7 @@ function NewShareDialog({ onClose }) {
             </label>
             <select
               id="share-assignee"
-              className={inputClass}
+              className={selectClass}
               value={form.assigneeId}
               onChange={set('assigneeId')}
             >
@@ -357,29 +360,69 @@ function NewShareDialog({ onClose }) {
   );
 }
 
-export function Progress({ counts }) {
+/**
+ * How far a share has gone: n of m groups shared (green), skipped ones in grey. `size="lg"` is
+ * the headline figure on a share's own page.
+ */
+export function Progress({ counts, size = 'md' }) {
   const total = counts?.total ?? 0;
   const done = counts?.done ?? 0;
   const skipped = counts?.skipped ?? 0;
+  const large = size === 'lg';
+  const finished = total > 0 && done === total;
   return (
-    <div className="min-w-[8rem]">
-      <div
-        className="flex h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"
-        role="img"
-        aria-label={`${done} of ${total} shared, ${skipped} skipped`}
+    <div className={large ? 'w-full max-w-sm' : 'w-36 sm:w-40'}>
+      <SplitBar
+        label={`${done} of ${total} shared, ${skipped} skipped`}
+        total={total}
+        size={large ? 'md' : 'sm'}
+        parts={[
+          { key: 'done', label: `${done} shared`, value: done, className: 'bg-emerald-500' },
+          {
+            key: 'skipped',
+            label: `${skipped} skipped`,
+            value: skipped,
+            className: 'bg-slate-400 dark:bg-slate-500',
+          },
+        ]}
+      />
+      <p
+        className={cn(
+          'tabular-nums',
+          large ? 'mt-1.5 text-sm font-medium' : 'mt-1 text-xs',
+          finished
+            ? 'text-emerald-700 dark:text-emerald-400'
+            : large
+              ? 'text-slate-700 dark:text-slate-200'
+              : 'text-muted',
+        )}
       >
-        <span
-          className="bg-emerald-500"
-          style={{ width: total ? `${(done / total) * 100}%` : 0 }}
-        />
-        <span
-          className="bg-slate-400"
-          style={{ width: total ? `${(skipped / total) * 100}%` : 0 }}
-        />
-      </div>
-      <p className="mt-1 text-xs text-muted tabular-nums">
         {done} of {total} shared{skipped ? ` · ${skipped} skipped` : ''}
       </p>
+    </div>
+  );
+}
+
+/** First load: rows shaped like shares. */
+function SharesSkeleton() {
+  return (
+    <div role="status">
+      <span className="sr-only">Loading shares…</span>
+      <ul aria-hidden="true" className="divide-y divide-slate-100 dark:divide-white/5">
+        {[0, 1, 2].map((n) => (
+          <li key={n} className="flex items-center justify-between gap-4 px-5 py-4 sm:px-6">
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-3/4" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+            <div className="w-32 space-y-1.5">
+              <Skeleton className="h-1.5 w-full rounded-full" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -405,10 +448,7 @@ export default function SharesPage() {
       )}
       <Card>
         {shares.isPending ? (
-          <div className="space-y-2 p-5">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <SharesSkeleton />
         ) : shares.error ? (
           <ErrorState
             title="Could not load the shares"
@@ -417,12 +457,12 @@ export default function SharesPage() {
           />
         ) : data.items.length === 0 ? (
           <EmptyState
-            icon={Megaphone}
+            art={SharesArt}
             title="No shares yet"
             description={
               canManage
                 ? 'A share is a post you want in several Facebook Groups. Create one to give your team a task per group.'
-                : 'Owners and admins create shares; their tasks appear on the Sharing tasks tab.'
+                : 'Owners and admins create shares; their tasks appear on the Tasks tab.'
             }
             action={
               canManage ? (
@@ -438,12 +478,13 @@ export default function SharesPage() {
               {data.items.map((share) => (
                 <li
                   key={share.id}
-                  className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-6"
+                  className="relative flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 transition-colors hover:bg-slate-50/70 sm:px-6 dark:hover:bg-white/[0.02]"
                 >
                   <div className="min-w-0 flex-1">
+                    {/* The link's overlay makes the whole row its target; its name stays the title. */}
                     <Link
                       to={`${base}/${share.id}`}
-                      className="block truncate text-sm font-semibold text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
+                      className="block truncate text-sm font-semibold text-slate-900 after:absolute after:inset-0 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                     >
                       {share.title}
                     </Link>
@@ -453,7 +494,13 @@ export default function SharesPage() {
                       {share.auto && ' · from a published post'}
                     </p>
                   </div>
-                  <Progress counts={share.counts} />
+                  <div className="flex items-center gap-3">
+                    <Progress counts={share.counts} />
+                    <ChevronRight
+                      className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600"
+                      aria-hidden="true"
+                    />
+                  </div>
                 </li>
               ))}
             </ul>

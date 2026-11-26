@@ -39,7 +39,7 @@ export function AccountOption({ account, selected = false, onToggle, className }
         onChange={() => onToggle?.(account.id)}
         aria-labelledby={`${nameId} ${platformId}`}
         aria-describedby={flagged ? `${detailId} ${attentionId}` : detailId}
-        className="mt-3 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 accent-brand-600 dark:border-white/20"
+        className="mt-3 h-4 w-4 shrink-0 cursor-pointer checkbox"
       />
       <AccountAvatar account={account} size="md" />
       <span className="min-w-0 flex-1">

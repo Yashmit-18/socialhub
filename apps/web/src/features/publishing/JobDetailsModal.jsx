@@ -3,8 +3,10 @@ import { CalendarClock, ExternalLink, Pencil, RotateCcw, Trash2, X } from 'lucid
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button.jsx';
+import { buttonClass } from '../../components/ui/buttonClass.js';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
-import { FormError } from '../../components/ui/Field.jsx';
+import { FormError, Textarea } from '../../components/ui/Field.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { timeAgo } from '../../lib/utils.js';
 import { ShareInGroupsButton } from '../groups/ShareInGroupsButton.jsx';
@@ -84,15 +86,13 @@ function EditPostDialog({ state, setState, mutation, onSave, onClose }) {
       }
     >
       <div className="space-y-3">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
-          New text
-          <textarea
-            className="mt-1.5 block min-h-40 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:ring-brand-500 dark:border-white/15 dark:bg-white/5 dark:text-white"
-            value={text}
-            disabled={mutation.isPending}
-            onChange={(event) => setState((current) => ({ ...current, text: event.target.value }))}
-          />
-        </label>
+        <Textarea
+          label="New text"
+          inputClassName="min-h-40"
+          value={text}
+          disabled={mutation.isPending}
+          onChange={(event) => setState((current) => ({ ...current, text: event.target.value }))}
+        />
         <p className="text-xs text-muted">
           Only the text changes. Images and videos stay as they are. Facebook may show that the post
           was edited.
@@ -109,9 +109,10 @@ function EditPostDialog({ state, setState, mutation, onSave, onClose }) {
   );
 }
 
+/** One label and value of the facts list; the list's grid lines the values up. */
 function Fact({ label, children }) {
   return (
-    <div className="flex flex-wrap gap-x-1.5">
+    <div className="contents">
       <dt className="text-muted">{label}</dt>
       <dd className="min-w-0 break-words font-medium text-slate-800 dark:text-slate-100">
         {children}
@@ -163,6 +164,9 @@ function DestinationCard({
   const showCancel = canAct && destination.canCancel;
   const showEdit = canAct && destination.canEditPost;
   const showDelete = canAct && destination.canDeletePost;
+  const hasActions = showRetry || showCancel || showEdit || showDelete;
+  // "Attempt 1 of 4" on a post that went out first time reads like a problem: leave it out.
+  const showTries = destination.attemptCount > 0 && (destination.attemptCount > 1 || !published);
 
   return (
     <li className="rounded-xl border border-slate-200 p-4 dark:border-white/10">
@@ -184,8 +188,8 @@ function DestinationCard({
         <DestinationStateBadge state={destination.state} simulated={simulated} />
       </div>
 
-      <dl className="mt-3 space-y-1 text-xs">
-        {destination.attemptCount > 0 && (
+      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+        {showTries && (
           <Fact label="Tries:">
             Attempt {destination.attemptCount} of {destination.maxAttempts}
           </Fact>
@@ -218,20 +222,8 @@ function DestinationCard({
         </p>
       )}
 
-      {postUrl && (
-        <a
-          href={postUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
-        >
-          View post <ExternalLink className="h-3 w-3" aria-hidden="true" />
-          <span className="sr-only">(opens in a new tab)</span>
-        </a>
-      )}
-
       {error && (
-        <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:bg-rose-500/10 dark:text-rose-200">
+        <Callout tone="danger" className="mt-3">
           <p className="break-words">{error.message}</p>
           {error.uncertain && (
             <p className="mt-1 text-xs">
@@ -239,8 +231,8 @@ function DestinationCard({
               trying again.
             </p>
           )}
-          {error.code && <p className="mt-1 text-[11px] text-muted">Code: {error.code}</p>}
-        </div>
+          {error.code && <p className="mt-1 text-[11px] opacity-80">Code: {error.code}</p>}
+        </Callout>
       )}
 
       {destination.warnings?.length > 0 && (
@@ -253,8 +245,21 @@ function DestinationCard({
 
       <AttemptHistory attempts={destination.attempts} simulated={simulated} />
 
-      {(showRetry || showCancel || showEdit || showDelete) && (
+      {(postUrl || hasActions) && (
         <div className="mt-3 flex flex-wrap gap-2">
+          {/* What people want right after publishing: a real button, still a link. */}
+          {postUrl && (
+            <a
+              href={postUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              View post
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          )}
           {showEdit && (
             <Button
               variant="secondary"

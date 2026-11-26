@@ -37,6 +37,13 @@ const groupShareSchema = new mongoose.Schema(
     link: { type: String },
     /** The real post this share was created from (auto share). */
     publishJob: { type: mongoose.Schema.Types.ObjectId, ref: 'PublishJob', default: undefined },
+    /**
+     * Auto share: the post's topics (relevance keys of its hashtags and keywords). A group with
+     * relevance tags gets a task only when one matches; untagged groups get every post. Unset
+     * on shares written by hand and on auto shares made before relevance existed: those reach
+     * every member group.
+     */
+    topics: { type: [String], default: undefined },
     /** Groups an auto share could not reach (e.g. shared there too recently), with the reason. */
     skipped: { type: [skippedGroupSchema], default: undefined },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

@@ -13,7 +13,7 @@ import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { FormError, PasswordInput } from '../../components/ui/Field.jsx';
-import { Spinner } from '../../components/ui/Feedback.jsx';
+import { Skeleton } from '../../components/ui/Feedback.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { useApiForm } from '../../hooks/useApiForm.js';
@@ -104,9 +104,19 @@ export function PublishingModeSettings() {
       />
       <CardBody className="space-y-4">
         {status.isPending ? (
-          <Spinner label="Loading the publishing mode" />
+          <div role="status" className="space-y-2.5">
+            <span className="sr-only">Loading the publishing mode</span>
+            <Skeleton className="h-4 w-full max-w-xl" />
+            <Skeleton className="h-4 w-2/3 max-w-md" />
+            <Skeleton className="h-9 w-56" />
+          </div>
         ) : status.error ? (
-          <p className="text-sm text-muted">The publishing mode could not be loaded.</p>
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-sm text-muted">The publishing mode could not be loaded.</p>
+            <Button variant="secondary" size="sm" onClick={() => status.refetch()}>
+              Try again
+            </Button>
+          </div>
         ) : (
           <>
             <p className="text-sm text-slate-700 dark:text-slate-300">{describe(data)}</p>

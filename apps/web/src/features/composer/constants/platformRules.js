@@ -71,6 +71,9 @@ export const PLATFORM_RULES = Object.freeze({
       // /feed, videos publish through /videos as their own post.
       allowMixed: false,
       maxVideos: 1,
+      // So several videos (and no photos) are published as one post per video, each with the
+      // same text (features/publishing/videoPosts.js); the composer only says so.
+      separateVideoPosts: true,
       image: {
         // Page Photos reference: ".jpeg, .bmp, .png, .gif, .tiff"; "Files can not exceed 10MB".
         mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/tiff'],

@@ -11,6 +11,15 @@ const VARIANTS = {
     'shadow-[0_1px_2px_rgb(30_27_75/0.16),0_4px_12px_-3px_rgb(99_102_241/0.45),inset_0_1px_0_0_rgb(255_255_255/0.16)]',
     'hover:bg-brand-700 hover:from-brand-700 hover:to-violet-700 active:from-brand-800 active:to-violet-800',
     'disabled:from-brand-600/60 disabled:to-violet-600/60 disabled:shadow-none dark:disabled:from-brand-500/40 dark:disabled:to-violet-500/40',
+    // Working is not unavailable: a busy button keeps its full colour.
+    'aria-busy:from-brand-600 aria-busy:to-violet-600 dark:aria-busy:from-brand-600 dark:aria-busy:to-violet-600',
+  ),
+  // The main action of a repeated row or card, or a global shortcut next to a page's own
+  // primary button: brand-coloured without being a second gradient.
+  tonal: cn(
+    'border border-brand-200 bg-brand-50 text-brand-700',
+    'hover:border-brand-300 hover:bg-brand-100',
+    'dark:border-brand-400/25 dark:bg-brand-500/10 dark:text-brand-200 dark:hover:border-brand-400/40 dark:hover:bg-brand-500/20',
   ),
   secondary: cn(
     'border border-slate-200 bg-white text-slate-800 shadow-[0_1px_2px_rgb(16_24_40/0.05)]',
@@ -42,6 +51,7 @@ export function buttonClass({ variant = 'primary', size = 'md', className } = {}
     'inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap select-none',
     'transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-150 active:scale-[0.98]',
     'disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100',
+    'aria-busy:cursor-progress aria-busy:opacity-100',
     VARIANTS[variant],
     SIZES[size],
     className,

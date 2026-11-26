@@ -403,9 +403,7 @@ describe('Social accounts overview: figures', () => {
 
     // Readiness breakdown: the permission labels, never a claim that publishing works.
     const readiness = screen.getByRole('region', { name: 'Publishing readiness' });
-    expect(
-      within(readiness).getByText(/Publishing itself is not available in SocialHub yet/),
-    ).toBeInTheDocument();
+    expect(within(readiness).getByText(/Nothing is posted by this check/)).toBeInTheDocument();
     for (const [label, count] of [
       ['Publishing permissions OK', '6'],
       ['Missing publishing access', '4'],

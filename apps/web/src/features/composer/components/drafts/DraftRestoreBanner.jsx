@@ -1,5 +1,6 @@
 import { History, Image as ImageIcon, RotateCcw, Trash2, Video } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button.jsx';
+import { Callout } from '../../../../components/ui/Callout.jsx';
 import { cn, formatDate } from '../../../../lib/utils.js';
 import { relativeTime, useNow } from '../../hooks/useNow.js';
 import { MEDIA_KINDS } from '../../model/composerState.js';
@@ -38,10 +39,15 @@ export function DraftRestoreBanner({
       className={cn('surface relative animate-fade-in overflow-hidden', className)}
     >
       <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-brand-500" />
-      <div className="flex flex-col gap-4 p-4 pl-5 sm:flex-row sm:items-start sm:p-5 sm:pl-6">
+      <div
+        className={cn(
+          'flex flex-col gap-3 p-4 pl-5 sm:flex-row sm:gap-4 sm:px-5 sm:py-3.5 sm:pl-6',
+          count > 0 ? 'sm:items-start' : 'sm:items-center',
+        )}
+      >
         <span
           aria-hidden="true"
-          className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 sm:flex dark:bg-brand-500/10 dark:text-brand-300"
+          className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 sm:flex dark:bg-brand-500/10 dark:text-brand-300"
         >
           <History className="h-5 w-5" aria-hidden="true" />
         </span>
@@ -68,8 +74,8 @@ export function DraftRestoreBanner({
           )}
 
           {count > 0 && (
-            <div className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 dark:border-amber-400/20 dark:bg-amber-500/10">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
+            <Callout tone="warning" className="mt-3">
+              <p>
                 {count === 1
                   ? "1 media file wasn't kept. Add it again after restoring."
                   : `${count} media files weren't kept. Add them again after restoring.`}
@@ -95,18 +101,19 @@ export function DraftRestoreBanner({
                   );
                 })}
               </ul>
-            </div>
+            </Callout>
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
-          <Button size="sm" onClick={onRestore}>
-            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-            Restore draft
-          </Button>
+        {/* Side by side like a dialog footer: the main choice last. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button size="sm" variant="ghost" onClick={onDiscard}>
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             Discard draft
+          </Button>
+          <Button size="sm" onClick={onRestore}>
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+            Restore draft
           </Button>
         </div>
       </div>

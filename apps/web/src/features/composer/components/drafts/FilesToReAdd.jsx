@@ -17,7 +17,7 @@ export function FilesToReAdd({ files = [], onDismiss, className }) {
     <section
       aria-label="Files to add again"
       className={cn(
-        'rounded-2xl border border-amber-200/80 bg-amber-50/70 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100',
+        'rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100',
         className,
       )}
     >

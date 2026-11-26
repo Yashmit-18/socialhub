@@ -10,6 +10,10 @@
  * those Pages is a member of gets a task as soon as that Page's post is live on Facebook
  * (`queueGroupTasksForDestination`, called by the publishing worker). Simulated posts, posts
  * that failed and posts not live yet create no tasks. People still post in the groups.
+ *
+ * Relevance: an auto share records the post's topics (its hashtags and keywords). A group with
+ * relevance tags gets a task only when one of them matches a topic; a group without tags gets
+ * every post. Groups left out are listed as skipped (NOT_RELEVANT).
  */
 import mongoose from 'mongoose';
 import {
@@ -24,7 +28,10 @@ import {
   SHARING_TASK_STATUS,
   SOCIAL_PLATFORMS,
   composeCaption,
+  groupRelevance,
   hasPermission,
+  hashtagsInText,
+  relevanceKey,
 } from '@socialhub/shared';
 import { logger } from '../../config/logger.js';
 import {
@@ -35,6 +42,7 @@ import {
   validationError,
 } from '../../lib/errors.js';
 import {
+  ContentPackage,
   FacebookGroup,
   GroupShare,
   Membership,
@@ -63,6 +71,8 @@ function shareView(share, counts = emptyCounts()) {
     // Auto share: the real post it was made from.
     auto: Boolean(share.publishJob),
     publishJobId: share.publishJob ? id(share.publishJob) : null,
+    // Auto share: the post's topics its groups were matched against (null: every group).
+    topics: share.topics ?? null,
     skipped: (share.skipped ?? []).map((entry) => ({
       groupId: id(entry.group),
       name: entry.name,
@@ -531,8 +541,11 @@ function autoTitle(caption, at) {
 
 /**
  * Creates the tasks for one Facebook Page's live post: one per active group that Page is a
- * member of. A group this share already has a task for (through another Page) is left alone;
- * a group whose "days between shares" rule does not allow a share yet is recorded as skipped.
+ * member of and that is relevant to the post (`groupRelevance`: a tag matches one of the
+ * share's topics, or the group has no tags). A group this share already has a task for
+ * (through another Page) is left alone; a group that is not relevant, or whose "days between
+ * shares" rule does not allow a share yet, is recorded as skipped. Shares without topics
+ * (made before relevance existed) reach every member group.
  */
 async function materialize(share, destination, now = new Date()) {
   const groups = await FacebookGroup.find({
@@ -548,10 +561,15 @@ async function materialize(share, destination, now = new Date()) {
       )
     ).map((task) => id(task.group)),
   );
+  const topics = share.topics ? new Set(share.topics) : null;
   const create = [];
   const skipped = [];
   for (const group of groups) {
     if (queued.has(id(group))) continue;
+    if (topics && !groupRelevance(group.tags, topics).relevant) {
+      skipped.push({ group: group._id, name: group.name, reason: SHARE_SKIP_REASONS.NOT_RELEVANT });
+      continue;
+    }
     const next = nextShareAllowedAt(group, now);
     if (next) {
       skipped.push({
@@ -595,6 +613,26 @@ async function materialize(share, destination, now = new Date()) {
     }
   }
   return { created, skipped };
+}
+
+/** Most topics an auto share keeps for matching. */
+const TOPICS_MAX = 200;
+
+/**
+ * A post's topics for relevance: the relevance keys of the hashtags in its Facebook caption,
+ * of its hashtag list (also when they go in the first comment) and of its draft's keywords
+ * (internal, never published).
+ */
+async function postTopics(job, caption) {
+  const draft = job.contentPackage
+    ? await ContentPackage.findById(job.contentPackage).select('keywords').lean()
+    : null;
+  const words = [
+    ...hashtagsInText(caption),
+    ...(job.content?.hashtags ?? []),
+    ...(draft?.keywords ?? []),
+  ];
+  return [...new Set(words.map(relevanceKey).filter(Boolean))].slice(0, TOPICS_MAX);
 }
 
 /** A real post's live Facebook Page posts: the only ones that may get group tasks. */
@@ -646,6 +684,7 @@ export async function createAutoShare(workspace, membership, actor, body, contex
         title: autoTitle(caption, job.createdAt ?? new Date()),
         message: caption,
         publishJob: job._id,
+        topics: await postTopics(job, caption),
         createdBy: actor._id,
       });
       created = true;

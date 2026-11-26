@@ -1,11 +1,18 @@
 import { PERMISSIONS, PUBLISHING_MODES } from '@socialhub/shared';
-import { Lock, Send } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { PageHeader } from '../../components/layout/AppShell.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card } from '../../components/ui/Card.jsx';
-import { EmptyState, ErrorState, PageLoader } from '../../components/ui/Feedback.jsx';
+import {
+  EmptyState,
+  ErrorState,
+  RestrictedState,
+  Skeleton,
+} from '../../components/ui/Feedback.jsx';
+import { PostsArt } from '../../components/ui/illustrations.jsx';
+import { TabButtons } from '../../components/ui/Tabs.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { cn } from '../../lib/utils.js';
 import { JobDetailsModal } from './JobDetailsModal.jsx';
@@ -24,50 +31,47 @@ import {
 /** Tabs for states that are usually empty: shown only while they hold posts (or are open). */
 const OCCASIONAL_TABS = new Set(['queue', 'processing', 'partial', 'cancelled']);
 
+// Failed and partly published posts are why people open this page: their counts stand out.
+const ATTENTION = { failed: 'danger', partial: 'warning' };
+
 function Tabs({ active, summary, onSelect }) {
+  const tabs = TABS.flatMap((tab) => {
+    const count = tabCount(tab, summary);
+    const selected = tab.key === active.key;
+    if (OCCASIONAL_TABS.has(tab.key) && !selected && !(count > 0)) return [];
+    return [{ key: tab.key, label: tab.label, count, attention: ATTENTION[tab.key] }];
+  });
   return (
-    <div
-      role="group"
-      aria-label="Show posts by status"
-      className="-mt-3 mb-6 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-white/10"
-    >
-      <div className="flex min-w-max gap-1">
-        {TABS.map((tab) => {
-          const selected = tab.key === active.key;
-          const count = tabCount(tab, summary);
-          if (OCCASIONAL_TABS.has(tab.key) && !selected && !(count > 0)) return null;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              aria-pressed={selected}
-              aria-label={count === null ? undefined : `${tab.label} (${count})`}
-              onClick={() => onSelect(tab)}
-              className={cn(
-                'relative -mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
-                'after:absolute after:inset-x-2 after:-bottom-0.5 after:h-0.5 after:rounded-full',
-                selected
-                  ? 'border-transparent text-brand-700 after:bg-gradient-to-r after:from-brand-500 after:to-pink-500 dark:text-brand-300'
-                  : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/20 dark:hover:text-slate-100',
-              )}
-            >
-              {tab.label}
-              {count !== null && (
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
-                    selected
-                      ? 'bg-brand-100 text-brand-700 dark:bg-brand-400/15 dark:text-brand-200'
-                      : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300',
-                  )}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+    <TabButtons
+      label="Show posts by status"
+      value={active.key}
+      onChange={(key) => onSelect(TABS.find((tab) => tab.key === key))}
+      tabs={tabs}
+      className="-mt-3 mb-6"
+    />
+  );
+}
+
+/** First load: rows shaped like the posts that are coming. */
+function JobsSkeleton() {
+  return (
+    <div role="status">
+      <span className="sr-only">Loading posts…</span>
+      <ul aria-hidden="true" className="divide-y divide-slate-100 dark:divide-white/5">
+        {[0, 1, 2].map((n) => (
+          <li key={n} className="px-5 py-4 sm:px-6">
+            <Skeleton className={cn('h-4', n % 2 ? 'w-1/2' : 'w-2/3')} />
+            <div className="mt-2.5 flex items-center gap-2">
+              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+            <div className="mt-3 flex gap-1.5">
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-6 w-28" />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -92,13 +96,10 @@ export default function PublishingPage() {
 
   if (!allowed) {
     return (
-      <Card>
-        <EmptyState
-          icon={Lock}
-          title="Publishing is restricted"
-          description="You do not have access to posts in this workspace. Ask a workspace owner or admin if you need it."
-        />
-      </Card>
+      <RestrictedState
+        title="Publishing is restricted"
+        description="You do not have access to posts in this workspace. Ask a workspace owner or admin if you need it."
+      />
     );
   }
 
@@ -152,11 +153,11 @@ export default function PublishingPage() {
 
       <Card>
         {jobs.isPending ? (
-          <PageLoader label="Loading posts…" />
+          <JobsSkeleton />
         ) : jobs.error ? (
           <ErrorState error={jobs.error} onRetry={jobs.refetch} />
         ) : jobs.items.length === 0 ? (
-          <EmptyState icon={Send} title={empty.title} description={empty.description} />
+          <EmptyState art={PostsArt} title={empty.title} description={empty.description} />
         ) : (
           <>
             <JobList

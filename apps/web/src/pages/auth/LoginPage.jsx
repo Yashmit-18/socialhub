@@ -27,6 +27,7 @@ export default function LoginPage() {
     <AuthLayout
       title="Welcome back"
       subtitle="Sign in to manage your workspaces."
+      pageTitle="Sign in"
       footer={
         <>
           New to SocialHub?{' '}
@@ -46,24 +47,30 @@ export default function LoginPage() {
           type="email"
           autoComplete="email"
           placeholder="you@company.com"
+          required
+          inputClassName="h-11"
           error={errors.email?.message}
           {...register('email')}
         />
+        {/* The link stays in the label row but comes after the field in the tab order. */}
         <PasswordInput
           label="Password"
           autoComplete="current-password"
+          required
+          inputClassName="h-11"
           error={errors.password?.message}
+          labelActionLast
           labelAction={
             <Link
               to="/forgot-password"
-              className="text-xs font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
+              className="rounded text-xs font-medium text-brand-600 hover:text-brand-500 dark:text-brand-400"
             >
               Forgot password?
             </Link>
           }
           {...register('password')}
         />
-        <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+        <Button type="submit" size="lg" className="h-11 w-full" loading={isSubmitting}>
           Sign in
         </Button>
       </form>

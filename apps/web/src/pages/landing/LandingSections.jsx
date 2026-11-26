@@ -28,8 +28,15 @@ import {
   TourScreen,
   WorkspaceSwitcher,
 } from './LandingVisuals.jsx';
+import { FeedPhone, GroupShareBoard, SyncHistory } from './LandingSocial.jsx';
 import { CountUp, Reveal, Words } from './motion.jsx';
-import { useInView, useMagnetic, useReducedMotion, useScrollProgress } from './useMotion.js';
+import {
+  useInView,
+  useMagnetic,
+  useOnScreen,
+  useReducedMotion,
+  useScrollProgress,
+} from './useMotion.js';
 
 export const CONTAINER = 'mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8';
 
@@ -68,6 +75,7 @@ function IconTile({ icon: Icon, className }) {
 const FEATURE_VISUALS = {
   'A workspace for every client': WorkspaceSwitcher,
   'Health on every account': HealthChecks,
+  'Sync with a full history': SyncHistory,
   'Combined followers': FollowersMini,
   'One composer for every destination': ComposeFanout,
 };
@@ -287,10 +295,12 @@ export function TourSection() {
   const [active, setActive] = useState(0);
   const [autoplay, setAutoplay] = useState(true);
   const [ref, inView] = useInView({ threshold: 0.3 });
+  const onScreen = useOnScreen(ref);
   const reduced = useReducedMotion();
   const tabRefs = useRef([]);
   const baseId = useId();
-  const playing = autoplay && inView && !reduced;
+  // Autoplay also stops while the tour is scrolled out of view.
+  const playing = autoplay && inView && onScreen && !reduced;
 
   useEffect(() => {
     if (!playing) return undefined;
@@ -814,6 +824,9 @@ export function RoadmapSection() {
             </Reveal>
           ))}
         </div>
+        <Reveal className="mt-3">
+          <GroupShareBoard />
+        </Reveal>
       </div>
     </section>
   );
@@ -859,12 +872,12 @@ export function CtaSection({ signedIn }) {
       <div className={CONTAINER}>
         <Reveal
           variant="scale"
-          className="lp-island lp-border-anim is-always relative overflow-hidden rounded-[2rem] border border-(--lp-border) px-6 py-16 sm:px-14 sm:py-20"
+          className="lp-island lp-border-anim is-always relative overflow-hidden rounded-[2rem] border border-(--lp-border) px-6 pt-16 sm:px-14 sm:pt-20 lg:pb-20"
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(99,102,241,0.4),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(236,72,153,0.32),transparent_55%)]" />
           <div className="lp-grid opacity-70" aria-hidden="true" />
-          <OrbitGraphic className="pointer-events-none absolute top-1/2 -right-24 hidden w-[30rem] -translate-y-1/2 opacity-70 [--lp-ring-bg:var(--lp-bg-2)] lg:block" />
-          <div className="relative max-w-2xl">
+          {/* From lg the text leaves room for the phone on the right. */}
+          <div className="relative max-w-2xl lg:max-w-[min(42rem,calc(100%-19rem))]">
             <h2 id="cta-title" className={H2}>
               Give every client a calm, <span className="lp-grad-text">organised home.</span>
             </h2>
@@ -891,6 +904,8 @@ export function CtaSection({ signedIn }) {
               )}
             </div>
           </div>
+          {/* The phone rises from the card's bottom edge: in flow on phones, beside the text from lg. */}
+          <FeedPhone className="relative mt-12 h-80 sm:h-96 lg:absolute lg:top-8 lg:right-12 lg:bottom-0 lg:mt-0 lg:h-auto xl:right-24" />
         </Reveal>
       </div>
     </section>

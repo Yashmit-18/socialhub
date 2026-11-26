@@ -1,6 +1,7 @@
 import { FolderOpen, ImagePlus, Info, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/Button.jsx';
+import { Callout } from '../../../../components/ui/Callout.jsx';
 import { cn } from '../../../../lib/utils.js';
 import { MEDIA_KINDS, MEDIA_MAX_ITEMS } from '../../model/composerState.js';
 import { ACCEPTED_TYPES, ACCEPT_ATTRIBUTE, formatLabel } from '../../model/media.js';
@@ -42,7 +43,7 @@ export function MediaRejections({ rejections = [], onDismiss, onClear, className
   return (
     <div aria-live="polite" className={className}>
       {rejections.length > 0 && (
-        <div className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3.5 py-3 dark:border-amber-500/20 dark:bg-amber-500/[0.07]">
+        <Callout tone="warning" size="sm" icon={null} className="mt-3">
           <ul role="list" className="space-y-2">
             {rejections.map((rejection) => (
               <li
@@ -78,7 +79,7 @@ export function MediaRejections({ rejections = [], onDismiss, onClear, className
               </button>
             </div>
           )}
-        </div>
+        </Callout>
       )}
     </div>
   );
@@ -226,7 +227,7 @@ export function MediaDropzone({
           'relative isolate border-dashed transition-[border-color,background-color,box-shadow] duration-200 focus:outline-none',
           compact
             ? 'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border-[1.5px] px-3.5 py-3 sm:px-4'
-            : 'flex flex-col items-center justify-center rounded-2xl border-2 px-5 py-10 text-center sm:px-8 sm:py-12',
+            : 'flex flex-col items-center justify-center rounded-xl border-[1.5px] px-5 py-7 text-center sm:px-8 sm:py-8',
           blocked
             ? 'border-slate-200 bg-slate-50/50 dark:border-white/10 dark:bg-white/[0.015]'
             : active
@@ -268,26 +269,18 @@ export function MediaDropzone({
           </>
         ) : (
           <>
-            <span className="relative mb-4" aria-hidden="true">
-              {!blocked && (
-                <span
-                  className={cn(
-                    'absolute inset-0 rounded-2xl bg-brand-500/25 blur-xl transition-opacity duration-200',
-                    active ? 'opacity-100' : 'opacity-60',
-                  )}
-                />
+            {/* The card icon tile recipe: an optional step, so no glow and no extra size. */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                'mb-3 flex h-10 w-10 items-center justify-center rounded-xl transition-transform duration-200',
+                blocked
+                  ? 'bg-slate-200 text-slate-400 dark:bg-white/5 dark:text-slate-500'
+                  : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md ring-1 shadow-slate-900/10 ring-white/20 ring-inset',
+                active && '-rotate-3 scale-110',
               )}
-              <span
-                className={cn(
-                  'relative flex h-12 w-12 items-center justify-center rounded-2xl transition-transform duration-200',
-                  blocked
-                    ? 'bg-slate-200 text-slate-400 dark:bg-white/5 dark:text-slate-500'
-                    : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-brand-600/25 ring-1 ring-white/20 ring-inset',
-                  active && '-rotate-3 scale-110',
-                )}
-              >
-                <ImagePlus className="h-6 w-6" />
-              </span>
+            >
+              <ImagePlus className="h-5 w-5" />
             </span>
             <p id={titleId} className="text-sm font-semibold text-slate-900 dark:text-white">
               {title}
@@ -295,13 +288,20 @@ export function MediaDropzone({
             <p id={hintId} className="mt-1 max-w-sm text-xs leading-relaxed text-muted">
               {hint}
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
               {browseButton}
-              {!blocked && <span className="text-xs text-muted">or paste an image</span>}
+              {!blocked && (
+                <>
+                  <span className="text-xs text-muted">or paste an image</span>
+                  <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">
+                    ·
+                  </span>
+                </>
+              )}
+              <span id={countId} className="text-xs font-medium tabular-nums text-muted">
+                {countLabel}
+              </span>
             </div>
-            <p id={countId} className="mt-4 text-xs font-medium tabular-nums text-muted">
-              {countLabel}
-            </p>
           </>
         )}
         <input

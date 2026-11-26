@@ -96,7 +96,7 @@ function IssueChip({ summary, onShowIssues }) {
  * Ctrl+S / ⌘S runs `onSaveDraft` (when `canSave` and not `saving`).
  *
  * Place it as the last element of the page content: it spans the main column padding and
- * cancels its bottom padding (AppShell `main` uses px-4 sm:px-6 lg:px-8 py-8).
+ * cancels its bottom padding (AppShell `main` uses px-4 sm:px-6 lg:px-8 and pb-10).
  */
 export function ComposerActionBar({
   status,
@@ -165,7 +165,7 @@ export function ComposerActionBar({
     <section
       aria-label="Post actions"
       className={cn(
-        'sticky bottom-0 z-20 -mx-4 mt-8 -mb-8 border-t border-slate-200/80 bg-white/85',
+        'sticky bottom-0 z-20 -mx-4 mt-8 -mb-10 border-t border-slate-200/80 bg-white/85',
         'before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-0.5 before:bg-gradient-to-r before:from-brand-500 before:via-violet-500 before:to-pink-500',
         'px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] shadow-[0_-12px_32px_-20px_rgb(15_23_42/0.35)] backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 dark:border-white/10 dark:bg-slate-950/85 dark:shadow-none',
         className,

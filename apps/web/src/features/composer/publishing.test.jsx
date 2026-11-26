@@ -340,6 +340,115 @@ describe('publishing from the composer (simulation mode)', () => {
   });
 });
 
+describe('several videos for a Facebook Page', () => {
+  const asset = (n) => ({
+    id: `${n}`.repeat(24),
+    kind: 'VIDEO',
+    status: 'READY',
+    fileName: `clip-${n}.mp4`,
+    mimeType: 'video/mp4',
+    sizeBytes: 1000,
+    width: 1080,
+    height: 1920,
+    durationSec: 20,
+    url: null,
+    thumbnailUrl: null,
+  });
+
+  /** A saved team draft with two uploaded videos; copies get their own ids. */
+  function videoServer() {
+    const saved = {
+      id: ID,
+      status: 'DRAFT',
+      version: 1,
+      caption: 'Two clips',
+      platformCaptions: {},
+      hashtags: [],
+      hashtagPlacement: 'CAPTION',
+      keywords: [],
+      firstComment: '',
+      targetAccountIds: [ACCOUNT],
+      media: [1, 2].map((n) => ({ mediaId: asset(n).id, altText: '', media: asset(n) })),
+      updatedAt: new Date().toISOString(),
+    };
+    const state = { copies: [], deleted: [], jobs: [] };
+    return {
+      state,
+      routes: {
+        [`GET ${STATUS}`]: () => jsonResponse(200, status()),
+        [`GET ${PACKAGES}`]: () => jsonResponse(200, { items: [saved], nextCursor: null }),
+        [`GET ${PACKAGES}/${ID}`]: () => jsonResponse(200, { contentPackage: saved }),
+        [`POST ${PACKAGES}`]: ({ init }) => {
+          const input = JSON.parse(init.body);
+          const id = `e${state.copies.length + 1}`.padEnd(24, '0');
+          state.copies.push({ id, input });
+          return jsonResponse(201, {
+            contentPackage: { id, status: 'DRAFT', version: 1, ...input },
+          });
+        },
+        ...Object.fromEntries(
+          [1, 2].map((n) => {
+            const id = `e${n}`.padEnd(24, '0');
+            return [
+              `DELETE ${PACKAGES}/${id}`,
+              () => {
+                state.deleted.push(id);
+                return jsonResponse(204);
+              },
+            ];
+          }),
+        ),
+        [`POST ${JOBS}`]: ({ init }) => {
+          const body = createPublishJobSchema.parse(JSON.parse(init.body));
+          state.jobs.push(body);
+          return jsonResponse(201, {
+            publishJob: publishJob({ contentPackageId: body.contentPackageId }),
+            created: true,
+          });
+        },
+      },
+    };
+  }
+
+  it('publishes each video as its own post and removes the working copies', async () => {
+    const api = videoServer();
+    setupComposerApi({ accounts: accounts(), routes: api.routes });
+    renderComposer();
+    await screen.findByRole('checkbox', { name: /Acme Store/ });
+    await userEvent.click(screen.getByRole('button', { name: 'Drafts' }));
+    const panel = await screen.findByRole('dialog', { name: 'Team drafts' });
+    await userEvent.click(await within(panel).findByRole('button', { name: /^Open/ }));
+    await waitFor(() => expect(captionBox()).toHaveValue('Two clips'));
+
+    // The readiness check explains it instead of reporting a problem.
+    expect(
+      await screen.findByText(/Facebook takes one video per post, so each of the 2 videos/),
+    ).toBeInTheDocument();
+
+    const dialog = await openPublish();
+    expect(dialog).toHaveTextContent('2 videos, so 2 posts.');
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Simulate 2 posts' }));
+
+    await waitFor(() => expect(api.state.jobs).toHaveLength(2));
+    // One one-video copy per post, with the same text and account.
+    expect(api.state.copies.map((copy) => copy.input.media)).toEqual([
+      [{ mediaId: asset(1).id, altText: '' }],
+      [{ mediaId: asset(2).id, altText: '' }],
+    ]);
+    for (const copy of api.state.copies) {
+      expect(copy.input).toMatchObject({ caption: 'Two clips', targetAccountIds: [ACCOUNT] });
+    }
+    expect(api.state.jobs.map((job) => job.contentPackageId)).toEqual(
+      api.state.copies.map((copy) => copy.id),
+    );
+    expect(api.state.jobs.every((job) => job.socialAccountIds[0] === ACCOUNT)).toBe(true);
+    // Once each job exists, its copy is deleted: the Drafts list keeps only the team draft.
+    await waitFor(() => expect(api.state.deleted).toEqual(api.state.copies.map((c) => c.id)));
+    expect(await screen.findByText('2 simulations started')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /publish/i })).toBeNull();
+  });
+});
+
 describe('when publishing is not available', () => {
   it.each([
     [

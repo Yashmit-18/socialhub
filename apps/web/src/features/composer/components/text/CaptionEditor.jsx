@@ -2,6 +2,7 @@ import { CircleAlert, Layers, Link2, PenLine, RotateCcw } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../components/ui/Button.jsx';
+import { segmentItem, segmentTrack } from '../../../../components/ui/segmented.js';
 import { cn } from '../../../../lib/utils.js';
 import { PLATFORM_RULES, platformLabel } from '../../constants/platformRules.js';
 import { useAutosizeTextarea } from '../../hooks/useAutosizeTextarea.js';
@@ -402,7 +403,7 @@ export function CaptionEditor({ state, dispatch, platforms = [], id, className }
           role="tablist"
           aria-label="Caption versions"
           onKeyDown={handleTabKeyDown}
-          className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 dark:bg-white/[0.06]"
+          className={cn(segmentTrack, 'flex flex-nowrap overflow-x-auto')}
         >
           {tabs.map((key) => {
             const isActive = key === active;
@@ -417,12 +418,7 @@ export function CaptionEditor({ state, dispatch, platforms = [], id, className }
                 aria-controls={panelId}
                 tabIndex={isActive ? 0 : -1}
                 onClick={() => selectTab(key)}
-                className={cn(
-                  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium whitespace-nowrap transition',
-                  isActive
-                    ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-white dark:ring-white/10'
-                    : 'text-slate-500 hover:bg-white/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white',
-                )}
+                className={cn(segmentItem(isActive), 'shrink-0 px-2.5')}
               >
                 {key === ALL ? (
                   <>

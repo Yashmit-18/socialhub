@@ -24,7 +24,9 @@ const noBody = z.strictObject({});
  * Reading needs content:read; creating, rescheduling, cancelling and retrying need
  * content:publish, and the service additionally checks access to every account involved.
  */
-export function mountPublishingRoutes(scoped) {
+const passThrough = (_req, _res, next) => next();
+
+export function mountPublishingRoutes(scoped, { sensitiveLimiter = passThrough } = {}) {
   const read = requirePermission(PERMISSIONS.CONTENT_READ);
   const publish = requirePermission(PERMISSIONS.CONTENT_PUBLISH);
 
@@ -35,6 +37,7 @@ export function mountPublishingRoutes(scoped) {
   // Simulated or real publishing for this workspace: owners and admins only.
   scoped.put(
     '/publishing/mode',
+    sensitiveLimiter,
     requirePermission(PERMISSIONS.WORKSPACE_UPDATE),
     validate({ body: updatePublishingModeSchema }),
     async (req, res) => {

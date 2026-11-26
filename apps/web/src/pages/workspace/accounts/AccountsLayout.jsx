@@ -1,15 +1,14 @@
 import { PERMISSIONS } from '@socialhub/shared';
-import { Suspense, useRef } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { Suspense, useEffect, useRef } from 'react';
+import { Outlet, useLocation } from 'react-router';
 import { ConnectButtons } from '../../../components/accounts/ConnectButtons.jsx';
 import { MetaSetupNotice } from '../../../components/accounts/MetaSetupNotice.jsx';
 import { PageHeader } from '../../../components/layout/AppShell.jsx';
 import { PageLoader } from '../../../components/ui/Feedback.jsx';
+import { TabNav } from '../../../components/ui/Tabs.jsx';
 import { useWorkspace } from '../../../context/WorkspaceContext.jsx';
-import { useActiveIndicator } from '../../../hooks/useActiveIndicator.js';
 import { useStartAuthorization } from '../../../hooks/useStartAuthorization.js';
 import { useAccountSummary, useMetaIntegration } from '../../../lib/queries.js';
-import { cn } from '../../../lib/utils.js';
 
 /**
  * Shell of the Social accounts section: header (with Connect buttons for members who manage
@@ -27,8 +26,6 @@ export default function AccountsLayout() {
   const counts = summary.data;
   const { pathname } = useLocation();
   const tabsRef = useRef(null);
-  const underlineRef = useRef(null);
-  useActiveIndicator(tabsRef, underlineRef, pathname, 'x');
 
   const tabs = [
     { to: base, label: 'Overview', end: true },
@@ -38,6 +35,17 @@ export default function AccountsLayout() {
     { to: `${base}/instagram`, label: 'Instagram', count: counts?.accounts.instagramAccounts },
     canManageMembers && { to: `${base}/access`, label: 'Team access' },
   ].filter(Boolean);
+  // The count pills widen the tabs when they arrive, so the strip is re-checked then too.
+  const widths = tabs.map((tab) => tab.count ?? '').join();
+
+  // On a phone the strip scrolls: keep the open tab in view (for example "Team access" reached
+  // by a link). Instant, so it needs no reduced-motion branch; jsdom has no scrollIntoView.
+  useEffect(() => {
+    tabsRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView?.({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  }, [pathname, widths]);
 
   return (
     <>
@@ -51,42 +59,9 @@ export default function AccountsLayout() {
         actions={canManage && <ConnectButtons integration={integration.data} start={start} />}
       />
 
-      <nav
-        aria-label="Social account sections"
-        className="-mt-3 mb-6 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-white/10"
-      >
-        <ul ref={tabsRef} className="relative flex min-w-max gap-1">
-          <li
-            ref={underlineRef}
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-gradient-to-r from-brand-500 to-pink-500 opacity-0 data-[ready]:transition-[transform,width,opacity] data-[ready]:duration-500 data-[ready]:ease-out-expo"
-          />
-          {tabs.map((tab) => (
-            <li key={tab.to}>
-              <NavLink
-                to={tab.to}
-                end={tab.end}
-                className={({ isActive }) =>
-                  cn(
-                    'relative isolate -mb-px inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors duration-200',
-                    'after:absolute after:inset-x-1.5 after:top-1 after:bottom-1.5 after:-z-10 after:rounded-lg after:transition-colors',
-                    isActive
-                      ? 'text-brand-700 dark:text-white'
-                      : 'text-slate-500 hover:text-slate-800 hover:after:bg-slate-900/[0.04] dark:text-slate-400 dark:hover:text-slate-100 dark:hover:after:bg-white/[0.04]',
-                  )
-                }
-              >
-                {tab.label}
-                {tab.count !== undefined && tab.count !== null && (
-                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 tabular-nums dark:bg-white/10 dark:text-slate-300">
-                    {tab.count}
-                  </span>
-                )}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <div ref={tabsRef}>
+        <TabNav label="Social account sections" tabs={tabs} className="-mt-3 mb-6" />
+      </div>
 
       {canManage && <MetaSetupNotice integration={integration.data} className="mb-6" />}
 

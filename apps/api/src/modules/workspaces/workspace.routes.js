@@ -34,7 +34,10 @@ import * as workspaces from './workspace.service.js';
 const memberParams = z.object({ memberId: objectIdSchema });
 const invitationParams = z.object({ invitationId: objectIdSchema });
 
-export function workspacesRouter() {
+const passThrough = (_req, _res, next) => next();
+
+/** `sensitiveLimiter` counts failed password-confirmed actions per person (see app.js). */
+export function workspacesRouter({ sensitiveLimiter = passThrough } = {}) {
   const router = Router();
   router.use(authenticate);
 
@@ -76,6 +79,7 @@ export function workspacesRouter() {
 
   scoped.delete(
     '/',
+    sensitiveLimiter,
     requirePermission(PERMISSIONS.WORKSPACE_DELETE),
     validate({ body: deleteWorkspaceSchema }),
     async (req, res) => {
@@ -90,6 +94,7 @@ export function workspacesRouter() {
 
   scoped.post(
     '/transfer-ownership',
+    sensitiveLimiter,
     requirePermission(PERMISSIONS.WORKSPACE_TRANSFER_OWNERSHIP),
     validate({ body: transferOwnershipSchema }),
     async (req, res) => {
@@ -274,7 +279,7 @@ export function workspacesRouter() {
   mountAccountPresetRoutes(scoped);
   // Facebook Group distribution (Phase 6): directory, shares and manual sharing tasks.
   mountGroupRoutes(scoped);
-  mountPublishingRoutes(scoped);
+  mountPublishingRoutes(scoped, { sensitiveLimiter });
   // Analytics & Publishing Intelligence (docs/ANALYTICS.md).
   mountAnalyticsRoutes(scoped);
 

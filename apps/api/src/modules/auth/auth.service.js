@@ -63,11 +63,20 @@ export async function register({ name, email, password }, context) {
   return createSession(user, context);
 }
 
+/** Shown only after the password was verified. The address is on the public Terms page. */
+export const ACCOUNT_SUSPENDED_MESSAGE =
+  'This account has been suspended. If you think this is a mistake, write to the address on our Terms of Service page.';
+
 export async function login({ email, password }, context) {
   const user = await User.findOne({ email }).select('+passwordHash');
   const valid = await verifyPassword(password, user?.passwordHash);
-  if (!user || !valid || user.status !== 'ACTIVE') {
+  if (!user || !valid) {
     throw unauthenticated('Email or password is incorrect', ERROR_CODES.INVALID_CREDENTIALS);
+  }
+  // Said only to someone who proved they know the password, so a stranger cannot learn the
+  // state of an account. Every other failure keeps the one generic answer above.
+  if (user.status !== 'ACTIVE') {
+    throw unauthenticated(ACCOUNT_SUSPENDED_MESSAGE, ERROR_CODES.ACCOUNT_SUSPENDED);
   }
   await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
   return createSession(user, context);
@@ -146,10 +155,14 @@ export async function logout(refreshToken) {
   );
 }
 
-export async function revokeAllSessions(userId, { exceptSessionId, reason }) {
+export async function revokeAllSessions(userId, { exceptSessionId, reason, session = null }) {
   const filter = { user: userId, revokedAt: null };
   if (exceptSessionId) filter._id = { $ne: exceptSessionId };
-  const result = await Session.updateMany(filter, { revokedAt: new Date(), revokedReason: reason });
+  const result = await Session.updateMany(
+    filter,
+    { revokedAt: new Date(), revokedReason: reason },
+    { session },
+  );
   return result.modifiedCount;
 }
 
@@ -160,8 +173,8 @@ export async function requestPasswordReset({ email }) {
 
   const token = randomToken(32);
   const ttlMinutes = config.auth.passwordResetTtlMinutes;
-  await User.updateOne(
-    { _id: user._id },
+  const stored = await User.updateOne(
+    { _id: user._id, status: 'ACTIVE' },
     {
       passwordReset: {
         tokenHash: sha256(token),
@@ -169,6 +182,8 @@ export async function requestPasswordReset({ email }) {
       },
     },
   );
+  // Suspended a moment ago: no link, no email. The caller still answers 202 as always.
+  if (stored.matchedCount !== 1) return;
 
   try {
     await sendPasswordResetEmail({
@@ -185,9 +200,14 @@ export async function requestPasswordReset({ email }) {
 export async function resetPassword({ token, password }) {
   const passwordHash = await hashPassword(password);
   const now = new Date();
-  // Single use: the token condition and its removal happen in one atomic update.
+  // Single use: the token condition and its removal happen in one atomic update. A suspended
+  // account's link is refused with the same answer as an unknown one.
   const user = await User.findOneAndUpdate(
-    { 'passwordReset.tokenHash': sha256(token), 'passwordReset.expiresAt': { $gt: now } },
+    {
+      'passwordReset.tokenHash': sha256(token),
+      'passwordReset.expiresAt': { $gt: now },
+      status: 'ACTIVE',
+    },
     { $set: { passwordHash, passwordChangedAt: now }, $unset: { passwordReset: 1 } },
     { returnDocument: 'after' },
   );

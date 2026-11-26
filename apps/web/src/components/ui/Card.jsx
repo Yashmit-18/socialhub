@@ -1,4 +1,6 @@
 import { cn } from '../../lib/utils.js';
+import { useSectionTone } from './sectionTone.js';
+import { softTone } from './tones.js';
 
 /** `interactive` lifts the card towards the pointer (for cards that link somewhere). */
 export function Card({ className, children, interactive = false, ...props }) {
@@ -11,7 +13,10 @@ export function Card({ className, children, interactive = false, ...props }) {
 
 /**
  * `tone` (gradient classes, e.g. 'from-indigo-500 to-violet-600') paints the icon tile in that
- * colour; `step` adds a small label such as "Step 2" above the title, in `stepClassName`.
+ * colour; without it the icon sits on a soft chip in the colour of the page's section (or
+ * `iconTone`, a key of SOFT_TONES, e.g. 'danger' for a danger zone). `step` adds a small label
+ * such as "Step 2" above the title, in `stepClassName`. `titleId` lets the card name itself
+ * with `aria-labelledby`.
  */
 export function CardHeader({
   title,
@@ -19,10 +24,13 @@ export function CardHeader({
   action,
   icon: Icon,
   tone,
+  iconTone,
   step,
   stepClassName,
+  titleId,
   className,
 }) {
+  const section = useSectionTone();
   return (
     <div className={cn('flex items-start justify-between gap-4 px-5 pt-5 sm:px-6', className)}>
       <div className="flex min-w-0 items-start gap-3">
@@ -35,7 +43,7 @@ export function CardHeader({
                     'h-9 w-9 rounded-xl bg-gradient-to-br text-white shadow-md shadow-slate-900/10 ring-1 ring-white/20 ring-inset',
                     tone,
                   )
-                : 'h-8 w-8 rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-400/10 dark:text-brand-300',
+                : cn('h-8 w-8 rounded-lg', softTone(iconTone ?? section?.soft)),
             )}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
@@ -52,10 +60,17 @@ export function CardHeader({
               {step}
             </p>
           )}
-          <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
+          <h2
+            id={titleId}
+            className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white"
+          >
             {title}
           </h2>
-          {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
+          {description && (
+            <p className="mt-0.5 text-[13px] leading-5 text-slate-500 dark:text-slate-400">
+              {description}
+            </p>
+          )}
         </div>
       </div>
       {action && <div className="shrink-0">{action}</div>}

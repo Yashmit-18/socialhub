@@ -35,6 +35,7 @@ const twMerge = extendTailwindMerge({
         'ping-soft',
         'gradient-pan',
         'bar-grow',
+        'column-grow',
       ],
     },
     classGroups: {

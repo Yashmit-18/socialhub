@@ -43,6 +43,16 @@ earlier names).
   already live when the share was created, its tasks are created at once. A post's details
   (Posts page) have a **Share in groups** button that does the same for older posts; it is safe
   to repeat.
+- **Which groups are relevant (added 2026-11-26).** When an auto share is created it records
+  the post's **topics**: the hashtags in its Facebook caption, its hashtag list (also when the
+  hashtags go in the first comment) and its draft's keywords (internal, never published). A
+  group with **relevance tags** gets a task only when one of its tags matches a topic; a group
+  without tags gets every post. Tags, hashtags and keywords are compared by letters and digits
+  only, ignoring case, so the tag `new york` matches `#NewYork` and `New-York`
+  (`relevanceKey`, `groupRelevance` in `packages/shared/src/groups.js`). Groups left out are
+  listed on the share's page as `NOT_RELEVANT`, and the page shows the topics used. A post
+  without hashtags or keywords reaches untagged groups only. Shares written by hand, and auto
+  shares made before this existed (no `topics` stored), are not filtered.
 - **What a task holds.** The group, the Page to post as, the post's Facebook caption, and the
   link to the live Page post. **Copy text** copies the caption and that link. **Open group**
   opens the group on Facebook.
@@ -68,7 +78,8 @@ earlier names).
   index; adding a group again is reported as `ALREADY_QUEUED`). A group's **days between
   shares** rule (1–365, optional) blocks new tasks until that many days after the last share
   marked done (`TOO_SOON`, with the date the next share is allowed). Archived groups get no new
-  tasks (`ARCHIVED`). A share that no selected group can take is refused (409) and nothing is
+  tasks (`ARCHIVED`). An auto share skips tagged groups whose tags match none of the post's
+  hashtags or keywords (`NOT_RELEVANT`). A share that no selected group can take is refused (409) and nothing is
   written.
 - **History is kept.** A group with a completed share can only be archived, not deleted; a
   share posted in at least one group cannot be deleted (its open tasks can be skipped).

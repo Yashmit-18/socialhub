@@ -255,6 +255,9 @@ Tunnel gets a new one).
 | `npm run queue:verify -w @socialhub/api`                        | Checks the publishing queue against the real Redis in `REDIS_URL` (connection, delivery, delay, removal, no duplicates)                                                                                                 |
 | `npm run worker -w @socialhub/api`                              | Runs the publish worker as its own process (only with `PUBLISHING_WORKER_INLINE=false`)                                                                                                                                 |
 | `npm run analytics:verify -w @socialhub/api`                    | Checks insights sync against the real Redis in `REDIS_URL` with real API and worker processes (Redis database 14, temporary MongoDB, demo insights only: nothing is read from Meta)                                     |
+| `npm run admin:grant -w @socialhub/api -- <email>`              | Gives an existing account platform admin access (the operator console at `/admin`). The only way to do so; written to the platform audit log. See [docs/ADMIN_PANEL.md](docs/ADMIN_PANEL.md)                            |
+| `npm run admin:revoke -w @socialhub/api -- <email>`             | Removes platform admin access (audited); says how many platform admins are left                                                                                                                                         |
+| `npm run admin:list -w @socialhub/api`                          | Lists the platform admins (name, email, id)                                                                                                                                                                             |
 
 ---
 
@@ -1006,7 +1009,7 @@ All routes are prefixed with `/api/v1`.
 | Method | Path                    | Auth                          | Notes                                                       |
 | ------ | ----------------------- | ----------------------------- | ----------------------------------------------------------- |
 | POST   | `/auth/register`        | –                             | Returns `{ user, accessToken }` and sets the refresh cookie |
-| POST   | `/auth/login`           | –                             | Rate-limited                                                |
+| POST   | `/auth/login`           | –                             | Rate-limited; suspended account: `401 ACCOUNT_SUSPENDED`    |
 | POST   | `/auth/refresh`         | cookie + `X-SocialHub-Client` | Rotates the refresh token                                   |
 | POST   | `/auth/logout`          | cookie + `X-SocialHub-Client` | Revokes this session                                        |
 | POST   | `/auth/logout-all`      | bearer                        | Revokes every session                                       |
@@ -1075,6 +1078,33 @@ All routes are prefixed with `/api/v1`.
 | GET    | `/workspaces/:id/activity?cursor&limit`              | `activity:read`                                                                                                                                                                                      |
 | GET    | `/health`                                            | public; only `{ status, database }`; `503` if the database is down                                                                                                                                   |
 | GET    | `/health/details`                                    | monitoring only: `Authorization: Bearer <HEALTH_DETAILS_TOKEN>`; version, queues, workers, modes. Without the token configured, or with a wrong one, `404`                                           |
+
+**Operator console (platform admins)**
+
+For the person who runs this SocialHub; see [docs/ADMIN_PANEL.md](docs/ADMIN_PANEL.md). A
+platform admin is a user with `platformRole: "PLATFORM_ADMIN"` (in their own `/auth/me`), given
+only by `npm run admin:grant`; no endpoint grants it. Anyone else signed in gets exactly the
+unknown-route `404` on every `/admin` path; without a session it is `401`. Answers are never
+cached (`Cache-Control: no-store`), are built from allow-lists, and never contain workspace
+content, names of connected Pages or Instagram accounts, tokens, IP addresses or browsers.
+Unknown values are `null`, never `0`. A suspended person who signs in with the right password
+gets `401 ACCOUNT_SUSPENDED`; every other failed sign-in keeps the generic
+`401 INVALID_CREDENTIALS`.
+
+| Method | Path                              | Notes                                                                                                                                                                                                                                                                                 |
+| ------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/overview`                 | Platform numbers, 14 days of activity (UTC) and the things needing attention                                                                                                                                                                                                          |
+| GET    | `/admin/users`                    | `?q&status&sort&page&limit`; name, email, status, sign-up and last sign-in, workspace count; `facets.status`                                                                                                                                                                          |
+| GET    | `/admin/users/:userId`            | The account, its workspaces and the suspension impact: live sessions, owned workspaces, posts waiting to go out                                                                                                                                                                       |
+| POST   | `/admin/users/:userId/suspend`    | Body `{ reason, password }` (the platform admin's own password; wrong: `422` `fields.password`). Ends every session, clears a reset link, audited. `409` with `details.reason` `SELF`, `TARGET_IS_PLATFORM_ADMIN` or `ALREADY_SUSPENDED`. Failed attempts are rate-limited per person |
+| POST   | `/admin/users/:userId/reactivate` | Body `{ password, note? }`; restores sign-in only. `409 NOT_SUSPENDED`                                                                                                                                                                                                                |
+| GET    | `/admin/workspaces`               | `?q&publishingMode&sort&page&limit`; owner, member count and account counts per platform; `facets.publishingMode`                                                                                                                                                                     |
+| GET    | `/admin/workspaces/:workspaceId`  | Names, members and counts (connections, accounts, drafts, media, posts, groups, open sharing tasks); never content                                                                                                                                                                    |
+| GET    | `/admin/system`                   | Database, publishing and analytics queues, workers (read from the queue), deliveries waiting, late or interrupted, storage, email                                                                                                                                                     |
+| GET    | `/admin/audit-log`                | `?action&targetId&cursor&limit`; suspensions, reactivations and admin grants, newest first                                                                                                                                                                                            |
+
+The publish worker refuses posts whose author is suspended at their send time
+(`AUTHOR_NOT_AUTHORIZED`, block reason `AUTHOR_SUSPENDED`); nothing is sent to Meta.
 
 **Composer (Phase 4)**
 

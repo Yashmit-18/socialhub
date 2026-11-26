@@ -1,201 +1,160 @@
-import { History, RefreshCw, ShieldCheck, SquarePen, UserPlus, Users } from 'lucide-react';
+import { useEffect } from 'react';
 import { Link } from 'react-router';
+import { useThemeTransition } from '../../hooks/useThemeTransition.js';
+import { cn } from '../../lib/utils.js';
 import { LEGAL_LINKS } from '../../pages/legal/legalLinks.js';
 import { Logo } from '../ui/Brand.jsx';
+import { ThemeToggle } from '../ui/ThemeToggle.jsx';
+import { AuthShowcase, PlatformMarks } from './AuthShowcase.jsx';
 
-const HIGHLIGHTS = [
-  {
-    icon: Users,
-    tone: 'from-indigo-400 to-indigo-600',
-    title: 'Workspaces for every brand',
-    body: 'Separate teams, accounts and permissions for each client or business.',
-  },
-  {
-    icon: ShieldCheck,
-    tone: 'from-violet-400 to-purple-600',
-    title: 'Roles with real boundaries',
-    body: 'Owner, admin, editor and viewer roles plus per-member account access.',
-  },
-  {
-    icon: History,
-    tone: 'from-fuchsia-400 to-pink-600',
-    title: 'A complete audit trail',
-    body: 'Every invitation, role change and setting update is recorded.',
-  },
-];
+/** The deep indigo of the panel (and of the phone header), a shade deeper in the dark theme. */
+const INK =
+  'bg-[linear-gradient(160deg,#11103a_0%,#19154f_55%,#2a1760_100%)] dark:bg-[linear-gradient(160deg,#0c0b2b_0%,#141040_55%,#211250_100%)]';
 
-/** Illustration only: the kind of events SocialHub shows, not real activity. */
-const SAMPLE_EVENTS = [
-  {
-    icon: RefreshCw,
-    tone: 'from-emerald-400 to-teal-500',
-    title: 'Instagram token refreshed',
-    detail: '@bloom.bakes · daily sync',
-    className: 'left-0 top-0',
-    delay: '0s',
-  },
-  {
-    icon: SquarePen,
-    tone: 'from-indigo-400 to-violet-500',
-    title: 'Draft saved',
-    detail: 'Autumn menu · version 4',
-    className: 'right-0 top-[4.5rem]',
-    delay: '-2.3s',
-  },
-  {
-    icon: UserPlus,
-    tone: 'from-pink-400 to-fuchsia-500',
-    title: 'Priya joined as Editor',
-    detail: 'Access: 2 accounts',
-    className: 'left-6 top-[9rem]',
-    delay: '-4.6s',
-  },
-];
+/**
+ * The frame of the sign-in, sign-up and password screens. Large screens: the product panel on
+ * the left, the form card on the right. Phones and tablets: a compact indigo header with the
+ * logo, the tagline and the theme switch, then the card. The legal links stay once, under the
+ * card, on the first screen. `pageTitle` names the browser tab (defaults to `title`).
+ */
+export function AuthLayout({ title, subtitle, children, footer, pageTitle }) {
+  const { isDark, toggle } = useThemeTransition();
+  const tabTitle = `${pageTitle ?? title} · SocialHub`;
 
-function SampleActivity() {
+  useEffect(() => {
+    const previous = document.title;
+    document.title = tabTitle;
+    return () => {
+      document.title = previous;
+    };
+  }, [tabTitle]);
+
   return (
-    <div className="relative h-[13.5rem] max-w-sm" aria-hidden="true">
-      {SAMPLE_EVENTS.map(({ icon: Icon, tone, title, detail, className, delay }, i) => (
+    <div className="flex min-h-dvh">
+      <aside
+        className={cn(
+          'relative isolate hidden w-[46%] max-w-2xl overflow-hidden border-white/[0.06] lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:self-start lg:border-r',
+          INK,
+        )}
+      >
         <div
-          key={title}
-          className={`absolute ${className} animate-rise`}
-          style={{ animationDelay: `${500 + i * 160}ms` }}
-        >
-          <div
-            className="flex animate-float items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.07] py-2.5 pr-4 pl-2.5 shadow-[0_20px_40px_-20px_rgb(0_0_0/0.8)] ring-1 ring-white/5 backdrop-blur-xl"
-            style={{ animationDelay: delay }}
-          >
-            <span
-              className={`flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br ${tone} text-white shadow-lg`}
-            >
-              <Icon className="h-4 w-4" />
-            </span>
-            <span>
-              <span className="block text-[13px] font-medium text-white">{title}</span>
-              <span className="block text-[11px] text-white/55">{detail}</span>
-            </span>
-          </div>
-        </div>
-      ))}
-      <p className="absolute right-2 bottom-0 text-[10px] tracking-[0.14em] text-white/35 uppercase">
-        Sample activity
-      </p>
-    </div>
-  );
-}
-
-export function AuthLayout({ title, subtitle, children, footer }) {
-  return (
-    <div className="flex min-h-screen">
-      <aside className="relative isolate hidden w-[46%] max-w-2xl overflow-hidden bg-[linear-gradient(160deg,#11103a_0%,#19154f_55%,#2a1760_100%)] lg:flex lg:flex-col">
-        <div
-          className="absolute -top-40 -left-40 -z-10 h-[30rem] w-[30rem] animate-drift rounded-full bg-indigo-500/45 blur-[110px]"
+          className="absolute -top-40 -left-40 -z-10 h-[30rem] w-[30rem] animate-drift rounded-full bg-indigo-500/40 blur-[110px] dark:bg-indigo-500/30"
           aria-hidden="true"
         />
         <div
-          className="absolute -right-32 -bottom-48 -z-10 h-[28rem] w-[28rem] animate-drift rounded-full bg-pink-500/30 blur-[110px] [animation-delay:-9s]"
+          className="absolute -right-32 -bottom-48 -z-10 h-[28rem] w-[28rem] animate-drift rounded-full bg-pink-500/30 blur-[110px] [animation-delay:-9s] dark:bg-pink-500/20"
           aria-hidden="true"
         />
         <div
-          className="absolute top-1/3 right-1/4 -z-10 h-64 w-64 animate-drift rounded-full bg-violet-500/25 blur-[100px] [animation-delay:-15s]"
+          className="absolute inset-0 -z-10 bg-[linear-gradient(to_right,rgb(255_255_255/.04)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/.04)_1px,transparent_1px)] [mask-image:radial-gradient(ellipse_80%_70%_at_30%_40%,#000_30%,transparent_80%)] bg-[size:44px_44px]"
           aria-hidden="true"
         />
-        <div
-          className="absolute inset-0 -z-10 bg-[linear-gradient(to_right,rgb(255_255_255/.045)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/.045)_1px,transparent_1px)] [mask-image:radial-gradient(ellipse_80%_70%_at_30%_40%,#000_30%,transparent_80%)] bg-[size:44px_44px]"
-          aria-hidden="true"
-        />
-        <div className="relative flex flex-1 flex-col justify-between p-10 xl:p-14">
-          <Link to="/" aria-label="SocialHub home" className="w-fit animate-fade-in">
+        <div className="relative flex min-h-0 flex-1 flex-col px-10 py-10 xl:px-14 [@media(max-height:820px)]:py-8">
+          <Link to="/" aria-label="SocialHub home" className="w-fit animate-fade-in rounded-lg">
             <Logo light />
           </Link>
-          <div>
-            <h2 className="max-w-md animate-rise text-[2.1rem] leading-[1.12] font-semibold tracking-[-0.03em] text-white xl:text-[2.5rem]">
-              One home for your team&apos;s{' '}
-              <span className="bg-gradient-to-r from-indigo-300 via-violet-300 to-pink-300 bg-clip-text text-transparent">
-                social presence.
-              </span>
-            </h2>
-            <ul className="mt-10 space-y-6">
-              {HIGHLIGHTS.map(({ icon: Icon, tone, title: t, body }, i) => (
-                <li
-                  key={t}
-                  className="flex animate-rise gap-4"
-                  style={{ animationDelay: `${150 + i * 90}ms` }}
-                >
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${tone} text-white shadow-lg shadow-black/25 ring-1 ring-white/20 ring-inset`}
-                  >
-                    <Icon className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-white">{t}</p>
-                    <p className="mt-0.5 text-sm leading-relaxed text-indigo-100/70">{body}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-12">
-              <SampleActivity />
-            </div>
+          <div className="flex flex-1 flex-col justify-center py-8 [@media(max-height:720px)]:py-3 [@media(max-height:820px)]:py-6">
+            <AuthShowcase />
           </div>
-          <p className="text-xs text-indigo-100/50">© {new Date().getFullYear()} SocialHub</p>
+          <p className="text-xs text-indigo-100/70">© {new Date().getFullYear()} SocialHub</p>
         </div>
       </aside>
 
-      <main className="relative isolate flex flex-1 items-center justify-center overflow-hidden px-5 py-12 sm:px-8">
+      <div className="relative isolate flex min-w-0 flex-1 flex-col overflow-hidden">
         <div
           className="absolute -top-48 right-[-10%] -z-10 h-[26rem] w-[34rem] animate-drift rounded-full bg-brand-400/25 blur-[110px] dark:bg-brand-500/20"
           aria-hidden="true"
         />
         <div
-          className="absolute bottom-[-12rem] left-[-8%] -z-10 h-[22rem] w-[26rem] animate-drift rounded-full bg-pink-400/20 blur-[110px] [animation-delay:-11s] dark:bg-pink-500/10"
+          className="absolute bottom-[-12rem] left-[-8%] -z-10 h-[22rem] w-[26rem] animate-drift rounded-full bg-pink-400/20 blur-[110px] [animation-delay:-11s] dark:bg-pink-500/[0.12]"
           aria-hidden="true"
         />
-        <div className="w-full max-w-md">
-          <Link
-            to="/"
-            className="mb-10 inline-flex animate-fade-in lg:hidden"
-            aria-label="SocialHub home"
-          >
-            <Logo />
-          </Link>
-          <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-7 shadow-[0_1px_2px_rgb(30_27_75/0.05),0_28px_56px_-28px_rgb(49_46_129/0.3)] sm:p-9 dark:border-white/[0.08] dark:bg-slate-900 dark:shadow-none">
-            <span
-              aria-hidden="true"
-              className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-500 via-violet-500 to-pink-500"
-            />
-            <h1 className="animate-rise text-[1.75rem] font-semibold tracking-[-0.025em] text-slate-900 dark:text-white">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="mt-2 animate-rise text-sm text-muted [animation-delay:60ms]">
-                {subtitle}
-              </p>
-            )}
-            <div className="auth-form mt-8">{children}</div>
-          </div>
-          {footer && (
-            <div className="mt-8 animate-fade-in text-center text-sm text-muted [animation-delay:400ms] [animation-fill-mode:backwards]">
-              {footer}
-            </div>
+        {/* Dark theme: carry the panel's indigo into the form side so the two halves match. */}
+        <div
+          className="absolute inset-y-0 left-0 -z-10 hidden w-1/2 bg-gradient-to-r from-brand-500/[0.08] to-transparent dark:lg:block"
+          aria-hidden="true"
+        />
+
+        <header
+          className={cn(
+            'relative isolate overflow-hidden rounded-b-[1.75rem] px-5 pt-3 pb-5 shadow-[0_18px_40px_-24px_rgb(25_21_79/0.7)] sm:mx-6 sm:mt-4 sm:rounded-[1.75rem] sm:px-7 dark:ring-1 dark:ring-white/[0.07] dark:ring-inset',
+            INK,
+            'lg:absolute lg:top-0 lg:right-0 lg:z-10 lg:m-0 lg:rounded-none lg:bg-none lg:p-5 lg:shadow-none lg:dark:bg-none lg:dark:ring-0',
           )}
-          <nav
-            aria-label="Legal"
-            className="mt-10 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted"
-          >
-            {/* Static pages outside the SPA: plain links load them from the server. */}
-            {LEGAL_LINKS.map(({ path, title }) => (
-              <a
-                key={path}
-                href={path}
-                className="transition-colors hover:text-slate-900 dark:hover:text-white"
-              >
-                {title}
-              </a>
-            ))}
-          </nav>
-        </div>
-      </main>
+        >
+          <div
+            className="absolute -top-16 -right-10 -z-10 h-40 w-56 rounded-full bg-pink-500/25 blur-3xl lg:hidden"
+            aria-hidden="true"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <Link to="/" aria-label="SocialHub home" className="rounded-lg lg:hidden">
+              <Logo light />
+            </Link>
+            <ThemeToggle
+              isDark={isDark}
+              onToggle={toggle}
+              className="text-white/85 hover:bg-white/10 hover:text-white lg:text-slate-600 lg:hover:bg-slate-900/[0.05] lg:hover:text-slate-900 lg:dark:hover:bg-white/[0.06]"
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-4 lg:hidden">
+            <p className="text-[15px] leading-snug font-medium text-white/90">
+              One home for your team&apos;s social presence.
+            </p>
+            <PlatformMarks />
+          </div>
+        </header>
+
+        <main className="flex flex-1 flex-col items-center justify-start px-4 pt-6 pb-8 sm:justify-center sm:px-8 lg:py-10 [@media(max-height:780px)]:lg:py-5">
+          <div className="w-full max-w-md">
+            <div className="relative animate-scale-in overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgb(30_27_75/0.05),0_28px_56px_-28px_rgb(49_46_129/0.3)] dark:border-white/10 dark:bg-slate-900 dark:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06),0_30px_80px_-20px_rgb(0_0_0/0.8)]">
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-500 via-violet-500 to-pink-500"
+              />
+              <div className="px-6 pt-7 pb-7 sm:px-8 sm:pt-8">
+                <h1 className="animate-rise text-[1.625rem] leading-tight font-semibold tracking-[-0.025em] text-slate-900 sm:text-[1.75rem] dark:text-white">
+                  {title}
+                </h1>
+                {subtitle && (
+                  <p className="mt-1.5 animate-rise text-sm text-slate-600 [animation-delay:60ms] dark:text-slate-400">
+                    {subtitle}
+                  </p>
+                )}
+                <div className="auth-form mt-7">{children}</div>
+              </div>
+              {footer && (
+                <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-3.5 text-center text-sm text-slate-600 sm:px-8 dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-slate-400">
+                  {footer}
+                </div>
+              )}
+            </div>
+            <nav
+              aria-label="Legal"
+              className="mt-5 flex flex-wrap items-center justify-center gap-x-2 text-xs sm:gap-x-1 text-slate-600 dark:text-slate-300"
+            >
+              {/* Static pages outside the SPA: plain links load them from the server. */}
+              {LEGAL_LINKS.map(({ path, title: label }, i) => (
+                <span key={path} className="inline-flex items-center gap-x-1">
+                  {i > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="hidden text-slate-400 sm:inline dark:text-slate-500"
+                    >
+                      ·
+                    </span>
+                  )}
+                  <a
+                    href={path}
+                    className="rounded px-1.5 py-1 transition-colors hover:text-slate-900 dark:hover:text-white"
+                  >
+                    {label}
+                  </a>
+                </span>
+              ))}
+            </nav>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

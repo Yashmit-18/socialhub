@@ -5,7 +5,6 @@ import {
   Copy,
   ExternalLink,
   Hand,
-  ListTodo,
   RotateCcw,
   ShieldAlert,
   SkipForward,
@@ -17,11 +16,15 @@ import { toast } from 'sonner';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { buttonClass } from '../../components/ui/buttonClass.js';
+import { FilterSelect } from '../../components/accounts/AccountFilters.jsx';
+import { Callout } from '../../components/ui/Callout.jsx';
 import { Card } from '../../components/ui/Card.jsx';
 import { EmptyState, ErrorState, Skeleton } from '../../components/ui/Feedback.jsx';
-import { FormError } from '../../components/ui/Field.jsx';
+import { FormError, Input, Textarea } from '../../components/ui/Field.jsx';
+import { TasksArt } from '../../components/ui/illustrations.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { Pagination } from '../../components/ui/Pagination.jsx';
+import { SegmentedControl } from '../../components/ui/SegmentedControl.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { copyText } from '../../lib/accountOrganization.js';
@@ -44,8 +47,8 @@ const ASSIGNEE_OPTIONS = [
   ['any', 'Everyone'],
 ];
 
-const inputClass =
-  'block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100';
+// On a phone the card's buttons sit two to a row, and an odd last one takes the full width.
+const PHONE_PAIR = 'max-sm:grow max-sm:basis-[calc(50%-0.25rem)]';
 
 export function TaskStatusBadge({ status }) {
   if (status === DONE)
@@ -74,7 +77,7 @@ export function ExternalAnchor({ href, children, className }) {
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        'inline-flex items-center gap-1 font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300',
+        'inline-flex items-center gap-1 font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200',
         className,
       )}
     >
@@ -134,41 +137,32 @@ function FinishDialog({ task, mode, onClose }) {
     >
       <form id={`finish-${task.id}`} onSubmit={submit} noValidate className="space-y-4">
         {done && (
-          <div className="space-y-1.5">
-            <label htmlFor={`post-url-${task.id}`} className="block text-sm font-medium">
-              Link to the post <span className="font-normal text-muted">(optional)</span>
-            </label>
-            <input
-              id={`post-url-${task.id}`}
-              type="url"
-              inputMode="url"
-              className={inputClass}
-              placeholder="https://www.facebook.com/groups/…/posts/…"
-              value={postUrl}
-              onChange={(e) => setPostUrl(e.target.value)}
-              aria-invalid={urlError ? true : undefined}
-            />
-            {urlError && (
-              <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
-                {urlError}
-              </p>
-            )}
-          </div>
-        )}
-        <div className="space-y-1.5">
-          <label htmlFor={`note-${task.id}`} className="block text-sm font-medium">
-            Note <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <textarea
-            id={`note-${task.id}`}
-            rows={3}
-            maxLength={500}
-            className={inputClass}
-            placeholder={done ? 'For example: waiting for admin approval' : 'Why it was skipped'}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+          <Input
+            label={
+              <>
+                Link to the post <span className="font-normal text-muted">(optional)</span>
+              </>
+            }
+            type="url"
+            inputMode="url"
+            placeholder="https://www.facebook.com/groups/…/posts/…"
+            value={postUrl}
+            onChange={(e) => setPostUrl(e.target.value)}
+            error={urlError}
           />
-        </div>
+        )}
+        <Textarea
+          label={
+            <>
+              Note <span className="font-normal text-muted">(optional)</span>
+            </>
+          }
+          rows={3}
+          maxLength={500}
+          placeholder={done ? 'For example: waiting for admin approval' : 'Why it was skipped'}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
         <FormError message={update.error?.fields?.postUrl ?? update.error?.message} />
       </form>
     </Modal>
@@ -214,7 +208,7 @@ function TaskCard({ task, me, canComplete, canManage }) {
                 {group ? (
                   <ExternalAnchor
                     href={group.url}
-                    className="text-slate-900 hover:text-brand-600 dark:text-white"
+                    className="text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                   >
                     {group.name}
                   </ExternalAnchor>
@@ -222,7 +216,8 @@ function TaskCard({ task, me, canComplete, canManage }) {
                   'Removed group'
                 )}
               </h3>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+              {/* Stacked on a phone, so the separator never dangles at the end of a line. */}
+              <p className="mt-0.5 flex flex-col gap-x-1.5 text-xs text-muted sm:flex-row sm:flex-wrap sm:items-center">
                 {task.page && (
                   <>
                     <span>
@@ -231,33 +226,35 @@ function TaskCard({ task, me, canComplete, canManage }) {
                         {task.page.name}
                       </span>
                     </span>
-                    <span aria-hidden="true">·</span>
+                    <span aria-hidden="true" className="hidden sm:inline">
+                      ·
+                    </span>
                   </>
                 )}
                 <span className="min-w-0 truncate">{share.title}</span>
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {task.dueAt && task.status === OPEN && (
-              <Badge tone={overdue ? 'danger' : 'neutral'}>
-                <CalendarClock className="h-3 w-3" aria-hidden="true" />
-                {overdue ? 'Overdue · ' : 'Due '}
-                {formatDate(task.dueAt, { dateStyle: 'medium' })}
-              </Badge>
-            )}
-            <TaskStatusBadge status={task.status} />
-          </div>
+          {/* No status badge: the list shows one status at a time and the tab names it. */}
+          {task.dueAt && task.status === OPEN && (
+            <Badge tone={overdue ? 'danger' : 'neutral'}>
+              <CalendarClock className="h-3 w-3" aria-hidden="true" />
+              {overdue ? 'Overdue · ' : 'Due '}
+              {formatDate(task.dueAt, { dateStyle: 'medium' })}
+            </Badge>
+          )}
         </div>
 
         {group?.notes && (
-          <p className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-            <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>
-              <span className="font-semibold">Group rules: </span>
-              {group.notes}
-            </span>
-          </p>
+          <Callout
+            tone="warning"
+            size="sm"
+            icon={ShieldAlert}
+            title="Group rules:"
+            className="mt-4"
+          >
+            {group.notes}
+          </Callout>
         )}
 
         {task.status === OPEN && (share.message || share.link || postUrl) && (
@@ -292,7 +289,7 @@ function TaskCard({ task, me, canComplete, canManage }) {
               : `${task.status === DONE ? 'Shared' : 'Skipped'} by ${task.completedBy?.name ?? 'a former member'} ${task.completedAt ? timeAgo(task.completedAt) : ''}`}
             {task.note && task.status !== OPEN && <> · “{task.note}”</>}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {task.status === DONE && task.postUrl && (
               <ExternalAnchor href={task.postUrl} className="text-xs">
                 View post
@@ -302,6 +299,7 @@ function TaskCard({ task, me, canComplete, canManage }) {
               <Button
                 variant="secondary"
                 size="sm"
+                className={PHONE_PAIR}
                 onClick={async () => {
                   if (await copyText(taskText(task))) toast.success('Text copied');
                   else toast.error('Copying was blocked by the browser. Select the text instead.');
@@ -315,7 +313,7 @@ function TaskCard({ task, me, canComplete, canManage }) {
                 href={group.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                className={buttonClass({ variant: 'secondary', size: 'sm', className: PHONE_PAIR })}
               >
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> Open group
                 <span className="sr-only">(opens Facebook in a new tab)</span>
@@ -325,6 +323,7 @@ function TaskCard({ task, me, canComplete, canManage }) {
               <Button
                 variant="secondary"
                 size="sm"
+                className={PHONE_PAIR}
                 loading={update.isPending}
                 onClick={() => run({ assigneeId: me }, 'The task is yours')}
               >
@@ -333,10 +332,21 @@ function TaskCard({ task, me, canComplete, canManage }) {
             )}
             {task.status === OPEN && canWork && (
               <>
-                <Button variant="ghost" size="sm" onClick={() => setFinishing(SKIPPED)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={PHONE_PAIR}
+                  onClick={() => setFinishing(SKIPPED)}
+                >
                   <SkipForward className="h-3.5 w-3.5" aria-hidden="true" /> Skip
                 </Button>
-                <Button size="sm" onClick={() => setFinishing(DONE)}>
+                {/* Tonal, not the gradient: every card has one, and a page gets one gradient. */}
+                <Button
+                  variant="tonal"
+                  size="sm"
+                  className={PHONE_PAIR}
+                  onClick={() => setFinishing(DONE)}
+                >
                   <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> Mark as shared
                 </Button>
               </>
@@ -361,6 +371,32 @@ function TaskCard({ task, me, canComplete, canManage }) {
   );
 }
 
+/** First load: two cards shaped like tasks. */
+function TasksSkeleton() {
+  return (
+    <div role="status" className="space-y-3">
+      <span className="sr-only">Loading tasks…</span>
+      {[0, 1].map((n) => (
+        <div key={n} aria-hidden="true" className="surface p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <Skeleton className="h-10 w-10 rounded-xl" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-64 max-w-full" />
+            </div>
+          </div>
+          <Skeleton className="mt-4 h-16 w-full" />
+          <div className="mt-4 flex justify-end gap-2">
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-8 w-32" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** The sharing queue: open tasks to post by hand, and the record of shared and skipped ones. */
 export default function TasksPage() {
   const { workspace, can } = useWorkspace();
@@ -377,51 +413,35 @@ export default function TasksPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" aria-label="Task status" className="flex flex-wrap gap-1.5">
-          {STATUS_TABS.map(([value, label, key]) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={status === value}
-              onClick={() => {
-                setStatus(value);
-                setPage(1);
-              }}
-              className={cn(
-                'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition',
-                status === value
-                  ? 'border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-400/40 dark:bg-brand-500/10 dark:text-brand-200'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200',
-              )}
-            >
-              {label}
-              {counts && <span className="tabular-nums text-muted">{counts[key]}</span>}
-            </button>
-          ))}
-        </div>
-        <select
-          aria-label="Whose tasks"
-          value={assignee}
-          onChange={(e) => {
-            setAssignee(e.target.value);
+        <SegmentedControl
+          label="Task status"
+          model="tabs"
+          size="sm"
+          value={status}
+          onChange={(value) => {
+            setStatus(value);
             setPage(1);
           }}
-          className="h-9 rounded-xl border border-slate-200 bg-white px-3 pr-8 text-xs font-medium text-slate-700 shadow-xs dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200"
-        >
-          {ASSIGNEE_OPTIONS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+          options={STATUS_TABS.map(([value, label, key]) => ({
+            value,
+            label,
+            count: counts ? counts[key] : undefined,
+          }))}
+        />
+        <FilterSelect
+          label="Whose tasks"
+          value={assignee}
+          highlight={false}
+          options={ASSIGNEE_OPTIONS}
+          onChange={(value) => {
+            setAssignee(value);
+            setPage(1);
+          }}
+        />
       </div>
 
       {tasks.isPending ? (
-        <div className="space-y-3">
-          <Skeleton className="h-40 w-full rounded-2xl" />
-          <Skeleton className="h-40 w-full rounded-2xl" />
-        </div>
+        <TasksSkeleton />
       ) : tasks.error ? (
         <Card>
           <ErrorState
@@ -433,7 +453,7 @@ export default function TasksPage() {
       ) : data.items.length === 0 ? (
         <Card>
           <EmptyState
-            icon={ListTodo}
+            art={TasksArt}
             title={
               status === OPEN
                 ? 'Nothing to share right now'
@@ -473,17 +493,15 @@ export default function TasksPage() {
               />
             ))}
           </ul>
-          <Card>
-            <Pagination
-              page={data.page}
-              pages={data.pages}
-              total={data.total}
-              limit={data.limit}
-              noun={data.total === 1 ? 'task' : 'tasks'}
-              onPageChange={setPage}
-              className="border-t-0"
-            />
-          </Card>
+          <Pagination
+            page={data.page}
+            pages={data.pages}
+            total={data.total}
+            limit={data.limit}
+            noun={data.total === 1 ? 'task' : 'tasks'}
+            onPageChange={setPage}
+            className="border-t-0 px-1 py-0 sm:px-1"
+          />
         </>
       )}
     </div>

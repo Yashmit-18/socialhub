@@ -1,31 +1,49 @@
 /**
  * Decorative product illustrations and motion graphics for the landing page. They use sample
- * data only, are hidden from assistive technology, and never show anything as published.
- * Colours come from the `--lp-*` theme tokens in landing.css, so they follow light/dark mode.
+ * data only and are hidden from assistive technology. The only thing ever shown as published
+ * is a sample Facebook Page post; Instagram stays a preview. Colours come from the `--lp-*`
+ * theme tokens in landing.css, so they follow light/dark mode.
  */
 import {
   Activity,
   ArrowRight,
+  Bookmark,
   Check,
   CircleAlert,
+  Forward,
   Hash,
+  Heart,
   LayoutDashboard,
+  LoaderCircle,
   Lock,
   MailPlus,
+  MessageCircle,
   RefreshCw,
+  Send,
   Server,
   Settings,
   Share2,
   ShieldCheck,
   SquarePen,
+  ThumbsUp,
   UserRound,
   Users,
 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
-import { FacebookIcon, InstagramIcon, LogoMark } from '../../components/ui/Brand.jsx';
+import { LogoMark } from '../../components/ui/Brand.jsx';
 import { cn } from '../../lib/utils.js';
+import {
+  DrawnCheck,
+  Initials,
+  Line,
+  Pill,
+  PlatformBadge,
+  PlatformDot,
+  SampleNote,
+  SamplePhoto,
+} from './LandingKit.jsx';
 import { CountUp } from './motion.jsx';
-import { useInView, useReducedMotion, useScramble } from './useMotion.js';
+import { useInView, useOnScreen, useReducedMotion, useScramble } from './useMotion.js';
 
 const APP_NAV = [
   { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
@@ -35,33 +53,6 @@ const APP_NAV = [
   { id: 'activity', icon: Activity, label: 'Activity' },
   { id: 'settings', icon: Settings, label: 'Settings' },
 ];
-
-export function Pill({ tone = 'slate', className, children }) {
-  return (
-    <span
-      className={cn(
-        'lp-tone inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap',
-        `lp-tone-${tone}`,
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Initials({ text, className }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white',
-        className,
-      )}
-    >
-      {text}
-    </span>
-  );
-}
 
 function WindowChrome({ path }) {
   return (
@@ -110,10 +101,6 @@ function MiniSidebar({ active }) {
       </nav>
     </aside>
   );
-}
-
-function Line({ w = 'w-24', className }) {
-  return <span className={cn('block h-2 rounded-full bg-(--lp-line)', w, className)} />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,28 +156,6 @@ function FollowerSplitBar({ className, delay = 0 }) {
         />
       ))}
     </div>
-  );
-}
-
-export function PlatformBadge({ kind, className }) {
-  return kind === 'facebook' ? (
-    <span
-      className={cn(
-        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1877f2] text-white',
-        className,
-      )}
-    >
-      <FacebookIcon className="h-4 w-4" />
-    </span>
-  ) : (
-    <span
-      className={cn(
-        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#feda75] via-[#d62976] to-[#4f5bd5] text-white',
-        className,
-      )}
-    >
-      <InstagramIcon className="h-3.5 w-3.5" />
-    </span>
   );
 }
 
@@ -260,7 +225,7 @@ export function HeroDashboard() {
         detail="@bloom.bakes · daily sync"
       />
       <FloatingChip
-        className="-top-6 -right-3 lg:-right-12"
+        className="-top-6 -right-3 xl:-right-12"
         delay={1200}
         depth={34}
         icon={
@@ -380,9 +345,7 @@ export function HeroDashboard() {
                     </ul>
                   </div>
                 </div>
-                <p className="mt-3 text-right text-[10px] text-(--lp-faint)">
-                  Sample data for illustration
-                </p>
+                <SampleNote className="mt-3 text-right" />
               </div>
             </div>
           </div>
@@ -508,7 +471,7 @@ const HEALTH_ROWS = ['Token valid', 'Permissions granted', 'Page reachable'];
 export function HealthChecks() {
   const [ref, inView] = useInView({ threshold: 0.5 });
   return (
-    <ul ref={ref} aria-hidden="true" className={cn('mt-5 space-y-1.5', inView && 'is-visible')}>
+    <ul ref={ref} aria-hidden="true" className={cn('mt-5 space-y-1.5', inView && 'is-on')}>
       {HEALTH_ROWS.map((row, i) => (
         <li
           key={row}
@@ -654,8 +617,9 @@ function JourneyLink({ delay = 0 }) {
  */
 export function TokenJourney() {
   const [ref, inView] = useInView({ threshold: 0.3 });
+  const onScreen = useOnScreen(ref);
   const reduced = useReducedMotion();
-  const cipher = useScramble(CIPHER_SEED, inView && !reduced);
+  const cipher = useScramble(CIPHER_SEED, inView && onScreen && !reduced);
 
   return (
     <div ref={ref} aria-hidden="true" className="lp-card overflow-hidden p-4 sm:p-6">
@@ -728,7 +692,7 @@ export function TokenJourney() {
           </div>
         </JourneyStage>
       </div>
-      <p className="mt-4 text-right text-[10px] text-(--lp-faint)">Illustration · sample values</p>
+      <SampleNote className="mt-4 text-right">Illustration · sample values</SampleNote>
     </div>
   );
 }
@@ -751,38 +715,74 @@ const CHARS = Array.from(CAPTION);
 const TYPE_END = CHARS.length;
 const TAG_AT = (i) => TYPE_END + 8 + i * 7;
 const CHECK_AT = (i) => TYPE_END + 34 + i * 9;
-const LOOP_END = TYPE_END + 170;
+// The publish beat: the real-post confirmation is ticked, the button is pressed, and the
+// Facebook Page post goes live. Instagram stays a preview (not yet verified with a real account).
+const CONFIRM_AT = CHECK_AT(4) + 14;
+const PRESS_AT = CONFIRM_AT + 12;
+const PUBLISHED_AT = PRESS_AT + 28;
+const LOOP_END = TYPE_END + 195;
 
-function SunsetPhoto({ className }) {
+const IG_ACTIONS = [Heart, MessageCircle, Send];
+const FB_ACTIONS = [
+  [ThumbsUp, 'Like'],
+  [MessageCircle, 'Comment'],
+  [Forward, 'Share'],
+];
+
+function PublishButton({ t }) {
+  const published = t >= PUBLISHED_AT;
+  const publishing = t >= PRESS_AT && !published;
+  const armed = t >= CONFIRM_AT && !published;
   return (
-    <div
+    <span
       className={cn(
-        'relative overflow-hidden bg-gradient-to-b from-[#f9a8d4] via-[#fb923c] to-[#7c2d12]',
-        className,
+        'inline-flex min-w-[10.5rem] items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-[scale] duration-200',
+        published
+          ? 'lp-tone lp-tone-mint'
+          : armed
+            ? 'bg-gradient-to-r from-indigo-500 to-pink-500 text-white shadow-[0_8px_20px_-8px_rgba(236,72,153,0.7)]'
+            : 'bg-(--lp-surface-2) text-(--lp-muted)',
+        t >= PRESS_AT && t < PRESS_AT + 4 && 'scale-95',
       )}
     >
-      <span className="absolute top-[22%] left-1/2 h-[34%] w-[34%] -translate-x-1/2 rounded-full bg-[#fde68a] shadow-[0_0_40px_rgba(253,230,138,0.8)]" />
-      <span className="absolute -bottom-[30%] -left-[10%] h-[70%] w-[75%] rounded-[50%] bg-[#431407]" />
-      <span className="absolute -right-[15%] -bottom-[35%] h-[75%] w-[80%] rounded-[50%] bg-[#2a0d05]" />
-    </div>
+      {published ? (
+        // Only the Facebook Page post goes live; the mark says so.
+        <>
+          <PlatformDot kind="facebook" /> Published <DrawnCheck />
+        </>
+      ) : publishing ? (
+        <>
+          <LoaderCircle className="h-3 w-3 animate-spin" /> Publishing…
+        </>
+      ) : (
+        <>
+          <ShieldCheck className="h-3 w-3" /> Publish · confirm first
+        </>
+      )}
+    </span>
   );
 }
 
 export function ComposerDemo() {
   const [ref, inView] = useInView({ threshold: 0.3 });
+  const onScreen = useOnScreen(ref);
   const reduced = useReducedMotion();
   const [tick, setTick] = useState(0);
+  // Under reduced motion the demo rests on its last frame: the Facebook Page post published.
   const t = reduced ? LOOP_END - 1 : tick;
+  const running = inView && onScreen && !reduced;
 
   useEffect(() => {
-    if (!inView || reduced) return undefined;
+    if (!running) return undefined;
     const id = setInterval(() => setTick((v) => (v >= LOOP_END ? 0 : v + 1)), 42);
     return () => clearInterval(id);
-  }, [inView, reduced]);
+  }, [running]);
 
   const typed = CHARS.slice(0, Math.min(t, TYPE_END)).join('');
   const typing = t < TYPE_END;
   const tags = TAGS.filter((_, i) => t >= TAG_AT(i));
+  const confirmed = t >= CONFIRM_AT;
+  const published = t >= PUBLISHED_AT;
 
   return (
     <div ref={ref} className="relative" aria-hidden="true">
@@ -825,7 +825,7 @@ export function ComposerDemo() {
           </div>
 
           <div className="flex gap-2">
-            <SunsetPhoto className="h-14 w-14 rounded-lg" />
+            <SamplePhoto kind="buns" className="h-14 w-14 shrink-0 rounded-lg" />
             <div className="flex h-14 flex-1 items-center rounded-lg border border-dashed border-(--lp-border-strong) px-3 text-[11px] text-(--lp-faint)">
               Alt text: “Cinnamon buns on a table at sunset”
             </div>
@@ -864,17 +864,32 @@ export function ComposerDemo() {
             </ul>
           </div>
 
+          {/* The real-post confirmation, always in place so nothing shifts when it is ticked. */}
+          <div className="lp-tone lp-tone-amber flex items-start gap-2 rounded-xl px-3 py-2.5">
+            <span
+              className={cn(
+                'mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors duration-300',
+                confirmed
+                  ? 'border-transparent bg-indigo-500 text-white'
+                  : 'border-(--lp-border-strong) bg-(--lp-card-solid) text-transparent',
+              )}
+            >
+              {confirmed && <Check className="lp-pop h-3 w-3" strokeWidth={3.5} />}
+            </span>
+            <span className="text-[11px] leading-snug text-(--lp-text)">
+              I understand that this publishes a real post on these accounts.
+            </span>
+          </div>
+
           <div className="flex items-center justify-end gap-2">
             <span className="rounded-full px-3 py-1.5 text-[11px] text-(--lp-muted) ring-1 ring-(--lp-border)">
               Save draft
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-(--lp-surface-2) px-3 py-1.5 text-[11px] text-(--lp-muted)">
-              <ShieldCheck className="h-3 w-3" /> Publish · confirm first
-            </span>
+            <PublishButton t={t} />
           </div>
         </div>
 
-        {/* Preview side */}
+        {/* Preview side: the shapes of the app's own previews, never a count */}
         <div className="min-w-0 space-y-3">
           <div className="overflow-hidden rounded-xl border border-(--lp-border) bg-(--lp-window-inset)">
             <div className="flex items-center gap-2 px-3 py-2">
@@ -886,9 +901,15 @@ export function ComposerDemo() {
                 Not published
               </Pill>
             </div>
-            <SunsetPhoto className="aspect-[4/3] w-full" />
+            <SamplePhoto kind="buns" className="aspect-[4/3] w-full" />
+            <div className="flex items-center gap-3 px-3 pt-2.5 text-(--lp-muted)">
+              {IG_ACTIONS.map((Icon, i) => (
+                <Icon key={i} className="h-4 w-4" strokeWidth={1.75} />
+              ))}
+              <Bookmark className="ml-auto h-4 w-4" strokeWidth={1.75} />
+            </div>
             {/* Padding lives on the wrapper: on the clamped element it would reveal a 3rd line. */}
-            <div className="px-3 py-2">
+            <div className="px-3 pt-1.5 pb-2.5">
               <p className="line-clamp-2 min-h-10 text-[12px] leading-5 text-(--lp-muted)">
                 <span className="font-semibold text-(--lp-text)">bloom.bakes</span> {typed}{' '}
                 <span className="text-(--lp-link)">{tags.join(' ')}</span>
@@ -901,20 +922,35 @@ export function ComposerDemo() {
               <PlatformBadge kind="facebook" className="h-7 w-7" />
               <div className="leading-tight">
                 <p className="text-[12px] font-semibold text-(--lp-text)">Bloom Bakery</p>
-                <p className="text-[10px] text-(--lp-faint)">Facebook Page preview</p>
+                <p className="text-[10px] text-(--lp-faint)">Facebook Page</p>
               </div>
-              <Pill tone="slate" className="ml-auto">
-                Not published
-              </Pill>
+              {published ? (
+                <Pill tone="mint" className="ml-auto">
+                  <DrawnCheck className="h-2.5 w-2.5" /> Published
+                </Pill>
+              ) : (
+                <Pill tone="slate" className="ml-auto">
+                  Not published
+                </Pill>
+              )}
             </div>
             <div className="px-3 pb-2">
               <p className="line-clamp-2 min-h-10 text-[12px] leading-5 text-(--lp-muted)">
                 {typed} <span className="text-(--lp-link)">{tags.join(' ')}</span>
               </p>
             </div>
-            <SunsetPhoto className="h-20 w-full" />
+            <SamplePhoto kind="buns" className="h-24 w-full" />
+            <div className="flex items-center justify-around border-t border-(--lp-border) px-3 py-2 text-[11px] text-(--lp-muted)">
+              {FB_ACTIONS.map(([Icon, label]) => (
+                <span key={label} className="inline-flex items-center gap-1.5">
+                  <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  {label}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
+        <SampleNote className="-mt-1 text-right lg:col-span-2" />
       </div>
     </div>
   );
@@ -1028,12 +1064,12 @@ function TourCompose() {
           </div>
         </Row>
         <div className="flex gap-2">
-          <SunsetPhoto className="h-10 w-10 rounded-md" />
-          <SunsetPhoto className="h-10 w-10 rounded-md opacity-70" />
+          <SamplePhoto kind="buns" className="h-10 w-10 rounded-md" />
+          <SamplePhoto kind="latte" className="h-10 w-10 rounded-md opacity-70" />
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border border-(--lp-border)">
-        <SunsetPhoto className="h-20 w-full" />
+        <SamplePhoto kind="buns" className="h-20 w-full" />
         <div className="space-y-1.5 p-2">
           <Line w="w-full" />
           <Line w="w-1/2" />
@@ -1154,6 +1190,7 @@ export function TourScreen({ id, path }) {
             <Screen />
           </div>
         </div>
+        <SampleNote className="border-t border-(--lp-border) px-4 py-2 text-right" />
       </div>
     </div>
   );

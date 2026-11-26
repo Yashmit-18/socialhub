@@ -6,40 +6,45 @@ import cors from 'cors';
 import express, { Router } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
-import { CLIENT_HEADER, QUEUE_STATUS } from '@socialhub/shared';
+import { CLIENT_HEADER } from '@socialhub/shared';
 import { config } from './config/env.js';
 import { logger } from './config/logger.js';
 import { databaseState } from './db/mongoose.js';
 import { safeEqual } from './lib/crypto.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-import { createApiLimiter, createAuthLimiter } from './middleware/rateLimit.js';
+import {
+  createApiLimiter,
+  createAuthLimiter,
+  createSensitiveActionLimiter,
+} from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
+import { healthSnapshot } from './modules/admin/systemStatus.js';
 import { authRouter, usersRouter } from './modules/auth/auth.routes.js';
 import { invitationsRouter } from './modules/invitations/invitation.routes.js';
 import { integrationsRouter, metaPublicRouter } from './modules/meta/meta.routes.js';
 import { crossWorkspaceAccountsRouter } from './modules/socialAccounts/socialAccount.routes.js';
 import { workspacesRouter } from './modules/workspaces/workspace.routes.js';
-import { analyticsSettings } from './modules/analytics/analytics.settings.js';
-import { publishingSettings } from './modules/publishing/publishing.settings.js';
-import { analyticsQueueStatus } from './queue/analyticsQueue.js';
-import { getPublishQueue, publishQueueStatus } from './queue/publishQueue.js';
 import { getStorage } from './storage/index.js';
 
 const apiDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const VERSION = '0.1.0';
 
 const SECRET_QUERY_PARAMS = /([?&](?:code|state|access_token|signed_request|token)=)[^&#]*/gi;
 
 /**
  * Keeps bearer secrets out of access logs: invitation tokens in API paths and in the web
  * app's own invitation link (`/invite/<token>`, served by this server), and OAuth codes /
- * states / tokens in query strings (Meta's callback carries the authorization code).
+ * states / tokens in query strings (Meta's callback carries the authorization code). Search
+ * terms of the admin console (`q`) are removed too: they are usually someone's email address.
  */
 export function redactUrl(url = '') {
   return url
     .replace(/(\/invitations\/)(?![a-f\d]{24}(?:[/?]|$))[^/?]+/i, '$1[redacted]')
     .replace(/^(\/invite\/)[^/?#]+/i, '$1[redacted]')
-    .replace(SECRET_QUERY_PARAMS, '$1[redacted]');
+    .replace(SECRET_QUERY_PARAMS, '$1[redacted]')
+    .replace(/^(?:\/api\/v1)?\/admin(?:[/?]|$)[^#]*/i, (adminUrl) =>
+      adminUrl.replace(/([?&]q=)[^&#]*/gi, '$1[redacted]'),
+    );
 }
 
 /**
@@ -60,28 +65,9 @@ async function healthDetails(req, res, next) {
     healthTokenForTests === undefined ? config.healthDetailsToken : healthTokenForTests;
   const given = /^Bearer (.+)$/.exec(req.get('authorization') ?? '')?.[1];
   if (!expected || !given || !safeEqual(given, expected)) return next();
-  const db = databaseState();
-  const queue = getPublishQueue();
-  const queueStatus = publishQueueStatus();
-  let counts = null;
-  let workers = null;
-  if (queue && queueStatus === QUEUE_STATUS.READY) {
-    [counts, workers] = await Promise.all([
-      queue.counts().catch(() => null),
-      queue.workerCount().catch(() => null),
-    ]);
-  }
-  const storage = getStorage();
+  const snapshot = await healthSnapshot();
   res.set('Cache-Control', 'no-store');
-  return res.status(db === 'connected' ? 200 : 503).json({
-    status: db === 'connected' ? 'ok' : 'degraded',
-    version: VERSION,
-    uptimeSeconds: Math.round(process.uptime()),
-    database: db,
-    publishing: { mode: publishingSettings().mode, queue: queueStatus, counts, workers },
-    analytics: { mode: analyticsSettings().mode, queue: analyticsQueueStatus() },
-    storage: { driver: storage?.name ?? null, publicUrls: Boolean(storage?.publicUrls) },
-  });
+  return res.status(snapshot.database === 'connected' ? 200 : 503).json(snapshot);
 }
 
 function corsOptions() {
@@ -208,11 +194,20 @@ export function createApp(overrides = {}) {
       authLimiter: createAuthLimiter({ windowMs: rateLimit.authWindowMs, max: rateLimit.authMax }),
     }),
   );
-  v1.use('/users', usersRouter());
+  // One counter per signed-in person for every action confirmed with their password (operator
+  // actions, password change, ownership transfer, workspace deletion, real publishing), so a
+  // stolen access token cannot be used to guess the password on whichever route is least guarded.
+  const sensitiveLimiter = createSensitiveActionLimiter({
+    windowMs: rateLimit.authWindowMs,
+    max: rateLimit.authMax,
+  });
+  v1.use('/users', usersRouter({ sensitiveLimiter }));
   v1.use('/invitations', invitationsRouter());
-  v1.use('/workspaces', workspacesRouter());
+  v1.use('/workspaces', workspacesRouter({ sensitiveLimiter }));
   v1.use('/integrations', integrationsRouter());
   v1.use('/social-accounts', crossWorkspaceAccountsRouter());
+  // Operator console (platform admins only; everyone else gets the unknown-route answer).
+  v1.use('/admin', adminRouter({ sensitiveLimiter }));
   // Upload target and file serving of the local-disk storage driver (development / tests).
   if (storage?.router) v1.use('/storage', storage.router());
   // OAuth callbacks and Meta platform callbacks (no SocialHub session; verified by state/signature).
