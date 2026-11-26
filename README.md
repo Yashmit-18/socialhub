@@ -79,7 +79,13 @@ integrates with the official Meta Graph API.
 │       └── src/pages/workspace/accounts/  Social accounts section (Phase 3)
 ├── packages/
 │   └── shared/              RBAC, enums, Zod schemas (+ tests)
-├── docs/ARCHITECTURE.md     Data model, service boundaries, phase designs
+├── docs/                    Documentation; index in docs/README.md
+│   ├── deployment/          Deployment guide (Vercel + Render) + ChatGPT step-by-step prompt
+│   └── ARCHITECTURE.md      Data model, service boundaries, phase designs
+├── scripts/                 Windows launcher (socialhub-launcher.js), secret generator
+├── start-socialhub*.cmd     One-click start on Windows (section 5); stop-socialhub.cmd stops it
+├── vercel.json              Vercel project: website + API services (docs/deployment/DEPLOYMENT.md)
+├── render.yaml              Render Blueprint: publishing worker + Redis (same guide)
 ├── docker-compose.yml       MongoDB (single-node replica set) + Redis for local dev
 ├── eslint.config.js         Lint rules for the whole monorepo
 └── package.json             npm workspaces + root scripts
@@ -951,6 +957,14 @@ simulated Meta: **no test talks to Redis or to the real Graph API.**
 
 ## Production
 
+**Deploying (Vercel + Render):** the website and the API run on Vercel ([`vercel.json`](vercel.json):
+services `web` and `api`, one address; the API's Vercel entry is `apps/api/index.js`), and the
+always-on publishing worker and its Redis run on Render ([`render.yaml`](render.yaml)). Step by
+step: [`docs/deployment/DEPLOYMENT.md`](docs/deployment/DEPLOYMENT.md).
+[`docs/deployment/CHATGPT_DEPLOY_PROMPT.md`](docs/deployment/CHATGPT_DEPLOY_PROMPT.md) is a
+ready prompt that makes ChatGPT guide the same steps one at a time. Not deployed yet. On a
+single server, `npm start` runs everything in one process as described below.
+
 - **Build the web app:** `npm run build`.
 - **Single-origin deployment (recommended).** Set `SERVE_WEB_DIST=../web/dist` and the API
   serves the SPA with an SPA fallback.
@@ -1160,6 +1174,7 @@ Hierarchy rules:
 | 2026-11-24 | Edit and delete real Facebook posts               | Text edit + delete on Facebook from the post details; explicit confirmation enforced by the API; recorded only on Meta success; simulated Meta only                              |
 | 2026-11-25 | Simpler UI and automatic group sharing tasks      | Calmer design and fewer steps; real Page posts get one sharing task per group the Page is in. Posting in groups stays manual (no Meta API). Tested against a simulated Meta only |
 | 2026-11-26 | Permanent public URL with ngrok                   | Launcher option `TUNNEL_PROVIDER=ngrok`: one address across restarts (Meta dashboard set once); unit-tested; first real run waits for the ngrok authtoken                        |
+| 2026-11-26 | Deployment prepared (Vercel + Render)             | `vercel.json` + API Vercel entry (tested locally), `render.yaml` worker + Redis; both pass the providers' schemas; guide, ChatGPT prompt, docs index. Not deployed               |
 
 ### Simpler UI and automatic group sharing tasks (2026-11-25)
 

@@ -1,0 +1,115 @@
+# Render Blueprint for SocialHub's always-on part. The website and the API run on Vercel
+# (vercel.json); Vercel only runs code while a request is handled, so the two things that must
+# keep running live here:
+#
+#   socialhub-worker  background worker: publishes queued and scheduled posts
+#                     (apps/api/scripts/publish-worker.js) and runs the 60 s recovery sweep
+#   socialhub-redis   Render Key Value (Redis-compatible): the publishing queue, shared by the
+#                     worker (private network) and the Vercel API (external TLS URL + password)
+#
+# Step-by-step guide: docs/deployment/DEPLOYMENT.md
+#
+# Nothing deploys by itself: Render reads this file only when you create a Blueprint in the
+# Render Dashboard, and automatic deploys are off (use "Manual Deploy"). No secrets are written
+# here: each `sync: false` value is asked for once in the Dashboard when the Blueprint is
+# created; change it later under the service's Environment tab.
+#
+# Do NOT use free plans: background workers have none, and free Key Value keeps no data
+# (queued posts would be lost). With no `plan` given, Render creates its default paid instance.
+
+services:
+  - type: worker
+    name: socialhub-worker
+    runtime: node
+    # Fixed once created. Singapore is Render's closest region to India; keep the worker, the
+    # Key Value, the Vercel function region and the MongoDB Atlas cluster close together.
+    region: singapore
+    buildCommand: npm ci
+    # NODE_ENV=production turns off automatic index builds, so indexes are synced before each
+    # deploy goes live (README "Production").
+    preDeployCommand: node apps/api/scripts/sync-indexes.js
+    # Started directly (not through npm) so Render's stop signal reaches the worker, which then
+    # finishes the post it is publishing.
+    startCommand: node apps/api/scripts/publish-worker.js
+    autoDeployTrigger: 'off'
+    # The worker may need up to 90 s to finish a post when it restarts.
+    maxShutdownDelaySeconds: 120
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # The Node.js version SocialHub is tested with on the development PC.
+      - key: NODE_VERSION
+        value: 24.18.0
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: socialhub-redis
+          property: connectionString
+      - key: PUBLISHING_MODE
+        value: live
+      - key: ANALYTICS_MODE
+        value: disabled
+
+      # --- Public address of the website on Vercel, all three the same (for example
+      # https://socialhub.vercel.app); the same values as in Vercel.
+      - key: APP_URL
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: API_PUBLIC_URL
+        sync: false
+
+      # --- Database and secrets: the SAME values as on Vercel (copied from apps/api/.env on
+      # the development PC). The worker decrypts the Facebook Page tokens to publish, so
+      # TOKEN_ENCRYPTION_KEY must be identical everywhere.
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+
+      # --- Meta (the worker publishes through the Graph API).
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_GRAPH_API_VERSION
+        value: v27.0
+      - key: META_FACEBOOK_SCOPES
+        value: pages_show_list,pages_read_engagement,pages_manage_posts
+      # Optional: only if apps/api/.env has a value for it (leave empty otherwise).
+      - key: META_INSTAGRAM_UNIFIED_LOGIN_CONFIG_ID
+        sync: false
+
+      # --- Media storage (the same S3-compatible bucket as on Vercel, e.g. Cloudflare R2).
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: STORAGE_S3_BUCKET
+        sync: false
+      # `auto` for Cloudflare R2; the bucket's real region for AWS S3.
+      - key: STORAGE_S3_REGION
+        sync: false
+      # Cloudflare R2: https://<account-id>.r2.cloudflarestorage.com (empty for AWS S3).
+      - key: STORAGE_S3_ENDPOINT
+        sync: false
+      - key: STORAGE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_PUBLIC_BASE_URL
+        sync: false
+
+  - type: keyvalue
+    name: socialhub-redis
+    # Same region as the worker, so the worker connects over Render's private network.
+    region: singapore
+    # The Vercel API connects from outside Render, from addresses that change, so external
+    # access cannot be limited to fixed IPs. Render requires the password and TLS (rediss://)
+    # for every external connection. To shut outside access off, replace this entry with
+    # 0.0.0.0/32.
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Vercel API (changing addresses); password and TLS required
+    # BullMQ needs this: queued posts must never be evicted to free memory.
+    maxmemoryPolicy: noeviction
