@@ -80,7 +80,9 @@ export const ADMIN_AREA = {
 /** Where "back" leads: the last used workspace, the first one, or creating one. */
 export function adminBackLink(workspaces, lastSlug) {
   if (!workspaces) return { to: '/', label: 'Back to workspace' };
-  if (workspaces.length === 0) return { to: '/onboarding', label: 'Create a workspace' };
+  if (workspaces.length === 0) {
+    return { to: '/onboarding', label: 'Create a workspace', create: true };
+  }
   const target = workspaces.find((w) => w.slug === lastSlug) ?? workspaces[0];
   return { to: `/w/${target.slug}`, label: `Back to ${target.name}` };
 }

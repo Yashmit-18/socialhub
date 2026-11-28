@@ -1,9 +1,10 @@
 import { changePasswordSchema, updateProfileSchema } from '@socialhub/shared';
 import { useMutation } from '@tanstack/react-query';
 import { IdCard, KeyRound, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { PasswordChecklist } from '../../components/auth/PasswordChecklist.jsx';
 import { AppShell, PageHeader } from '../../components/layout/AppShell.jsx';
 import { Avatar } from '../../components/ui/Avatar.jsx';
 import { Button } from '../../components/ui/Button.jsx';
@@ -80,10 +81,12 @@ function ProfileCard() {
 }
 
 function PasswordCard() {
-  const { register, submit, errors, isSubmitting, formError, reset } = useApiForm(
+  const checklistId = useId();
+  const { register, submit, errors, isSubmitting, formError, reset, watch } = useApiForm(
     changePasswordSchema,
     { defaultValues: { currentPassword: '', newPassword: '' } },
   );
+  const newPassword = watch('newPassword') ?? '';
 
   const onSubmit = submit(async (values) => {
     await api.post('/users/me/password', values);
@@ -108,13 +111,16 @@ function PasswordCard() {
               error={errors.currentPassword?.message}
               {...register('currentPassword')}
             />
-            <PasswordInput
-              label="New password"
-              autoComplete="new-password"
-              hint="8+ characters with a letter and a number."
-              error={errors.newPassword?.message}
-              {...register('newPassword')}
-            />
+            <div className="space-y-2.5">
+              <PasswordInput
+                label="New password"
+                autoComplete="new-password"
+                aria-describedby={checklistId}
+                error={errors.newPassword?.message}
+                {...register('newPassword')}
+              />
+              <PasswordChecklist id={checklistId} value={newPassword} />
+            </div>
           </div>
         </CardBody>
         <CardFooter>

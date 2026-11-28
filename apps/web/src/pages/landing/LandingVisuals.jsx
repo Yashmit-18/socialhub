@@ -133,7 +133,7 @@ const FOLLOWER_SPLIT = [
     followers: 48560,
     accounts: '5 accounts',
     share: 38,
-    bar: 'bg-gradient-to-r from-[#feda75] via-[#d62976] to-[#4f5bd5]',
+    bar: 'bg-[#d62976]',
   },
 ];
 
